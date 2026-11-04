@@ -1,0 +1,10 @@
+{
+  "name": "Gran Sabor · Gestão",
+  "short_name": "Gran Sabor",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#f6f5f3",
+  "theme_color": "#b4532a",
+  "lang": "pt-BR",
+  "icons": [{ "src": "assets/img/icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

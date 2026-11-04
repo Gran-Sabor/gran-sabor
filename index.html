@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#b4532a">
+<title>Entrar · Gran Sabor</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/img/icone.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/estilo.css?v=1">
+</head>
+<body>
+<main class="login">
+  <form class="login-caixa" id="form" novalidate>
+    <div class="marca"><span class="marca-logo">GS</span>Gran Sabor</div>
+    <div id="campos">
+      <label for="email">E-mail</label>
+      <input id="email" type="email" class="campo" autocomplete="username" required>
+      <label for="senha">Senha</label>
+      <input id="senha" type="password" class="campo" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn btn-pri" id="btnEntrar">Entrar</button>
+    <div class="login-msg" id="msg" role="alert"></div>
+    <div class="login-rodape" id="rodape">Sistema de gestão Gran Sabor</div>
+  </form>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="assets/js/config.js?v=1"></script>
+<script>
+const $ = id => document.getElementById(id);
+if (MODO_DEMO) {
+  $('campos').hidden = true;
+  $('btnEntrar').textContent = 'Entrar em modo demonstração';
+  $('rodape').textContent = 'Banco ainda não ligado: números de exemplo.';
+  $('form').onsubmit = e => { e.preventDefault(); location.href = 'sistema.html'; };
+} else {
+  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  db.auth.getSession().then(({ data }) => { if (data.session) location.replace('sistema.html'); });
+  $('form').onsubmit = async e => {
+    e.preventDefault();
+    $('msg').textContent = ''; $('btnEntrar').disabled = true;
+    const { error } = await db.auth.signInWithPassword({ email: $('email').value.trim(), password: $('senha').value });
+    $('btnEntrar').disabled = false;
+    if (error) { $('msg').textContent = 'E-mail ou senha não conferem.'; return; }
+    location.replace('sistema.html');
+  };
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>

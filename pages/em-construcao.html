@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Em construção</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=1">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1 id="titulo"></h1><span class="sub" id="grupo"></span></div>
+  <div class="cartao vazio">
+    <h1>Tela em construção</h1>
+    <p>Esta tela já tem seu lugar no menu e será montada nas próximas etapas.</p>
+  </div>
+</div>
+<script>
+const p = new URLSearchParams(location.search);
+document.getElementById('titulo').textContent = p.get('t') || 'Tela';
+document.getElementById('grupo').textContent = p.get('g') || '';
+document.title = p.get('t') || 'Em construção';
+</script>
+</body>
+</html>

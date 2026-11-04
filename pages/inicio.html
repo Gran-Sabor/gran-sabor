@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Início</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=1">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab">
+    <h1>Visão do dia</h1>
+    <span class="etiqueta destaque" id="etqUnidade"></span>
+    <span class="sub" id="hoje"></span>
+    <div class="dir"><span class="etiqueta exemplo" title="Os números são fictícios até o banco ser ligado">números de exemplo</span></div>
+  </div>
+
+  <section class="kpis" id="kpis" aria-label="Indicadores principais"></section>
+
+  <div class="grade-2">
+    <div class="coluna">
+      <section class="cartao">
+        <div class="cartao-cab"><h2>Vendas por unidade · hoje</h2><a class="dir" href="#" data-abrir="comparativo">Comparativo completo</a></div>
+        <div class="rolagem"><table class="tabela" id="tabUnidades"></table></div>
+      </section>
+      <section class="cartao">
+        <div class="cartao-cab"><h2>Faturamento · últimos 7 dias</h2><span class="dir sub" id="leg7"></span></div>
+        <div id="grafico7" style="padding:10px 12px 8px"></div>
+      </section>
+    </div>
+    <div class="coluna">
+      <section class="cartao">
+        <div class="cartao-cab"><h2>Pontos de atenção</h2></div>
+        <div id="atencao"></div>
+      </section>
+      <section class="cartao">
+        <div class="cartao-cab"><h2>Contas a pagar · próximos 7 dias</h2><a class="dir" href="#" data-abrir="pagar">Ver todas</a></div>
+        <div id="pagar"></div>
+      </section>
+      <section class="cartao">
+        <div class="cartao-cab"><h2>Delivery e empresas (PJ)</h2><a class="dir" href="#" data-abrir="faturamento_pj">Faturamento PJ</a></div>
+        <div id="pj"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/menu.js?v=1"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=1"></script>
+<script>
+/* Números de EXEMPLO, só para aprovar o visual. Depois virão do banco. */
+const LOJAS = {
+  loja1: { nome: 'Loja 1', fat: 6840, kg: 98.4, cli: 112, cmvKg: 21.9, ant: 6410, bebidas: 1180 },
+  loja2: { nome: 'Loja 2', fat: 4920, kg: 71.2, cli: 81, cmvKg: 24.6, ant: 5230, bebidas: 760 },
+  loja3: { nome: 'Loja 3', fat: 3375, kg: 47.9, cli: 58, cmvKg: 22.8, ant: 3100, bebidas: 540 }
+};
+const SEMANA = [13450, 14980, 15210, 12870, 16120, 17890, 15135];
+const META_CMV_KG = 23;
+const ATENCAO = [
+  { nv: 'perigo', t: '2 cupons em contingência', s: 'Loja 2 · aguardando envio à SEFAZ', tela: 'pendencias_fis' },
+  { nv: 'alerta', t: 'CMV por kg acima da meta', s: 'Loja 2 · R$ 24,60 contra meta de R$ 23,00', tela: 'cmv' },
+  { nv: 'alerta', t: 'Estoque abaixo do mínimo', s: 'Picanha, óleo de soja e mais 2 itens', tela: 'posicao' },
+  { nv: 'info', t: 'Inventário semanal', s: 'Central de carnes · previsto para sábado', tela: 'inventario' }
+];
+const PAGAR = [
+  { d: 0, f: 'Distribuidora de carnes', u: 'Central de carnes', v: 5240 },
+  { d: 0, f: 'Energia elétrica', u: 'Loja 1', v: 1890 },
+  { d: 1, f: 'Hortifrúti', u: 'Loja 3', v: 640 },
+  { d: 3, f: 'Aluguel', u: 'Loja 2', v: 7800 },
+  { d: 5, f: 'Gás', u: 'Loja 1', v: 980 }
+];
+const PJ = [
+  { n: 'Delivery hoje', s: '43 pedidos · 3 lojas', v: 2310 },
+  { n: 'Empresas conveniadas', s: '3 fecham a quinzena na sexta', v: 9640 },
+  { n: 'Em aberto (PJ)', s: '1 boleto vencido há 4 dias', v: 2180 }
+];
+
+const somar = (lst, k) => lst.reduce((a, x) => a + x[k], 0);
+const variacao = (atual, ant) => { const v = ant ? (atual - ant) / ant * 100 : 0;
+  return `<span class="${v >= 0 ? 'sobe' : 'desce'}">${v >= 0 ? '▲' : '▼'} ${pct(Math.abs(v))}</span>`; };
+
+function desenhar(un) {
+  const u = UNIDADES.find(x => x.id === un) || UNIDADES[0];
+  $('etqUnidade').textContent = u.nome;
+  $('hoje').textContent = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+
+  const lojas = un === 'todas' ? Object.values(LOJAS) : LOJAS[un] ? [LOJAS[un]] : [];
+  const fat = somar(lojas, 'fat'), kg = somar(lojas, 'kg'), cli = somar(lojas, 'cli'), ant = somar(lojas, 'ant');
+  const cmv = kg ? lojas.reduce((a, l) => a + l.cmvKg * l.kg, 0) / kg : 0;
+  const pagarHoje = somar(PAGAR.filter(p => p.d === 0), 'v');
+
+  $('kpis').innerHTML = lojas.length ? [
+    ['Faturamento hoje', reais(fat), `${variacao(fat, ant)} vs. mesmo dia da semana passada`],
+    ['Kg vendidos', numero(kg, 1) + ' kg', `preço médio ${reais(kg ? (fat - somar(lojas, 'bebidas')) / kg : 0)}/kg`],
+    ['Clientes atendidos', numero(cli), `ticket médio ${reais(cli ? fat / cli : 0)}`],
+    ['CMV por kg', reais(cmv), `meta ${reais(META_CMV_KG)} · ${cmv <= META_CMV_KG ? '<span class="sobe">dentro</span>' : '<span class="desce">acima</span>'}`],
+    ['A pagar hoje', reais(pagarHoje), `${PAGAR.filter(p => p.d === 0).length} contas · todas as unidades`]
+  ].map(([t, v, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${v}</div><div class="kpi-ctx">${c}</div></div>`).join('')
+  : `<div class="kpi"><div class="kpi-tit">${esc(u.nome)}</div><div class="kpi-valor">Sem vendas ao público</div>
+     <div class="kpi-ctx">Aqui entram estoque, transferências para as lojas e despesas da unidade.</div></div>
+     <div class="kpi"><div class="kpi-tit">A pagar hoje</div><div class="kpi-valor">${reais(pagarHoje)}</div><div class="kpi-ctx">todas as unidades</div></div>`;
+
+  const todas = Object.entries(LOJAS), total = somar(Object.values(LOJAS), 'fat');
+  $('tabUnidades').innerHTML = `<thead><tr><th>Unidade</th><th class="num">Faturamento</th><th class="num">Kg</th><th class="num">Clientes</th>
+    <th class="num">Ticket médio</th><th class="num">CMV/kg</th><th>Participação</th></tr></thead><tbody>${todas.map(([id, l]) =>
+    `<tr${un !== 'todas' && un !== id ? ' style="opacity:.45"' : ''}><td>${esc(l.nome)}</td><td class="num">${reais(l.fat)}</td><td class="num">${numero(l.kg, 1)}</td>
+     <td class="num">${l.cli}</td><td class="num">${reais(l.fat / l.cli)}</td>
+     <td class="num ${l.cmvKg > META_CMV_KG ? 'desce' : ''}">${reais(l.cmvKg)}</td>
+     <td><div class="barra"><i style="width:${(l.fat / total * 100).toFixed(1)}%"></i></div></td></tr>`).join('')}</tbody>
+    <tfoot><tr><td>Total</td><td class="num">${reais(total)}</td><td class="num">${numero(somar(Object.values(LOJAS), 'kg'), 1)}</td>
+    <td class="num">${somar(Object.values(LOJAS), 'cli')}</td><td class="num">${reais(total / somar(Object.values(LOJAS), 'cli'))}</td><td></td><td></td></tr></tfoot>`;
+
+  // Gráfico simples de barras (7 dias)
+  const fator = un === 'todas' ? 1 : lojas.length ? fat / total : 0;
+  const dias = SEMANA.map((v, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return { v: v * fator, d }; });
+  const max = Math.max(...dias.map(x => x.v), 1);
+  $('leg7').textContent = 'total ' + reais(dias.reduce((a, x) => a + x.v, 0));
+  $('grafico7').innerHTML = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:end;height:120px">${dias.map(x =>
+    `<div title="${x.d.toLocaleDateString('pt-BR')}: ${reais(x.v)}" style="display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:4px">
+      <small style="font-size:10.5px;color:var(--texto-2);text-align:center">${numero(x.v / 1000, 1)} mil</small>
+      <div style="height:${(x.v / max * 80).toFixed(0)}%;background:var(--marca);border-radius:3px 3px 0 0;opacity:${x === dias[6] ? 1 : .55}"></div></div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:4px;font-size:11px;color:var(--texto-3);text-align:center">${dias.map(x =>
+    `<span>${x.d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')}</span>`).join('')}</div>`;
+
+  $('atencao').innerHTML = ATENCAO.map(a => `<a href="#" class="lista-linha" data-abrir="${a.tela}" style="color:inherit;text-decoration:none">
+    <span class="marcador nv-${a.nv}" style="width:8px;height:8px;border-radius:50%;flex:none"></span>
+    <div><b style="font-weight:600">${esc(a.t)}</b><small>${esc(a.s)}</small></div></a>`).join('');
+
+  $('pagar').innerHTML = PAGAR.map(p => { const d = new Date(); d.setDate(d.getDate() + p.d);
+    return `<div class="lista-linha"><div>${esc(p.f)}<small>${esc(p.u)} · ${p.d === 0 ? '<b class="desce">vence hoje</b>' : d.toLocaleDateString('pt-BR')}</small></div><span class="dir">${reais(p.v)}</span></div>`; }).join('');
+
+  $('pj').innerHTML = PJ.map(p => `<div class="lista-linha"><div>${esc(p.n)}<small>${esc(p.s)}</small></div><span class="dir">${reais(p.v)}</span></div>`).join('');
+}
+
+desenhar(unidadeAtual());
+aoTrocarUnidade(desenhar);
+</script>
+</body>
+</html>
