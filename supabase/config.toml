@@ -1,0 +1,2 @@
+# Configuração mínima para a ferramenta do Supabase publicar as migrações.
+project_id = "gran-sabor"

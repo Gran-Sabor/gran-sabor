@@ -6,5 +6,5 @@
    (sem login e com números de exemplo).
    ===================================================================== */
 const SUPABASE_URL = 'https://sayplpvhnoeytfnkbvpm.supabase.co';
-const SUPABASE_KEY = '';
+const SUPABASE_KEY = 'sb_publishable_04rpFKJwML3lVX2jnniYlA_kid2jgfN';
 const MODO_DEMO = !SUPABASE_KEY;

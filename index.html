@@ -27,7 +27,7 @@
   </form>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="assets/js/config.js?v=1"></script>
+<script src="assets/js/config.js?v=2"></script>
 <script>
 const $ = id => document.getElementById(id);
 if (MODO_DEMO) {
@@ -37,7 +37,8 @@ if (MODO_DEMO) {
   $('form').onsubmit = e => { e.preventDefault(); location.href = 'sistema.html'; };
 } else {
   const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  db.auth.getSession().then(({ data }) => { if (data.session) location.replace('sistema.html'); });
+  if (location.search.includes('sem-acesso')) $('msg').textContent = 'Seu usuário não está liberado. Fale com o administrador.';
+  else db.auth.getSession().then(({ data }) => { if (data.session) location.replace('sistema.html'); });
   $('form').onsubmit = async e => {
     e.preventDefault();
     $('msg').textContent = ''; $('btnEntrar').disabled = true;

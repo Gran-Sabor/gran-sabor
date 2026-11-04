@@ -1,0 +1,46 @@
+name: Publicar banco
+
+# No pacote (pull request): só simula, mostra o que vai mudar no banco.
+# Ao juntar na main: aplica as migrações no Supabase de verdade.
+on:
+  pull_request:
+    paths: ["supabase/**", ".github/workflows/publicar-banco.yml"]
+  push:
+    branches: [main]
+    paths: ["supabase/**", ".github/workflows/publicar-banco.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: publicar-banco
+  cancel-in-progress: false
+
+jobs:
+  banco:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      ID_PROJETO: ${{ secrets.SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Cadastro público desligado
+        # Segurança: só entra quem o Alexandre criar no painel. Se o cadastro
+        # público estiver ligado, qualquer pessoa poderia criar uma conta.
+        run: |
+          chave=$(grep -oE "sb_publishable_[A-Za-z0-9_-]+" assets/js/config.js | head -n1)
+          resp=$(curl -s "https://sayplpvhnoeytfnkbvpm.supabase.co/auth/v1/settings" -H "apikey: $chave")
+          echo "Resposta do Supabase: $(echo "$resp" | grep -oE '"disable_signup":[a-z]+' || echo "${resp:0:200}")"
+          echo "$resp" | grep -q '"disable_signup":true' \
+            || { echo "::error::No Supabase, desligue Authentication › Sign In / Providers › 'Allow new users to sign up'."; exit 1; }
+          echo "Cadastro público desligado."
+      - name: Ligar ao projeto
+        run: supabase link --project-ref "$(printf '%s' "$ID_PROJETO" | tr -d '[:space:]')" --password "$SUPABASE_DB_PASSWORD"
+      - name: Simular (pacote)
+        if: github.event_name == 'pull_request'
+        run: supabase db push --dry-run --password "$SUPABASE_DB_PASSWORD"
+      - name: Aplicar no banco (main)
+        if: github.event_name != 'pull_request'
+        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
