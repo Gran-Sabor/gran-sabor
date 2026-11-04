@@ -32,6 +32,7 @@ jobs:
         run: |
           chave=$(grep -oE "sb_publishable_[A-Za-z0-9_-]+" assets/js/config.js | head -n1)
           resp=$(curl -s "https://sayplpvhnoeytfnkbvpm.supabase.co/auth/v1/settings" -H "apikey: $chave")
+          echo "Resposta do Supabase: $(echo "$resp" | grep -oE '"disable_signup":[a-z]+' || echo "${resp:0:200}")"
           echo "$resp" | grep -q '"disable_signup":true' \
             || { echo "::error::No Supabase, desligue Authentication › Sign In / Providers › 'Allow new users to sign up'."; exit 1; }
           echo "Cadastro público desligado."
