@@ -19,7 +19,10 @@ async function iniciar() {
     window.db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     const { data: { session } } = await db.auth.getSession();
     if (!session) { location.replace('index.html'); return; }
-    usuario = { nome: session.user.user_metadata?.nome || session.user.email.split('@')[0], email: session.user.email };
+    // Só entra quem está cadastrado e ativo na tabela de usuários
+    const { data: cad } = await db.from('usuarios').select('nome, ativo').eq('id', session.user.id).maybeSingle();
+    if (!cad?.ativo) { await db.auth.signOut(); location.replace('index.html?sem-acesso'); return; }
+    usuario = { nome: cad.nome || session.user.email.split('@')[0], email: session.user.email };
   }
   $('usuarioNome').textContent = usuario.nome;
   $('avatar').textContent = usuario.nome.slice(0, 2).toUpperCase();
@@ -131,7 +134,7 @@ function cliqueAbas(e) {
 }
 
 /* ---------- Alertas (popup) ---------- */
-// Por enquanto, exemplos. Depois virão do banco (contas vencendo, notas pendentes, estoque baixo...).
+// Por enquanto, exemplos (com ou sem banco). Depois virão do banco (contas vencendo, notas pendentes, estoque baixo...).
 const ALERTAS_EXEMPLO = [
   { nivel: 'perigo', titulo: '2 cupons fiscais em contingência', texto: 'Loja 2 · aguardando envio à SEFAZ há mais de 1 hora', tela: 'pendencias_fis' },
   { nivel: 'alerta', titulo: '5 contas vencem hoje', texto: 'R$ 8.430,00 somando as unidades', tela: 'pagar' },
@@ -150,7 +153,7 @@ function mostrarAlertas() {
   const v = document.createElement('div');
   v.className = 'veu';
   v.innerHTML = `<div class="janela" role="dialog" aria-modal="true" aria-labelledby="tAlertas">
-    <div class="janela-cab">${icone('sino')}<h2 id="tAlertas">Pontos de atenção</h2>${MODO_DEMO ? '<span class="etiqueta exemplo">exemplo</span>' : ''}
+    <div class="janela-cab">${icone('sino')}<h2 id="tAlertas">Pontos de atenção</h2><span class="etiqueta exemplo">exemplo</span>
       <button type="button" class="btn btn-ico" data-fechar aria-label="Fechar">${icone('fechar')}</button></div>
     <div class="janela-corpo">${alertas.length ? alertas.map((a, i) => `<div class="alerta-linha"><span class="marcador nv-${a.nivel}"></span>
       <div><b>${esc(a.titulo)}</b><small>${esc(a.texto)}</small></div><a href="#" class="acao" data-i="${i}">Abrir</a></div>`).join('')
