@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#b4532a">
+<title>Nova senha · Gran Sabor</title>
+<link rel="icon" href="assets/img/icone.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/estilo.css?v=2">
+</head>
+<body>
+<!-- Aberta pelo link do e-mail "Esqueci minha senha". O link já traz o acesso
+     temporário; aqui a pessoa só escolhe a senha nova. -->
+<main class="login">
+  <form class="login-caixa" id="form" novalidate>
+    <div class="marca"><span class="marca-logo">GS</span>Gran Sabor</div>
+    <div id="campos" hidden>
+      <label for="senha1">Nova senha</label>
+      <input id="senha1" type="password" class="campo" autocomplete="new-password" minlength="8" required>
+      <label for="senha2">Repita a nova senha</label>
+      <input id="senha2" type="password" class="campo" autocomplete="new-password" minlength="8" required>
+    </div>
+    <button type="submit" class="btn btn-pri" id="btnSalvar" hidden>Salvar nova senha</button>
+    <div class="login-msg ok" id="msg" role="alert">Conferindo o link…</div>
+    <a class="login-link" href="index.html" id="voltar" hidden>Voltar para o login</a>
+  </form>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="assets/js/config.js?v=2"></script>
+<script>
+const $ = id => document.getElementById(id);
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const msg = (t, ok) => { $('msg').textContent = t; $('msg').classList.toggle('ok', !!ok); };
+
+function liberar() {
+  $('campos').hidden = false; $('btnSalvar').hidden = false;
+  msg('Escolha a nova senha (mínimo 8 caracteres).', true);
+  $('senha1').focus();
+}
+let pronto = false;
+db.auth.onAuthStateChange((evento, sessao) => {
+  if (!pronto && sessao && (evento === 'PASSWORD_RECOVERY' || evento === 'SIGNED_IN' || evento === 'INITIAL_SESSION')) { pronto = true; liberar(); }
+});
+// Se em alguns segundos não veio acesso, o link venceu ou já foi usado
+setTimeout(() => {
+  if (pronto) return;
+  msg('Este link venceu ou já foi usado. Volte ao login e clique em "Esqueci minha senha" de novo.');
+  $('voltar').hidden = false;
+}, 4000);
+
+$('form').onsubmit = async e => {
+  e.preventDefault();
+  const s1 = $('senha1').value, s2 = $('senha2').value;
+  if (s1.length < 8) return msg('A senha precisa ter pelo menos 8 caracteres.');
+  if (s1 !== s2) return msg('As duas senhas não são iguais.');
+  $('btnSalvar').disabled = true;
+  const { error } = await db.auth.updateUser({ password: s1 });
+  $('btnSalvar').disabled = false;
+  if (error) return msg(/different|same/i.test(error.message) ? 'A senha nova precisa ser diferente da atual.' : 'Não foi possível salvar. Tente de novo.');
+  msg('Senha trocada. Entrando no sistema…', true);
+  setTimeout(() => location.replace('sistema.html'), 1200);
+};
+</script>
+</body>
+</html>

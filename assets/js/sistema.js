@@ -27,6 +27,7 @@ async function iniciar() {
   $('usuarioNome').textContent = usuario.nome;
   $('avatar').textContent = usuario.nome.slice(0, 2).toUpperCase();
   $('btnSair').onclick = sair;
+  if (!MODO_DEMO) { $('avatar').onclick = $('usuarioNome').onclick = trocarSenha; $('usuarioNome').title = 'Trocar minha senha'; }
 
   montarUnidades();
   montarMenu();
@@ -40,6 +41,38 @@ async function iniciar() {
 async function sair() {
   if (!MODO_DEMO) await db.auth.signOut();
   location.replace('index.html');
+}
+
+/* ---------- Trocar a própria senha (clique no nome, no topo) ---------- */
+function trocarSenha() {
+  const v = document.createElement('div');
+  v.className = 'veu';
+  v.innerHTML = `<form class="janela" role="dialog" aria-modal="true" aria-labelledby="tSenha" novalidate>
+    <div class="janela-cab"><h2 id="tSenha">Trocar minha senha</h2>
+      <button type="button" class="btn btn-ico" data-fechar aria-label="Fechar">${icone('fechar')}</button></div>
+    <div class="janela-form">
+      <label for="ns1">Nova senha (mínimo 8 caracteres)</label><input id="ns1" type="password" class="campo" autocomplete="new-password">
+      <label for="ns2">Repita a nova senha</label><input id="ns2" type="password" class="campo" autocomplete="new-password">
+      <div class="login-msg" id="nsMsg" role="alert"></div></div>
+    <div class="janela-rodape"><button type="button" class="btn" data-fechar>Cancelar</button><button type="submit" class="btn btn-pri">Salvar</button></div></form>`;
+  const fim = () => { v.remove(); document.removeEventListener('keydown', tecla); };
+  const tecla = e => { if (e.key === 'Escape') fim(); };
+  const aviso = (t, ok) => { const m = v.querySelector('#nsMsg'); m.textContent = t; m.classList.toggle('ok', !!ok); };
+  v.onclick = e => { if (e.target === v || e.target.closest('[data-fechar]')) fim(); };
+  v.querySelector('form').onsubmit = async e => {
+    e.preventDefault();
+    const s1 = v.querySelector('#ns1').value, s2 = v.querySelector('#ns2').value;
+    if (s1.length < 8) return aviso('A senha precisa ter pelo menos 8 caracteres.');
+    if (s1 !== s2) return aviso('As duas senhas não são iguais.');
+    const b = v.querySelector('.btn-pri'); b.disabled = true;
+    const { error } = await db.auth.updateUser({ password: s1 });
+    b.disabled = false;
+    if (error) return aviso(/different|same/i.test(error.message) ? 'A senha nova precisa ser diferente da atual.' : 'Não foi possível salvar. Tente de novo.');
+    aviso('Senha trocada.', true); setTimeout(fim, 1000);
+  };
+  document.addEventListener('keydown', tecla);
+  document.body.appendChild(v);
+  v.querySelector('#ns1').focus();
 }
 
 /* ---------- Unidade escolhida (vale para todas as telas) ---------- */

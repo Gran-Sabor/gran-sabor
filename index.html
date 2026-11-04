@@ -9,7 +9,7 @@
 <link rel="icon" href="assets/img/icone.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/estilo.css?v=1">
+<link rel="stylesheet" href="assets/css/estilo.css?v=2">
 </head>
 <body>
 <main class="login">
@@ -23,6 +23,7 @@
     </div>
     <button type="submit" class="btn btn-pri" id="btnEntrar">Entrar</button>
     <div class="login-msg" id="msg" role="alert"></div>
+    <button type="button" class="login-link" id="btnEsqueci">Esqueci minha senha</button>
     <div class="login-rodape" id="rodape">Sistema de gestão Gran Sabor</div>
   </form>
 </main>
@@ -31,7 +32,7 @@
 <script>
 const $ = id => document.getElementById(id);
 if (MODO_DEMO) {
-  $('campos').hidden = true;
+  $('campos').hidden = true; $('btnEsqueci').hidden = true;
   $('btnEntrar').textContent = 'Entrar em modo demonstração';
   $('rodape').textContent = 'Banco ainda não ligado: números de exemplo.';
   $('form').onsubmit = e => { e.preventDefault(); location.href = 'sistema.html'; };
@@ -46,6 +47,18 @@ if (MODO_DEMO) {
     $('btnEntrar').disabled = false;
     if (error) { $('msg').textContent = 'E-mail ou senha não conferem.'; return; }
     location.replace('sistema.html');
+  };
+  // Recuperar senha: o Supabase manda um e-mail com link para nova-senha.html
+  $('btnEsqueci').onclick = async () => {
+    const email = $('email').value.trim();
+    const m = $('msg'); m.classList.remove('ok');
+    if (!email) { m.textContent = 'Digite seu e-mail no campo acima e clique de novo.'; $('email').focus(); return; }
+    $('btnEsqueci').disabled = true;
+    const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: new URL('nova-senha.html', location.href).href });
+    $('btnEsqueci').disabled = false;
+    if (error && /rate|limit|seconds/i.test(error.message)) { m.textContent = 'Muitos pedidos seguidos. Espere alguns minutos e tente de novo.'; return; }
+    m.classList.add('ok');
+    m.textContent = 'Se o e-mail estiver cadastrado, chega em instantes um link para criar a nova senha. Veja também o spam.';
   };
 }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
