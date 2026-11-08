@@ -8,7 +8,7 @@ const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
     { id: 'caixa',          nome: 'Frente de caixa (PDV)' },
     { id: 'delivery',       nome: 'Delivery' },
-    { id: 'faturamento_pj', nome: 'Faturamento empresas (PJ)' },
+    { id: 'faturamento_pj', nome: 'Faturamento empresas (PJ)', arquivo: 'pages/fin-receber.html' },
     { id: 'vendas_dia',     nome: 'Vendas do dia' },
     { id: 'fechamento_cx',  nome: 'Abertura e fechamento de caixa' }
   ]},
@@ -26,12 +26,12 @@ const MENU = [
   ]},
   { grupo: 'Compras', icone: 'compras', itens: [
     { id: 'pedidos_compra', nome: 'Pedidos de compra' },
-    { id: 'notas_entrada',  nome: 'Notas de entrada' },
+    { id: 'notas_entrada',  nome: 'Notas de entrada (XML)', arquivo: 'pages/compras-xml.html' },
     { id: 'sugestao',       nome: 'Sugestão de compra' }
   ]},
   { grupo: 'Financeiro', icone: 'financeiro', itens: [
-    { id: 'pagar',          nome: 'Contas a pagar' },
-    { id: 'receber',        nome: 'Contas a receber' },
+    { id: 'pagar',          nome: 'Contas a pagar', arquivo: 'pages/fin-pagar.html' },
+    { id: 'receber',        nome: 'Contas a receber', arquivo: 'pages/fin-receber.html' },
     { id: 'fluxo',          nome: 'Fluxo de caixa' },
     { id: 'conciliacao',    nome: 'Extratos e conciliação' },
     { id: 'dividas',        nome: 'Dívidas e empréstimos' }
@@ -66,7 +66,7 @@ const MENU = [
     { id: 'produtos',       nome: 'Cardápio e produtos' },
     { id: 'insumos',        nome: 'Insumos', arquivo: 'pages/cad-insumos.html' },
     { id: 'fornecedores',   nome: 'Fornecedores', arquivo: 'pages/cad-fornecedores.html' },
-    { id: 'clientes',       nome: 'Clientes e convênios' },
+    { id: 'clientes',       nome: 'Clientes e convênios', arquivo: 'pages/cad-clientes.html' },
     { id: 'plano_contas',   nome: 'Categorias financeiras', arquivo: 'pages/cad-categorias.html' },
     { id: 'centros_custo',  nome: 'Centros de custo', arquivo: 'pages/cad-centros.html' }
   ]},

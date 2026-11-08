@@ -115,3 +115,22 @@ const sim = v => v ? '<span class="etiqueta completa">sim</span>' : '<span class
 const etqEmpresas = ids => !ids || !ids.length || ids.length === EMPRESAS.length ? '<span class="etiqueta">todas</span>'
   : ids.map(id => `<span class="etiqueta emp" style="--c:${(EMPRESAS.find(e => e.id === id) || {}).cor}">${esc(nomeEmpresa(id))}</span>`).join(' ');
 const etqEmpresa = id => id ? `<span class="etiqueta emp" style="--c:${(EMPRESAS.find(e => e.id === id) || {}).cor}">${esc(nomeEmpresa(id))}</span>` : '<span class="etiqueta">todas</span>';
+
+/* ---------- Popup genérico para telas próprias (pagar, receber, XML…) ---------- */
+// aoSalvar(form) devolve texto de erro ou nada; depois(veu) roda após abrir
+function janela(titulo, corpo, botao, aoSalvar, depois) {
+  const v = document.createElement('div'); v.className = 'veu';
+  v.innerHTML = `<form class="janela larga" role="dialog" aria-modal="true" novalidate><div class="janela-cab"><h2>${esc(titulo)}</h2>
+    <button type="button" class="btn btn-ico" data-fechar aria-label="Fechar">${icone('fechar')}</button></div>
+    <div class="form">${corpo}<div class="login-msg" id="fMsg" role="alert"></div></div>
+    <div class="janela-rodape"><span class="sub">Exemplo: nada é gravado</span><button type="button" class="btn" data-fechar>Cancelar</button><button type="submit" class="btn btn-pri">${esc(botao)}</button></div></form>`;
+  const fim = () => { v.remove(); document.removeEventListener('keydown', tecla); };
+  const tecla = e => { if (e.key === 'Escape') fim(); };
+  v.onclick = e => { if (e.target === v || e.target.closest('[data-fechar]')) fim(); };
+  v.querySelector('form').onsubmit = e => { e.preventDefault(); const erro = aoSalvar(e.target); if (erro) v.querySelector('#fMsg').textContent = erro; else fim(); };
+  document.addEventListener('keydown', tecla); document.body.appendChild(v);
+  if (depois) depois(v);
+  v.querySelector('input:not([readonly]),select')?.focus();
+  return v;
+}
+

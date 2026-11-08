@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notas de entrada (XML)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=5">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Notas de entrada</h1><span class="sub">Importe o XML do fornecedor: dá entrada no estoque e lança as parcelas em contas a pagar</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button></div></div>
+  <div id="filtros"></div>
+  <section class="kpis" id="kpis"></section>
+  <div class="grade-2 largo">
+    <section class="cartao"><div class="cartao-cab"><h2>Notas lançadas</h2><span class="dir sub" id="contagem"></span></div>
+      <div class="rolagem"><table class="tabela" id="tab"></table></div></section>
+    <section class="cartao"><div class="cartao-cab"><h2>Importar XML</h2></div>
+      <label class="soltar" id="soltar"><input type="file" id="arquivo" accept=".xml,text/xml" multiple hidden>
+        <b>Arraste o XML aqui</b><span>ou clique para escolher (pode ser mais de um)</span></label>
+      <div class="lista-linha"><div>Não tem um XML agora?<small>Teste com uma nota fictícia de mercearia para a Empresa 2</small></div>
+        <button type="button" class="btn btn-mini dir" id="btnExemplo">Usar XML de exemplo</button></div>
+      <div class="form-nota" style="padding:8px 12px">O sistema confere: CNPJ de destino (qual das 3 empresas), nota repetida, fornecedor cadastrado e itens ligados aos insumos.</div>
+    </section>
+  </div>
+</div>
+
+<script src="../assets/js/menu.js?v=4"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=4"></script>
+<script src="../assets/js/exemplo.js?v=2"></script>
+<script src="../assets/js/cadastro.js?v=2"></script>
+<script>
+let notas = NOTAS_ENTRADA.map(n => ({ ...n, chave: '', fornNome: (FORNECEDORES.find(f => f.id === n.fornecedor) || {}).nome }));
+const vinculos = {};   // "CNPJfornecedor|código do produto" → insumo (lembra para as próximas notas)
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, periodo: true, placeholder: 'Fornecedor, número, CNPJ… (atalho: /)' });
+
+function desenhar() {
+  const v = notas.filter(n => noFiltro(filtro, n) && (!filtro.de || n.emissao >= filtro.de) && (!filtro.ate || n.emissao <= filtro.ate)
+    && casaBusca([n.fornNome, n.numero, n.chave, nomeEmpresa(n.empresa), nomeUnidade(n.unidade), numero(n.valor, 2)].join(' '), filtro.busca))
+    .sort((a, b) => b.emissao.localeCompare(a.emissao));
+  const soma = l => l.reduce((a, n) => a + n.valor, 0);
+  $('kpis').innerHTML = [
+    ['Notas no período', v.length, reais(soma(v))],
+    ['Falta vincular itens', v.filter(n => n.situacao !== 'lançada').length, v.some(n => n.situacao !== 'lançada') ? '<span class="desce">estoque e custo esperando</span>' : 'tudo ligado'],
+    ...EMPRESAS.map(e => [e.nome, reais(soma(v.filter(n => n.empresa === e.id))), `${v.filter(n => n.empresa === e.id).length} nota(s)`])
+  ].map(([t, val, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${val}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  $('contagem').textContent = `${v.length} nota(s)`;
+  $('tab').innerHTML = `<thead><tr><th>Emissão</th><th>Nota</th><th>Fornecedor</th><th>Empresa · entrada em</th><th class="num">Itens</th><th class="num">Valor</th><th>Parcelas</th><th>Situação</th></tr></thead><tbody>${
+    v.map(n => `<tr><td class="mono">${dataBR(n.emissao + 'T12:00')}</td><td class="mono">${esc(n.numero)}/${esc(n.serie)}</td><td><b>${esc(n.fornNome)}</b></td>
+      <td>${etqEmpresa(n.empresa)} <small class="sub">${esc(nomeUnidade(n.unidade))}</small></td><td class="num">${n.itens}</td><td class="num">${reais(n.valor)}</td><td>${n.parcelas}×</td>
+      <td>${n.situacao === 'lançada' ? '<span class="etiqueta completa">lançada</span>' : `<span class="etiqueta pendente">${esc(n.situacao)}</span>`}</td></tr>`).join('')
+    || '<tr><td colspan="8" class="vazio">Nenhuma nota com esses filtros.</td></tr>'}</tbody>`;
+}
+
+/* ---------- Leitura do XML da NF-e ---------- */
+function lerXML(texto) {
+  const doc = new DOMParser().parseFromString(texto, 'text/xml');
+  if (doc.querySelector('parsererror')) throw new Error('Arquivo não é um XML válido.');
+  const inf = doc.getElementsByTagName('infNFe')[0];
+  if (!inf) throw new Error('Este XML não é de uma NF-e.');
+  const t = (el, tag) => el?.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
+  const emit = inf.getElementsByTagName('emit')[0], dest = inf.getElementsByTagName('dest')[0], ide = inf.getElementsByTagName('ide')[0];
+  return {
+    chave: (inf.getAttribute('Id') || '').replace(/^NFe/, ''),
+    numero: t(ide, 'nNF'), serie: t(ide, 'serie'), emissao: (t(ide, 'dhEmi') || t(ide, 'dEmi')).slice(0, 10),
+    emitCnpj: t(emit, 'CNPJ') || t(emit, 'CPF'), emitNome: t(emit, 'xNome'),
+    destCnpj: t(dest, 'CNPJ') || t(dest, 'CPF'), destNome: t(dest, 'xNome'),
+    valor: Number(t(inf.getElementsByTagName('ICMSTot')[0], 'vNF')),
+    itens: [...inf.getElementsByTagName('det')].map(d => { const p = d.getElementsByTagName('prod')[0];
+      return { codigo: t(p, 'cProd'), nome: t(p, 'xProd'), ncm: t(p, 'NCM'), cfop: t(p, 'CFOP'), un: t(p, 'uCom'), qtd: Number(t(p, 'qCom')), vun: Number(t(p, 'vUnCom')), total: Number(t(p, 'vProd')) }; }),
+    parcelas: [...inf.getElementsByTagName('dup')].map(d => ({ numero: t(d, 'nDup'), vencimento: t(d, 'dVenc'), valor: Number(t(d, 'vDup')) }))
+  };
+}
+// Sugere o insumo pelo vínculo já feito ou pelas palavras do nome
+function sugerir(nf, item) {
+  const k = nf.emitCnpj + '|' + item.codigo; if (vinculos[k]) return vinculos[k];
+  const pal = normalizar(item.nome).split(/[^a-z0-9]+/).filter(p => p.length > 3);
+  let melhor = '', pontos = 0;
+  INSUMOS.forEach(i => { const n = normalizar(i.nome); const p = pal.filter(w => n.includes(w)).length; if (p > pontos) { pontos = p; melhor = i.id; } });
+  return melhor;
+}
+
+function conferir(nf) {
+  const emp = EMPRESAS.find(e => e.cnpj === nf.destCnpj);
+  const forn = FORNECEDORES.find(f => f.cnpj === nf.emitCnpj);
+  const repetida = nf.chave && notas.some(n => n.chave === nf.chave);
+  const unidades = UNIDADES.filter(u => u.id !== 'todas' && emp && UNIDADE_EMPRESA[u.id] === emp.id);
+  const parcelas = nf.parcelas.length ? nf.parcelas : [{ numero: '001', vencimento: diasDaqui(30), valor: nf.valor }];
+  const alerta = !emp ? `<div class="aviso perigo">O CNPJ de destino (${fmtDoc(nf.destCnpj)}) não é de nenhuma das 3 empresas. Confira se a nota é mesmo da Gran Sabor.</div>`
+    : repetida ? '<div class="aviso perigo">Esta nota já foi lançada (mesma chave). Não dá para lançar de novo.</div>' : '';
+  janela(`NF ${nf.numero}/${nf.serie} · ${nf.emitNome}`, `${alerta}
+    <div class="form-grade">
+      <label class="c4">Fornecedor<span class="valor-fixo">${esc(nf.emitNome)}<small>${fmtDoc(nf.emitCnpj)} · ${forn ? '<span class="etiqueta completa">cadastrado</span>' : '<span class="etiqueta pendente">novo: será cadastrado</span>'}</small></span></label>
+      <label class="c4">Destino<span class="valor-fixo">${emp ? etqEmpresa(emp.id) : '<span class="etiqueta perigo">desconhecido</span>'}<small>${fmtDoc(nf.destCnpj)}</small></span></label>
+      <label class="c2">Emissão<span class="valor-fixo">${dataBR(nf.emissao + 'T12:00')}</span></label>
+      <label class="c2">Valor<span class="valor-fixo">${reais(nf.valor)}</span></label>
+      <label class="c4">Entrada no estoque de<select name="unidade" class="campo">${unidades.map(u => `<option value="${u.id}">${esc(u.nome)}</option>`).join('')}</select></label>
+      <label class="c4">Categoria no contas a pagar<select name="categoria" class="campo">${CATEGORIAS.filter(k => k.dre === 'CMV').map(k => `<option value="${k.id}"${forn && normalizar(k.nome).startsWith(normalizar(forn.categoria).slice(0, 5)) ? ' selected' : ''}>${k.codigo} ${esc(k.nome)}</option>`).join('')}</select></label>
+    </div>
+    <h3 class="sub-tit">Itens · ligue cada item ao insumo (o sistema lembra nas próximas notas)</h3>
+    <div class="rolagem"><table class="tabela"><thead><tr><th>Produto na nota</th><th class="num">Qtd</th><th>Un.</th><th class="num">Unitário</th><th class="num">Total</th><th>Insumo</th><th class="num">Fator</th></tr></thead><tbody>${
+      nf.itens.map((it, i) => `<tr><td>${esc(it.nome)}<small class="sub"> NCM ${esc(it.ncm)}</small></td><td class="num">${numero(it.qtd, 3)}</td><td>${esc(it.un)}</td><td class="num">${reais(it.vun)}</td><td class="num">${reais(it.total)}</td>
+        <td><select class="campo campo-mini" data-item="${i}"><option value="">— não ligado —</option>${INSUMOS.map(x => `<option value="${x.id}"${x.id === sugerir(nf, it) ? ' selected' : ''}>${esc(x.nome)} (${x.un})</option>`).join('')}</select></td>
+        <td class="num"><input class="campo campo-mini" data-fator="${i}" value="1" inputmode="decimal" title="Quantas unidades de estoque vêm em 1 ${esc(it.un)} (ex.: caixa com 12 = 12)" style="width:56px"></td></tr>`).join('')}</tbody></table></div>
+    <h3 class="sub-tit">Parcelas · vão para contas a pagar</h3>
+    <div class="rolagem"><table class="tabela"><thead><tr><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>${
+      parcelas.map(p => `<tr><td>${esc(p.numero)}</td><td>${dataBR(p.vencimento + 'T12:00')}</td><td class="num">${reais(p.valor)}</td></tr>`).join('')}</tbody></table></div>
+    ${nf.parcelas.length ? '' : '<div class="form-nota">A nota não trouxe parcelas: foi criada uma, para 30 dias. Ajuste em contas a pagar se precisar.</div>'}`,
+    emp && !repetida ? 'Lançar entrada' : 'Fechar', f => {
+      if (!emp || repetida) return;
+      const sels = [...f.querySelectorAll('[data-item]')];
+      sels.forEach(s => { if (s.value) vinculos[nf.emitCnpj + '|' + nf.itens[+s.dataset.item].codigo] = s.value; });
+      const faltam = sels.filter(s => !s.value).length;
+      notas.unshift({ id: 'x' + Date.now(), numero: nf.numero, serie: nf.serie, chave: nf.chave, fornecedor: forn?.id, fornNome: nf.emitNome, empresa: emp.id, unidade: f.unidade.value,
+        emissao: nf.emissao, valor: nf.valor, itens: nf.itens.length, parcelas: parcelas.length, situacao: faltam ? `falta vincular ${faltam} item(ns)` : 'lançada' });
+      desenhar();
+    });
+}
+
+async function abrirArquivos(files) {
+  for (const arq of files) {
+    try { conferir(lerXML(await arq.text())); }
+    catch (e) { janela('Não foi possível ler o arquivo', `<p>${esc(arq.name)}: ${esc(e.message)}</p>`, 'Fechar', () => {}); }
+  }
+}
+
+// XML fictício (estrutura real de NF-e, dados inventados): Atacado Mercearia Central → Empresa 2
+const XML_EXEMPLO = `<?xml version="1.0" encoding="UTF-8"?><nfeProc><NFe><infNFe Id="NFe35251134567890000110550020000120371000120378" versao="4.00">
+<ide><serie>2</serie><nNF>12037</nNF><dhEmi>${hojeISO()}T09:12:00-03:00</dhEmi></ide>
+<emit><CNPJ>34567890000110</CNPJ><xNome>Atacado Mercearia Central</xNome></emit>
+<dest><CNPJ>44555666000110</CNPJ><xNome>Empresa Exemplo Dois Ltda</xNome></dest>
+<det nItem="1"><prod><cProd>7801</cProd><xProd>ARROZ BRANCO TIPO 1 5KG</xProd><NCM>10063021</NCM><CFOP>5102</CFOP><uCom>FD</uCom><qCom>10.0000</qCom><vUnCom>131.50</vUnCom><vProd>1315.00</vProd></prod></det>
+<det nItem="2"><prod><cProd>7802</cProd><xProd>FEIJAO CARIOCA 1KG</xProd><NCM>07133319</NCM><CFOP>5102</CFOP><uCom>FD</uCom><qCom>3.0000</qCom><vUnCom>72.00</vUnCom><vProd>216.00</vProd></prod></det>
+<det nItem="3"><prod><cProd>7810</cProd><xProd>OLEO DE SOJA 900ML CX 20</xProd><NCM>15079011</NCM><CFOP>5102</CFOP><uCom>CX</uCom><qCom>2.0000</qCom><vUnCom>138.00</vUnCom><vProd>276.00</vProd></prod></det>
+<det nItem="4"><prod><cProd>7899</cProd><xProd>SAL REFINADO 1KG</xProd><NCM>25010020</NCM><CFOP>5102</CFOP><uCom>FD</uCom><qCom>1.0000</qCom><vUnCom>29.90</vUnCom><vProd>29.90</vProd></prod></det>
+<total><ICMSTot><vNF>1836.90</vNF></ICMSTot></total>
+<cobr><dup><nDup>001</nDup><dVenc>${diasDaqui(14)}</dVenc><vDup>918.45</vDup></dup><dup><nDup>002</nDup><dVenc>${diasDaqui(28)}</dVenc><vDup>918.45</vDup></dup></cobr>
+</infNFe></NFe></nfeProc>`;
+
+$('arquivo').onchange = e => { abrirArquivos(e.target.files); e.target.value = ''; };
+$('soltar').addEventListener('dragover', e => { e.preventDefault(); $('soltar').classList.add('sobre'); });
+$('soltar').addEventListener('dragleave', () => $('soltar').classList.remove('sobre'));
+$('soltar').addEventListener('drop', e => { e.preventDefault(); $('soltar').classList.remove('sobre'); abrirArquivos(e.dataTransfer.files); });
+$('btnExemplo').onclick = () => conferir(lerXML(XML_EXEMPLO));
+$('btnExportar').onclick = () => exportarCSV('notas-de-entrada', ['Emissão', 'Número', 'Série', 'Fornecedor', 'Empresa', 'Unidade', 'Itens', 'Valor', 'Parcelas', 'Situação'],
+  notas.filter(n => noFiltro(filtro, n)).map(n => [dataBR(n.emissao + 'T12:00'), n.numero, n.serie, n.fornNome, nomeEmpresa(n.empresa), nomeUnidade(n.unidade), n.itens, numero(n.valor, 2), n.parcelas, n.situacao]));
+desenhar();
+</script>
+</body>
+</html>

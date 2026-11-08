@@ -196,6 +196,32 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .form-nota { font-size: 12px; color: var(--texto-3); padding: 4px 0 0; }
 textarea.campo { height: auto; padding: 6px 10px; resize: vertical; }
 
+/* ---------- Telas financeiras ---------- */
+.grade-2.largo { grid-template-columns: minmax(0, 1fr) 300px; }
+@media (max-width: 1480px) { .grade-2.largo { grid-template-columns: minmax(0, 1fr); } .grade-2.largo > .coluna { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); } }
+.btn-mini { height: 24px; padding: 0 8px; font-size: 12px; }
+.etiqueta.perigo { background: var(--perigo-suave); color: var(--perigo); border-color: transparent; }
+.campo-mini { height: 28px; font-size: 12px; padding: 0 6px; }
+select.campo-mini { min-width: 190px; }
+.etiqueta { white-space: nowrap; }
+.fech { padding: 9px 12px; border-bottom: 1px solid var(--borda); }
+.fech:last-child { border-bottom: 0; }
+.fech-topo { display: flex; align-items: center; gap: 8px; }
+.fech-topo .dir { margin-left: auto; font-weight: 650; font-variant-numeric: tabular-nums; }
+.fech > small { display: block; margin: 2px 0 6px; }
+.etapas { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.etapas span { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: var(--fundo); color: var(--texto-3); }
+.etapas span.feita { background: var(--ok-suave); color: var(--ok); font-weight: 600; }
+.etapas .btn { margin-left: auto; }
+.soltar { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 12px; padding: 22px 12px; border: 1.5px dashed var(--borda-forte); border-radius: 8px; color: var(--texto-2); cursor: pointer; text-align: center; }
+.soltar b { color: var(--texto); }
+.soltar:hover, .soltar.sobre { border-color: var(--marca); background: var(--marca-suave); }
+.aviso { padding: 8px 10px; border-radius: 6px; margin: 6px 0; font-size: 12.5px; }
+.aviso.perigo { background: var(--perigo-suave); color: var(--perigo); }
+.valor-fixo { display: block; color: var(--texto); font-weight: 600; font-size: 13px; padding-top: 2px; }
+.valor-fixo small { display: block; font-weight: 400; color: var(--texto-3); font-size: 11.5px; }
+.sub-tit { font-size: 12px; color: var(--texto-2); margin: 12px 0 4px; font-weight: 600; }
+
 /* ---------- Login ---------- */
 .login { min-height: 100dvh; display: grid; place-items: center; padding: 16px; }
 .login-caixa { width: min(360px, 100%); background: var(--superficie); border: 1px solid var(--borda); border-radius: 10px; padding: 22px; }
@@ -225,7 +251,7 @@ textarea.campo { height: auto; padding: 6px 10px; resize: vertical; }
   .menu { position: fixed; top: var(--topo-alt); bottom: 0; left: 0; width: 280px; z-index: 40; transform: translateX(-100%); transition: transform .18s; box-shadow: var(--sombra); }
   .casca.menu-aberto .menu { transform: none; }
   .casca.menu-aberto::after { content: ""; position: fixed; inset: var(--topo-alt) 0 0 0; background: rgba(35, 32, 28, .3); z-index: 30; }
-  .grade-2 { grid-template-columns: minmax(0, 1fr); }
+  .grade-2, .grade-2.largo { grid-template-columns: minmax(0, 1fr); }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi { border-bottom: 1px solid var(--borda); }
   .tela { padding: 10px 10px 20px; }
