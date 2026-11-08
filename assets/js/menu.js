@@ -61,7 +61,7 @@ const MENU = [
     { id: 'orcamento',      nome: 'Orçamento e metas' }
   ]},
   { grupo: 'Cadastros', icone: 'cadastros', itens: [
-    { id: 'unidades',       nome: 'Empresas e unidades' },
+    { id: 'unidades',       nome: 'Empresas e unidades', arquivo: 'pages/unidades.html' },
     { id: 'produtos',       nome: 'Cardápio e produtos' },
     { id: 'insumos',        nome: 'Insumos' },
     { id: 'fornecedores',   nome: 'Fornecedores' },
@@ -84,6 +84,12 @@ const UNIDADES = [
   { id: 'central',  nome: 'Central de carnes' },
   { id: 'escritorio', nome: 'Escritório' }
 ];
+
+// Depois do login, a casca guarda as unidades do banco; aqui elas substituem a lista padrão
+try {
+  const doBanco = JSON.parse(localStorage.getItem('gs_unidadesBanco'));
+  if (Array.isArray(doBanco) && doBanco.length) UNIDADES.splice(1, UNIDADES.length, ...doBanco);
+} catch {}
 
 /* Todas as telas numa lista só (para abas e busca) */
 const TELAS = MENU.flatMap(m => m.itens ? m.itens.map(i => ({ ...i, grupo: m.grupo })) : [m]);

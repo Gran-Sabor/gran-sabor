@@ -29,6 +29,7 @@ async function iniciar() {
   $('btnSair').onclick = sair;
   if (!MODO_DEMO) { $('avatar').onclick = $('usuarioNome').onclick = trocarSenha; $('usuarioNome').title = 'Trocar minha senha'; }
 
+  if (!MODO_DEMO) await atualizarUnidades();
   montarUnidades();
   montarMenu();
   abas = lembrar('abas', [{ id: 'inicio' }]).filter(a => acharTela(a.id));
@@ -76,10 +77,19 @@ function trocarSenha() {
 }
 
 /* ---------- Unidade escolhida (vale para todas as telas) ---------- */
+// Lê as unidades ativas do banco (nome e ordem podem mudar na tela Empresas e unidades)
+async function atualizarUnidades() {
+  const { data, error } = await db.from('unidades').select('codigo, nome, tipo').eq('ativo', true).order('ordem').order('nome');
+  if (error || !data?.length) return;
+  const lst = data.map(u => ({ id: u.codigo, nome: u.nome, tipo: u.tipo }));
+  UNIDADES.splice(1, UNIDADES.length, ...lst);
+  guardar('unidadesBanco', lst);
+}
 function montarUnidades() {
   const s = $('unidade');
   s.innerHTML = UNIDADES.map(u => `<option value="${u.id}">${esc(u.nome)}</option>`).join('');
-  s.value = lembrar('unidade', 'todas');
+  const escolhida = lembrar('unidade', 'todas');
+  s.value = UNIDADES.some(u => u.id === escolhida) ? escolhida : 'todas';
   s.onchange = () => {
     guardar('unidade', s.value);
     Object.values(quadros).forEach(q => q.contentWindow?.postMessage({ tipo: 'unidade', valor: s.value }, '*'));
@@ -207,6 +217,7 @@ function mostrarAlertas() {
 window.addEventListener('message', e => {
   if (e.origin !== location.origin) return;
   if (e.data?.tipo === 'abrir') abrir(e.data.id);
+  if (e.data?.tipo === 'unidades' && !MODO_DEMO) atualizarUnidades().then(montarUnidades);
 });
 
 document.addEventListener('DOMContentLoaded', () => {
