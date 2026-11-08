@@ -88,9 +88,14 @@ const fmtDoc = c => { c = String(c || '').replace(/[^0-9A-Za-z]/g, '').toUpperCa
       ele mudou desde que a janela abriu, NÃO confirma: mostra o valor novo.
    ===================================================================== */
 // Um único conjunto de dados para todas as abas do sistema (as abas são iframes da mesma casca)
+// A casca = a janela mais de cima que ainda é do próprio sistema (na prévia, o sistema roda dentro de outra página)
+function casca() {
+  let w = window;
+  try { while (w.parent !== w && w.parent.location.origin === location.origin) w = w.parent; } catch {}
+  return w;
+}
 function dadoComum(nome, criar) {
-  let raiz = window;
-  try { if (window.top !== window && window.top.location.origin === location.origin) raiz = window.top; } catch {}
+  const raiz = casca();
   const loja = raiz.__gsDados || (raiz.__gsDados = {});
   if (!(nome in loja)) loja[nome] = criar();
   return loja[nome];
@@ -100,7 +105,7 @@ const _idTela = Math.random().toString(36).slice(2);   // para a tela não reagi
 const _canalDados = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('gs-dados') : null;
 function avisarMudanca(...tabelas) {
   const msg = { tipo: 'dados', tabelas, quando: Date.now(), de: _idTela };
-  let raiz = window; try { raiz = window.top; } catch {}
+  const raiz = casca();
   const frames = [raiz, ...Array.from({ length: raiz.frames.length }, (_, i) => raiz.frames[i])];
   frames.forEach(f => { try { f.postMessage(msg, location.origin); } catch {} });
   try { _canalDados?.postMessage(msg); } catch {}
