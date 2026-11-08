@@ -47,7 +47,8 @@ const MENU = [
     { id: 'ponto',          nome: 'Ponto e horas extras' },
     { id: 'holerites',      nome: 'Holerites' },
     { id: 'ferias',         nome: 'Férias' },
-    { id: 'folha',          nome: 'Fechamento da folha' }
+    { id: 'folha',          nome: 'Fechamento da folha' },
+    { id: 'eventos_folha',  nome: 'Eventos da folha', arquivo: 'pages/rh-eventos.html' }
   ]},
   { grupo: 'Marketing', icone: 'marketing', itens: [
     { id: 'campanhas',      nome: 'Campanhas e promoções' },
@@ -63,10 +64,11 @@ const MENU = [
   { grupo: 'Cadastros', icone: 'cadastros', itens: [
     { id: 'unidades',       nome: 'Empresas e unidades', arquivo: 'pages/unidades.html' },
     { id: 'produtos',       nome: 'Cardápio e produtos' },
-    { id: 'insumos',        nome: 'Insumos' },
-    { id: 'fornecedores',   nome: 'Fornecedores' },
+    { id: 'insumos',        nome: 'Insumos', arquivo: 'pages/cad-insumos.html' },
+    { id: 'fornecedores',   nome: 'Fornecedores', arquivo: 'pages/cad-fornecedores.html' },
     { id: 'clientes',       nome: 'Clientes e convênios' },
-    { id: 'plano_contas',   nome: 'Plano de contas' }
+    { id: 'plano_contas',   nome: 'Categorias financeiras', arquivo: 'pages/cad-categorias.html' },
+    { id: 'centros_custo',  nome: 'Centros de custo', arquivo: 'pages/cad-centros.html' }
   ]},
   { grupo: 'Configurações', icone: 'config', itens: [
     { id: 'usuarios',       nome: 'Usuários e acessos' },

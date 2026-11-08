@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centros de custo</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=4">
+</head>
+<body>
+<script src="../assets/js/menu.js?v=3"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=3"></script>
+<script src="../assets/js/exemplo.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=1"></script>
+<script>
+/* Centro de custo = unidade + setor. A empresa vem da unidade, então todo
+   gasto lançado num centro já cai na empresa certa. */
+const SETORES = { cozinha: 'Cozinha', salao: 'Salão e caixa', delivery: 'Delivery', acougue: 'Açougue e cortes', estoque: 'Armazenagem', logistica: 'Entrega às lojas', adm: 'Administrativo', financeiro: 'Financeiro e RH' };
+montarCadastro({
+  titulo: 'Centros de custo', sub: 'Onde o gasto acontece: unidade + setor (a empresa vem da unidade)',
+  novoRotulo: 'Novo centro de custo', tituloLista: 'Centros por unidade',
+  dados: CENTROS,
+  escopo: l => ({ empresa: l.empresa, unidade: l.unidade }),
+  agrupar: l => `${nomeUnidade(l.unidade)} · ${nomeEmpresa(l.empresa)}`,
+  colunas: [
+    { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
+    { campo: 'nome', titulo: 'Centro de custo', fmt: v => `<b>${esc(v)}</b>` },
+    { campo: 'unidade', titulo: 'Unidade', fmt: v => esc(nomeUnidade(v)) },
+    { campo: 'empresa', titulo: 'Empresa', fmt: etqEmpresa, busca: l => nomeEmpresa(l.empresa) },
+    { campo: 'ativo', titulo: 'Ativo', fmt: sim }
+  ],
+  kpis: v => [
+    ['Centros de custo', v.length, 'no filtro atual'],
+    ...EMPRESAS.map(e => [e.nome, v.filter(c => c.empresa === e.id).length, 'centros'])
+  ],
+  campos: [
+    { campo: 'unidade', titulo: 'Unidade', tipo: 'select', opcoes: () => UNIDADES.filter(u => u.id !== 'todas').map(u => [u.id, u.nome]), larg: 'c4', obrig: true },
+    { campo: 'setor', titulo: 'Setor', tipo: 'select', opcoes: Object.entries(SETORES), larg: 'c4' },
+    { campo: 'nome', titulo: 'Nome', obrig: true, larg: 'c4', max: 40 },
+    { campo: 'codigo', titulo: 'Código', larg: 'c3', max: 6 },
+    { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c3' }
+  ],
+  novo: f => ({ unidade: f.unidade || 'loja1', setor: 'cozinha', ativo: true }),
+  validar: d => { d.empresa = UNIDADE_EMPRESA[d.unidade]; return ''; },
+  rodapeForm: () => 'A empresa é definida pela unidade escolhida.'
+});
+</script>
+</body>
+</html>

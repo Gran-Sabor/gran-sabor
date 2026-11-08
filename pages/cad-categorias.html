@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Categorias financeiras</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=4">
+</head>
+<body>
+<script src="../assets/js/menu.js?v=3"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=3"></script>
+<script src="../assets/js/exemplo.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=1"></script>
+<script>
+/* Categorias financeiras (plano de contas gerencial). Valem para as 3 empresas;
+   o resultado (DRE) sai separado por empresa porque cada lançamento tem empresa. */
+const TIPO = { receita: 'Receita', despesa: 'Despesa' }, NAT = { fixa: 'Fixa', variavel: 'Variável' };
+const LINHAS_DRE = ['Receita bruta', 'Impostos sobre vendas', 'Deduções', 'CMV', 'Pessoal', 'Ocupação', 'Administrativas', 'Financeiras'];
+montarCadastro({
+  titulo: 'Categorias financeiras', sub: 'Plano de contas gerencial · usado em contas a pagar, a receber e no resultado',
+  novoRotulo: 'Nova categoria', tituloLista: 'Categorias por linha do resultado', porUnidade: false,
+  dados: CATEGORIAS,
+  agrupar: l => l.dre,
+  colunas: [
+    { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
+    { campo: 'nome', titulo: 'Categoria', fmt: v => `<b>${esc(v)}</b>` },
+    { campo: 'tipo', titulo: 'Tipo', fmt: v => `<span class="etiqueta ${v === 'receita' ? 'completa' : ''}">${TIPO[v]}</span>` },
+    { campo: 'natureza', titulo: 'Natureza', fmt: v => NAT[v] || '—' },
+    { campo: 'dre', titulo: 'Linha do resultado' },
+    { campo: 'ativo', titulo: 'Ativa', fmt: sim }
+  ],
+  kpis: (v, todos) => [
+    ['Categorias', v.length, `${todos.filter(c => !c.ativo).length} inativa(s)`],
+    ['Receitas', v.filter(c => c.tipo === 'receita').length, 'entradas de dinheiro'],
+    ['Despesas fixas', v.filter(c => c.tipo === 'despesa' && c.natureza === 'fixa').length, 'pesam todo mês'],
+    ['Despesas variáveis', v.filter(c => c.tipo === 'despesa' && c.natureza === 'variavel').length, 'acompanham as vendas']
+  ],
+  campos: [
+    { campo: 'codigo', titulo: 'Código', obrig: true, larg: 'c3', max: 10, dica: 'ex.: 5.05', somenteLeitura: true },
+    { campo: 'nome', titulo: 'Nome', obrig: true, larg: 'c9', max: 60 },
+    { campo: 'tipo', titulo: 'Tipo', tipo: 'select', opcoes: Object.entries(TIPO), larg: 'c3' },
+    { campo: 'natureza', titulo: 'Natureza', tipo: 'select', opcoes: Object.entries(NAT), larg: 'c3' },
+    { campo: 'dre', titulo: 'Linha do resultado (DRE)', tipo: 'select', opcoes: LINHAS_DRE.map(x => [x, x]), larg: 'c4' },
+    { campo: 'ativo', titulo: 'Ativa', tipo: 'check', larg: 'c2' }
+  ],
+  novo: () => ({ tipo: 'despesa', natureza: 'variavel', dre: 'Administrativas', ativo: true }),
+  validar: (d, item, lista) => !/^\d\.\d{2}$/.test(d.codigo || item.codigo) ? 'Código no formato 0.00 (ex.: 5.05).'
+    : !item.id && lista.some(c => c.codigo === d.codigo) ? 'Já existe uma categoria com esse código.' : '',
+  gerarId: d => d.codigo
+});
+</script>
+</body>
+</html>

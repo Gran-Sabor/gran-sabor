@@ -180,6 +180,22 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .etiqueta.pendente { background: var(--alerta-suave); color: var(--alerta); border-color: transparent; cursor: help; }
 .etiqueta.completa { background: var(--ok-suave); color: var(--ok); border-color: transparent; }
 
+/* ---------- Filtros padrão (empresa · unidade · período · busca) ---------- */
+.filtros { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.filtros .campo { width: auto; height: 30px; font-size: 12.5px; }
+.filtros .busca { flex: 1; min-width: 180px; }
+.abas-tela { display: flex; gap: 2px; margin-bottom: 10px; border-bottom: 1px solid var(--borda); }
+.abas-tela button { border: 0; background: none; padding: 6px 12px; font-size: 12.5px; color: var(--texto-2); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.abas-tela button.ativa { color: var(--marca-texto); font-weight: 600; border-bottom-color: var(--marca); }
+.tabela tr.grupo td { background: var(--superficie-2); font-weight: 600; font-size: 11.5px; color: var(--texto-2); text-transform: uppercase; letter-spacing: .03em; cursor: default; }
+.tabela td.vazio { padding: 24px; }
+.etiqueta.emp { background: color-mix(in srgb, var(--c) 12%, white); color: var(--c); border-color: transparent; }
+.multi { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 0; color: var(--texto); }
+.multi label { display: inline-flex; flex-direction: row; align-items: center; gap: 5px; font-size: 13px; color: var(--texto); }
+.form-grade .c5 { grid-column: span 5; } .form-grade .c9 { grid-column: span 9; } .form-grade .c12 { grid-column: span 12; }
+.form-nota { font-size: 12px; color: var(--texto-3); padding: 4px 0 0; }
+textarea.campo { height: auto; padding: 6px 10px; resize: vertical; }
+
 /* ---------- Login ---------- */
 .login { min-height: 100dvh; display: grid; place-items: center; padding: 16px; }
 .login-caixa { width: min(360px, 100%); background: var(--superficie); border: 1px solid var(--borda); border-radius: 10px; padding: 22px; }
@@ -215,6 +231,8 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .tela { padding: 10px 10px 20px; }
   .form-grade { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .c1, .c2, .c3 { grid-column: span 3; } .c4, .c6, .c7, .c8 { grid-column: span 6; }
+  .form-grade .c5, .form-grade .c9, .form-grade .c12 { grid-column: span 6; }
+  .filtros .campo { flex: 1 1 45%; } .filtros .busca { flex-basis: 100%; }
   .veu { padding: 0; place-items: end stretch; }
   .janela.larga { max-height: 100dvh; border-radius: 10px 10px 0 0; }
 }
