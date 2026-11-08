@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ficha técnica</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=7">
+<style>
+  .ficha-cab { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid var(--borda); }
+  .ficha-cab h2 { font-size: 15px; margin: 0; }
+  .preparo { padding: 10px 12px; font-size: 12.5px; color: var(--texto-2); border-top: 1px solid var(--borda); }
+  .produzir { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--borda); font-size: 12.5px; }
+  .produzir .campo { width: 90px; }
+  #lista .lista-linha { cursor: pointer; } #lista .lista-linha.ativa { background: var(--marca-suave); }
+  @media (max-width: 860px) { #tabItens th:nth-child(3), #tabItens td:nth-child(3), #tabItens th:nth-child(5), #tabItens td:nth-child(5) { display: none; } }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Ficha técnica</h1><span class="sub">Receita padrão de cada preparo · custo atualizado pelo custo médio dos insumos</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn btn-pri" id="btnNovo">+ Nova ficha</button></div></div>
+  <div id="filtros"></div>
+  <section class="kpis" id="kpis"></section>
+  <div class="grade-2 lista-detalhe">
+    <section class="cartao"><div class="cartao-cab"><h2>Preparos</h2><span class="dir sub" id="contagem"></span></div><div id="lista"></div></section>
+    <section class="cartao" id="detalhe"></section>
+  </div>
+</div>
+
+<script src="../assets/js/menu.js?v=5"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Regras (exemplo):
+   - A ficha é a receita padrão da Gran Sabor, igual nas 3 empresas.
+   - Quantidade bruta = o que sai do estoque. Fator de correção = perda na limpeza
+     (ex.: 1,15 na picanha = 15% de aparas). Líquida = bruta ÷ fator.
+   - Custo do preparo = Σ bruta × custo médio; custo por kg = custo ÷ rendimento.
+   - O filtro de empresa mostra o preço e a margem dos produtos daquela empresa. */
+// Mesmas fichas de todas as abas: mudou aqui, o cardápio recalcula a margem sozinho
+const fichas = FICHAS;
+let atual = fichas[0].id, produzir = null;
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, unidade: false, placeholder: 'Preparo, grupo ou insumo… (atalho: /)' });
+const qtd = (v, i) => `${numero(v, insumo(i).un === 'kg' ? 2 : 1)} ${insumo(i).un}`;
+const textoBusca = f => [f.nome, f.codigo, f.grupo, f.itens.map(i => insumo(i.insumo).nome).join(' ')].join(' ');
+const usadaEm = f => PRODUTOS_VENDA.filter(p => p.comp.some(c => c.tipo === 'ficha' && c.ref === f.id));
+
+function desenhar() {
+  const v = fichas.filter(f => casaBusca(textoBusca(f), filtro.busca));
+  if (v.length && !v.some(f => f.id === atual)) atual = v[0].id;
+  const custos = v.map(f => custoFicha(f).kg);
+  const maior = v.reduce((m, f) => !m || custoFicha(f).kg > custoFicha(m).kg ? f : m, null);
+  $('kpis').innerHTML = [
+    ['Fichas', v.length, `${new Set(v.map(f => f.grupo)).size} grupos`],
+    ['Custo médio por kg', reais(custos.length ? custos.reduce((a, x) => a + x, 0) / custos.length : 0), 'média simples dos preparos'],
+    ['Preparo mais caro', maior ? esc(maior.nome) : '—', maior ? reais(custoFicha(maior).kg) + '/kg' : ''],
+    ['Sem uso no cardápio', v.filter(f => !usadaEm(f).length).length, 'não entram em nenhum produto']
+  ].map(([t, val, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${val}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  $('contagem').textContent = `${v.length} de ${fichas.length}`;
+  const grupos = {}; v.forEach(f => (grupos[f.grupo] ||= []).push(f));
+  $('lista').innerHTML = Object.entries(grupos).map(([g, fs]) => `<div class="sub-tit" style="padding:6px 12px">${esc(g)}</div>` + fs.map(f =>
+    `<div class="lista-linha${f.id === atual ? ' ativa' : ''}" data-id="${f.id}" tabindex="0"><div><b>${esc(f.nome)}</b><small>${f.codigo} · rende ${numero(f.rende, 1)} kg</small></div>
+      <span class="dir">${reais(custoFicha(f).kg)}<small style="font-weight:400">por kg</small></span></div>`).join('')).join('') || '<div class="vazio">Nenhuma ficha encontrada.</div>';
+  desenharDetalhe(fichas.find(f => f.id === atual));
+}
+
+function desenharDetalhe(f) {
+  if (!f) { $('detalhe').innerHTML = '<div class="vazio">Escolha um preparo.</div>'; return; }
+  const c = custoFicha(f), fator = produzir ? produzir / f.rende : null;
+  const emps = filtro.empresa ? [filtro.empresa] : EMPRESAS.map(e => e.id);
+  $('detalhe').innerHTML = `<div class="ficha-cab"><h2>${esc(f.nome)}</h2><span class="sub mono">${f.codigo}</span><span class="etiqueta">${esc(f.grupo)}</span>
+      <span class="sub">Rende <b>${numero(f.rende, 1)} kg</b> · porção ${numero(f.porcao)} g · ${numero(f.tempo)} min</span>
+      <span class="dir" style="margin-left:auto"><button type="button" class="btn btn-mini" id="btnEditar">Editar</button></span></div>
+    <section class="kpis" style="border:0;border-bottom:1px solid var(--borda);border-radius:0">
+      ${[['Custo do preparo', reais(c.total)], ['Custo por kg', reais(c.kg)], [`Custo da porção (${numero(f.porcao)} g)`, reais(c.kg * f.porcao / 1000)], ['Itens', f.itens.length]]
+        .map(([t, val]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${val}</div></div>`).join('')}</section>
+    <div class="produzir">Vou produzir <input class="campo" id="qProd" inputmode="decimal" placeholder="${numero(f.rende, 1)}"> kg
+      <span class="sub">${fator ? `separe as quantidades da coluna "Separar" (${numero(fator, 2)}× a receita)` : 'informe para calcular quanto separar do estoque'}</span></div>
+    <div class="rolagem"><table class="tabela" id="tabItens"><thead><tr><th>Insumo</th><th class="num">Bruta</th><th class="num">Fator</th><th class="num">Líquida</th><th class="num">Custo médio</th><th class="num">Custo</th><th class="num">% do custo</th>${fator ? '<th class="num">Separar</th>' : ''}</tr></thead><tbody>
+    ${f.itens.map(it => { const i = insumo(it.insumo), custo = it.qtd * i.custo;
+      return `<tr><td><b>${esc(i.nome)}</b></td><td class="num">${qtd(it.qtd, it.insumo)}</td><td class="num">${numero(it.fc, 2)}</td><td class="num">${qtd(it.qtd / it.fc, it.insumo)}</td>
+        <td class="num">${reais(i.custo)}/${esc(i.un)}</td><td class="num">${reais(custo)}</td><td class="num">${pct(c.total ? custo / c.total * 100 : 0)}</td>${fator ? `<td class="num"><b>${qtd(it.qtd * fator, it.insumo)}</b></td>` : ''}</tr>`; }).join('')}</tbody>
+    <tfoot><tr><td><b>Total</b></td><td colspan="4"></td><td class="num"><b>${reais(c.total)}</b></td><td class="num">100%</td>${fator ? `<td class="num"><b>${reais(c.total * fator)}</b></td>` : ''}</tr></tfoot></table></div>
+    <div class="preparo"><b>Modo de preparo.</b> ${esc(f.preparo) || '<span class="sub">não informado</span>'}</div>
+    <div class="sub-tit" style="padding:8px 12px 0">Usada em</div>
+    <table class="tabela"><thead><tr><th>Produto</th><th class="num">Quanto usa</th>${emps.map(e => `<th class="num">${etqEmpresa(e)} margem</th>`).join('')}</tr></thead><tbody>
+    ${usadaEm(f).map(p => { const comp = p.comp.find(x => x.ref === f.id);
+      return `<tr><td><a href="#" data-abrir="produtos">${esc(p.nome)}</a></td><td class="num">${numero(comp.qtd * 1000)} g${p.un === 'kg' ? ' por kg' : ''}</td>
+        ${emps.map(e => { const m = margemProduto(p, e); return `<td class="num ${m.cmv > metaCMV(p) ? 'desce' : 'sobe'}" title="CMV ${pct(m.cmv)}">${pct(m.pct)}</td>`; }).join('')}</tr>`; }).join('')
+    || `<tr><td colspan="${2 + emps.length}" class="vazio">Ainda não entra em nenhum produto do cardápio.</td></tr>`}</tbody></table>`;
+  $('qProd').value = produzir ? numero(produzir, 1) : '';
+  $('qProd').onchange = e => { const n = Number(e.target.value.replace(/\./g, '').replace(',', '.')); produzir = n > 0 ? n : null; desenharDetalhe(f); };
+  $('btnEditar').onclick = () => editar(f);
+}
+
+/* ---------- Editar / nova ficha ---------- */
+function editar(f) {
+  const novo = !f; const foto = f ? JSON.parse(JSON.stringify(f)) : null; f = f || { id: 'fc' + Date.now(), codigo: 'FC' + String(fichas.length + 1).padStart(2, '0'), nome: '', grupo: 'Guarnições', rende: 1, porcao: 100, tempo: 30, preparo: '', ativo: true, itens: [{ insumo: 'i06', qtd: 1, fc: 1 }] };
+  const n = x => Number(String(x).replace(/\./g, '').replace(',', '.'));
+  const v = janela(novo ? 'Nova ficha técnica' : `Editar · ${f.nome}`, `
+    <div class="form-grade">
+      <label class="c6">Preparo *<input name="nome" class="campo" maxlength="60" value="${esc(f.nome)}"></label>
+      <label class="c3">Código<input name="codigo" class="campo" maxlength="10" value="${esc(f.codigo)}"></label>
+      <label class="c3">Grupo<select name="grupo" class="campo">${['Carnes', 'Guarnições', 'Saladas', 'Sobremesas', 'Molhos'].map(g => `<option${g === f.grupo ? ' selected' : ''}>${g}</option>`).join('')}</select></label>
+      <label class="c4">Rendimento (kg pronto) *<input name="rende" class="campo" inputmode="decimal" value="${numero(f.rende, 2)}"></label>
+      <label class="c4">Porção (g)<input name="porcao" class="campo" inputmode="numeric" value="${f.porcao}"></label>
+      <label class="c4">Tempo (min)<input name="tempo" class="campo" inputmode="numeric" value="${f.tempo}"></label>
+    </div>
+    <table class="tabela"><thead><tr><th>Insumo</th><th class="num" style="width:110px">Qtd. bruta</th><th class="num" style="width:90px" title="1,00 = sem perda; 1,15 = 15% de perda na limpeza">Fator</th><th class="num">Custo</th><th></th></tr></thead><tbody id="itens"></tbody></table>
+    <button type="button" class="btn btn-mini" id="mais">+ insumo</button>
+    <label>Modo de preparo<textarea name="preparo" class="campo" rows="2" maxlength="400">${esc(f.preparo)}</textarea></label>
+    <div class="form-nota" id="resumo"></div>`, 'Salvar', fm => {
+    const itens = [...fm.querySelectorAll('#itens tr')].map(tr => ({ insumo: tr.querySelector('select').value, qtd: n(tr.querySelector('[data-q]').value), fc: n(tr.querySelector('[data-fc]').value) || 1 })).filter(i => i.qtd > 0);
+    if (!fm.nome.value.trim()) return 'Informe o nome do preparo.';
+    if (!(n(fm.rende.value) > 0)) return 'Informe o rendimento.';
+    if (!itens.length) return 'Inclua ao menos um insumo.';
+    if (itens.some(i => i.fc < 1)) return 'O fator de correção não pode ser menor que 1,00.';
+    if (!novo) { const m = mudouDesde(foto, fichas.find(x => x.id === f.id), Object.keys(foto), 'Esta ficha'); if (m) return m; }
+    Object.assign(f, { nome: fm.nome.value.trim(), codigo: fm.codigo.value.trim(), grupo: fm.grupo.value, rende: n(fm.rende.value), porcao: n(fm.porcao.value) || 0, tempo: n(fm.tempo.value) || 0, preparo: fm.preparo.value.trim(), itens });
+    if (novo) fichas.push(f); atual = f.id; desenhar(); avisarMudanca('fichas');
+  });
+  const fm = v.querySelector('form');
+  const linha = it => { const tr = document.createElement('tr');
+    tr.innerHTML = `<td><select class="campo">${INSUMOS.map(i => `<option value="${i.id}"${i.id === it.insumo ? ' selected' : ''}>${esc(i.nome)} (${esc(i.un)})</option>`).join('')}</select></td>
+      <td><input class="campo" data-q inputmode="decimal" value="${it.qtd ? numero(it.qtd, 2) : ''}"></td><td><input class="campo" data-fc inputmode="decimal" value="${numero(it.fc || 1, 2)}"></td>
+      <td class="num" data-c></td><td><button type="button" class="btn btn-ico" aria-label="Tirar insumo" data-tirar>${icone('fechar')}</button></td>`;
+    $('itens').appendChild(tr); };
+  const calc = () => { let tot = 0;
+    fm.querySelectorAll('#itens tr').forEach(tr => { const c = (n(tr.querySelector('[data-q]').value) || 0) * insumo(tr.querySelector('select').value).custo; tot += c; tr.querySelector('[data-c]').textContent = reais(c); });
+    const r = n(fm.rende.value) || 0; $('resumo').textContent = `Custo do preparo ${reais(tot)} · por kg ${r ? reais(tot / r) : '—'}. A quantidade bruta é a que sai do estoque.`; };
+  f.itens.forEach(linha);
+  $('mais').onclick = () => { linha({}); calc(); };
+  fm.addEventListener('input', calc); fm.addEventListener('change', calc);
+  fm.addEventListener('click', e => { if (e.target.closest('[data-tirar]') && fm.querySelectorAll('#itens tr').length > 1) { e.target.closest('tr').remove(); calc(); } });
+  calc();
+}
+
+$('lista').onclick = e => { const l = e.target.closest('[data-id]'); if (!l) return; atual = l.dataset.id; produzir = null; desenhar();
+  if (matchMedia('(max-width: 860px)').matches) $('detalhe').scrollIntoView({ behavior: 'smooth' }); };
+$('lista').onkeydown = e => { if (e.key === 'Enter') e.target.closest('[data-id]')?.click(); };
+$('btnNovo').onclick = () => editar();
+$('btnExportar').onclick = () => exportarCSV('fichas-tecnicas', ['Código', 'Preparo', 'Grupo', 'Rende (kg)', 'Insumo', 'Qtd. bruta', 'Un.', 'Fator', 'Custo médio', 'Custo', 'Custo por kg do preparo'],
+  fichas.filter(f => casaBusca(textoBusca(f), filtro.busca)).flatMap(f => f.itens.map(it => { const i = insumo(it.insumo);
+    return [f.codigo, f.nome, f.grupo, numero(f.rende, 2), i.nome, numero(it.qtd, 3), i.un, numero(it.fc, 2), numero(i.custo, 2), numero(it.qtd * i.custo, 2), numero(custoFicha(f).kg, 2)]; })));
+// Custo do insumo mudou (nota de entrada) ou ficha/produto mudou em outra aba: recalcula sozinho
+vigiarDados(['fichas', 'insumos', 'produtos'], desenhar);
+desenhar();
+</script>
+</body>
+</html>

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Contas a receber</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=5">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=7">
 </head>
 <body>
 <div class="tela">
@@ -27,16 +27,15 @@
     <div class="rolagem"><table class="tabela" id="tabTit"></table></div></section>
 </div>
 
-<script src="../assets/js/menu.js?v=4"></script>
+<script src="../assets/js/menu.js?v=5"></script>
 <script src="../assets/js/icones.js?v=1"></script>
-<script src="../assets/js/tela.js?v=4"></script>
-<script src="../assets/js/exemplo.js?v=2"></script>
-<script src="../assets/js/cadastro.js?v=2"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
 <script>
 const hoje = hojeISO();
-let consumos = CONSUMOS_PJ.map(c => ({ ...c }));
-let fechamentos = FECHAMENTOS_PJ.map(f => ({ ...f }));
-let outros = RECEBER_OUTROS.map(r => ({ ...r }));
+// Mesmos dados de todas as abas (o PDV lança consumo, o acerto entre empresas lança título): nada de cópia própria
+const consumos = CONSUMOS_PJ, fechamentos = FECHAMENTOS_PJ, outros = RECEBER_OUTROS;
 let aba = 'pj', proxNota = 2233;
 const cli = id => CLIENTES_PJ.find(c => c.id === id) || {};
 const ETAPAS = ['fechado', 'nota', 'boleto', 'pago'], NOME_ETAPA = { fechado: 'Fechado', nota: 'Nota emitida', boleto: 'Boleto enviado', pago: 'Pago' };
@@ -118,22 +117,28 @@ function fecharPeriodo(c) {
   janela(`Fechar período · ${c.nome}`, `<p>Fechar <b>${numero(ref)} refeições</b> (${ks.length} cupons) no valor de <b>${reais(valor)}</b>?</p>
     <div class="form-nota">Depois de fechado, o consumo novo começa um período novo. O próximo passo é emitir a nota do fechamento e depois o boleto (vencimento em ${c.prazo} dias).</div>`,
     'Fechar período', () => {
-      consumos = consumos.filter(k => k.cliente !== c.id);
+      // Relê o consumo na hora: se entrou ou saiu cupom desde que a janela abriu, não fecha com o valor velho
+      const agora = consumos.filter(k => k.cliente === c.id), vAgora = +agora.reduce((a, k) => a + k.valor, 0).toFixed(2);
+      if (agora.length !== ks.length || vAgora !== valor) { desenhar(); return `O consumo mudou enquanto a janela estava aberta (agora ${agora.length} cupons, ${reais(vAgora)}). Nada foi fechado: feche e confira de novo.`; }
+      for (let i = consumos.length - 1; i >= 0; i--) if (consumos[i].cliente === c.id) consumos.splice(i, 1);
       fechamentos.unshift({ id: 'fx' + Date.now(), cliente: c.id, empresa: c.empresa, unidade: c.unidade, periodo: `Até ${dataBR(hoje + 'T12:00')}`, valor, refeicoes: ref, etapa: 'fechado', nota: '', boleto: '', vencimento: '' });
-      desenhar();
+      desenhar(); avisarMudanca('consumos_pj', 'fechamentos_pj');
     });
 }
 function avancar(f) {
-  const c = cli(f.cliente);
+  const c = cli(f.cliente), foto = { ...f };
+  // Cada etapa confere se o fechamento continua igual ao que a pessoa está vendo (outra aba pode ter avançado ou mudado o valor)
+  const conferir = fazer => fm => { const m = mudouDesde(foto, fechamentos.find(x => x.id === f.id), ['valor', 'etapa', 'cliente'], 'Este fechamento');
+    if (m) { desenhar(); return m; } fazer(fm); desenhar(); avisarMudanca('fechamentos_pj'); };
   if (f.etapa === 'fechado') janela('Emitir nota do fechamento', `<p>${esc(c.nome)} · ${fmtDoc(c.cnpj)} · <b>${reais(f.valor)}</b></p>
       <div class="form-nota">Modelo a confirmar com o contador: (a) as NFC-e de cada refeição já valem e o fechamento sai como fatura listando os cupons; ou (b) NF-e única do período.
-      O sistema terá as duas opções; nunca fecha sem nota.</div>`, 'Emitir nota (simulação)', () => { f.etapa = 'nota'; f.nota = 'NF-e ' + proxNota++; desenhar(); });
+      O sistema terá as duas opções; nunca fecha sem nota.</div>`, 'Emitir nota (simulação)', conferir(() => { f.etapa = 'nota'; f.nota = 'NF-e ' + proxNota++; }));
   else if (f.etapa === 'nota') janela('Gerar boleto', `<div class="form-grade"><label class="c4">Vencimento<input name="venc" type="date" class="campo" value="${diasDaqui(c.prazo)}"></label>
       <label class="c4">Valor<input class="campo" value="${numero(f.valor, 2)}" readonly></label><label class="c4">Banco<input class="campo" value="Banco · ${esc(nomeEmpresa(f.empresa))}" readonly></label></div>
       <div class="form-nota">O boleto sai pela conta da mesma empresa que vendeu. Envio por e-mail ao convênio junto com a nota e o extrato do consumo.</div>`,
-      'Gerar boleto (simulação)', fm => { f.etapa = 'boleto'; f.vencimento = fm.venc.value; desenhar(); });
+      'Gerar boleto (simulação)', conferir(fm => { f.etapa = 'boleto'; f.vencimento = fm.venc.value; }));
   else if (f.etapa === 'boleto') janela('Registrar pagamento', `<div class="form-grade"><label class="c4">Recebido em<input name="data" type="date" class="campo" value="${hoje}"></label>
-      <label class="c4">Valor<input class="campo" value="${numero(f.valor, 2)}" readonly></label></div>`, 'Confirmar', fm => { f.etapa = 'pago'; f.pagoEm = fm.data.value; desenhar(); });
+      <label class="c4">Valor<input class="campo" value="${numero(f.valor, 2)}" readonly></label></div>`, 'Confirmar', conferir(fm => { f.etapa = 'pago'; f.pagoEm = fm.data.value; }));
 }
 
 $('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba; $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
@@ -142,12 +147,14 @@ $('tabConsumo').addEventListener('click', e => { const tr = e.target.closest('tr
 $('fechamentos').addEventListener('click', e => { if (!e.target.closest('[data-avancar]')) return; avancar(fechamentos.find(f => f.id === e.target.closest('[data-f]').dataset.f)); });
 $('tabTit').addEventListener('click', e => { if (!e.target.closest('[data-receber]')) return; const id = e.target.closest('tr').dataset.t;
   const f = fechamentos.find(x => x.id === id); if (f) return avancar(f);
-  const r = outros.find(x => x.id === id); janela(`Receber · ${r.pagador}`, `<div class="form-grade"><label class="c4">Recebido em<input name="data" type="date" class="campo" value="${hoje}"></label>
+  const r = outros.find(x => x.id === id), foto = { ...r }; janela(`Receber · ${r.pagador}`, `<div class="form-grade"><label class="c4">Recebido em<input name="data" type="date" class="campo" value="${hoje}"></label>
     <label class="c4">Valor<input name="valor" class="campo" value="${numero(r.valor, 2)}"></label></div><div class="form-nota">Diferença de valor (taxa do cartão ou do app) vai para a categoria "Taxas de cartão e apps".</div>`,
-    'Confirmar', fm => { r.recebidoEm = fm.data.value; desenhar(); }); });
+    'Confirmar', fm => { const m = mudouDesde(foto, outros.find(x => x.id === r.id), ['valor', 'recebidoEm'], 'Este título'); if (m) { desenhar(); return m; }
+      r.recebidoEm = fm.data.value; desenhar(); avisarMudanca('receber_outros'); }); });
 $('btnExportar').onclick = () => aba === 'titulos'
   ? exportarCSV('titulos-a-receber', ['Vencimento', 'Pagador', 'Origem', 'Empresa', 'Unidade', 'Valor', 'Recebido em'], titulos().map(t => [dataBR(t.vencimento + 'T12:00'), t.pagador, t.origem, nomeEmpresa(t.empresa), nomeUnidade(t.unidade), numero(t.valor, 2), t.recebidoEm ? dataBR(t.recebidoEm + 'T12:00') : '']))
   : exportarCSV('fechamentos-pj', ['Cliente', 'CNPJ', 'Empresa', 'Período', 'Refeições', 'Valor', 'Etapa', 'Nota', 'Vencimento'], fechamentos.filter(f => noFiltro(filtro, f)).map(f => [cli(f.cliente).nome, fmtDoc(cli(f.cliente).cnpj), nomeEmpresa(f.empresa), f.periodo, f.refeicoes, numero(f.valor, 2), NOME_ETAPA[f.etapa], f.nota, f.vencimento ? dataBR(f.vencimento + 'T12:00') : '']));
+vigiarDados(['consumos_pj', 'fechamentos_pj', 'receber_outros', 'clientes_pj'], desenhar);
 desenhar();
 </script>
 </body>

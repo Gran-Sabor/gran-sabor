@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Clientes e convênios</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=5">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=7">
 </head>
 <body>
-<script src="../assets/js/menu.js?v=4"></script>
+<script src="../assets/js/menu.js?v=5"></script>
 <script src="../assets/js/icones.js?v=1"></script>
-<script src="../assets/js/tela.js?v=4"></script>
-<script src="../assets/js/exemplo.js?v=2"></script>
-<script src="../assets/js/cadastro.js?v=2"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
 <script>
 /* Convênios PJ: empresas clientes que consomem no período e pagam no fechamento.
    Cada convênio é atendido por uma unidade (e portanto por uma das 3 empresas). */
@@ -20,7 +20,7 @@ montarCadastro({
   titulo: 'Clientes e convênios', sub: 'Empresas que consomem por período e pagam no fechamento (nota + boleto)',
   novoRotulo: 'Novo convênio', tituloLista: 'Convênios PJ',
   buscaDica: 'Nome, CNPJ, unidade… (atalho: /)',
-  dados: CLIENTES_PJ,
+  dados: CLIENTES_PJ, tabela: 'clientes_pj',
   escopo: l => ({ empresa: l.empresa, unidade: l.unidade }),
   colunas: [
     { campo: 'nome', titulo: 'Cliente', fmt: v => `<b>${esc(v)}</b>` },

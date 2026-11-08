@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Categorias financeiras</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=5">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=7">
 </head>
 <body>
-<script src="../assets/js/menu.js?v=4"></script>
+<script src="../assets/js/menu.js?v=5"></script>
 <script src="../assets/js/icones.js?v=1"></script>
-<script src="../assets/js/tela.js?v=4"></script>
-<script src="../assets/js/exemplo.js?v=2"></script>
-<script src="../assets/js/cadastro.js?v=2"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
 <script>
 /* Categorias financeiras (plano de contas gerencial). Valem para as 3 empresas;
    o resultado (DRE) sai separado por empresa porque cada lançamento tem empresa. */
@@ -21,7 +21,7 @@ const LINHAS_DRE = ['Receita bruta', 'Impostos sobre vendas', 'Deduções', 'CMV
 montarCadastro({
   titulo: 'Categorias financeiras', sub: 'Plano de contas gerencial · usado em contas a pagar, a receber e no resultado',
   novoRotulo: 'Nova categoria', tituloLista: 'Categorias por linha do resultado', porUnidade: false,
-  dados: CATEGORIAS,
+  dados: CATEGORIAS, tabela: 'categorias',
   agrupar: l => l.dre,
   colunas: [
     { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },

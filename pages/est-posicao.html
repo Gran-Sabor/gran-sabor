@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Posição de estoque</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=7">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Posição de estoque</h1><span class="sub">Saldo de cada insumo por local · o estoque pertence à empresa da unidade</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn btn-pri" data-abrir="transferencias">Transferências</button></div></div>
+  <div id="filtros"></div>
+  <div class="abas-tela" id="abas">
+    <button type="button" data-aba="todos" class="ativa">Todos os itens</button><button type="button" data-aba="minimo">Abaixo do mínimo</button>
+    <button type="button" data-aba="transito">Em trânsito</button></div>
+  <section class="kpis" id="kpis"></section>
+  <div class="grade-2 largo">
+    <section class="cartao"><div class="cartao-cab"><h2 id="titLista">Saldo por local</h2><span class="dir sub" id="contagem"></span></div>
+      <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+    <div class="coluna">
+      <section class="cartao"><div class="cartao-cab"><h2>Valor em estoque por empresa</h2></div><div id="porEmpresa"></div></section>
+      <section class="cartao"><div class="cartao-cab"><h2>Por categoria</h2></div><div id="porCategoria"></div></section>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/menu.js?v=5"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Regras (exemplo, a confirmar com a Gran Sabor):
+   - Cada local (central e lojas) tem saldo próprio; o valor é saldo × custo médio.
+   - O estoque é da empresa dona da unidade: a central é da Empresa 1, então o
+     que ela manda para a Loja 2 (Empresa 2) vira acerto entre empresas.
+   - Cobertura = saldo ÷ consumo médio do dia. Abaixo do mínimo gera alerta. */
+let aba = 'todos';
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Insumo, código, categoria… (atalho: /)' });
+const locaisVisiveis = () => LOCAIS_ESTOQUE.filter(l => noFiltro(filtro, { empresa: UNIDADE_EMPRESA[l], unidade: l }));
+const saldo = (i, l) => ESTOQUE.find(e => e.insumo === i && e.local === l);
+const abaixo = e => e && e.saldo < e.min;
+const un = i => insumo(i).un;
+const qtd = (v, i) => `${numero(v, un(i) === 'kg' ? 1 : 0)} ${un(i)}`;
+// Em trânsito: enviado e ainda não recebido (sai da origem, ainda não entrou no destino)
+const transito = () => TRANSFERENCIAS.filter(t => t.situacao === 'em trânsito');
+const transitoPara = (i, locais) => transito().filter(t => locais.includes(t.destino)).flatMap(t => t.itens.filter(it => it.insumo === i)).reduce((a, it) => a + it.enviada, 0);
+const textoBusca = i => [i.nome, i.codigo, i.categoria].join(' ');
+
+function linhasVisiveis() {
+  const locais = locaisVisiveis();
+  return INSUMOS.filter(i => casaBusca(textoBusca(i), filtro.busca)).filter(i =>
+    aba === 'todos' || (aba === 'minimo' ? locais.some(l => abaixo(saldo(i.id, l))) : transitoPara(i.id, locais) > 0));
+}
+
+function desenhar() {
+  const locais = locaisVisiveis(), v = linhasVisiveis(), umLocal = locais.length === 1;
+  const itens = ESTOQUE.filter(e => locais.includes(e.local) && casaBusca(textoBusca(insumo(e.insumo)), filtro.busca));
+  const valor = itens.reduce((a, e) => a + e.saldo * insumo(e.insumo).custo, 0);
+  const baixos = itens.filter(abaixo);
+  const tr = transito().filter(t => locais.includes(t.destino));
+  const valTr = tr.reduce((a, t) => a + t.itens.reduce((b, it) => b + it.enviada * it.custo, 0), 0);
+  const lojas = itens.filter(e => e.consumo > 0);
+  const cob = lojas.length ? lojas.reduce((a, e) => a + e.saldo / e.consumo, 0) / lojas.length : 0;
+  $('kpis').innerHTML = [
+    ['Valor em estoque', reais(valor), `${locais.length} local(is)`],
+    ['Abaixo do mínimo', `<span class="${baixos.length ? 'desce' : ''}">${baixos.length}</span>`, 'itens × local'],
+    ['Em trânsito', reais(valTr), `${tr.length} transferência(s) a receber`],
+    ['Cobertura média', `${numero(cob)} dias`, 'nas lojas, pelo consumo médio']
+  ].map(([t, val, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${val}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+
+  const grupos = {}; v.forEach(i => (grupos[i.categoria] ||= []).push(i));
+  let cab, linha, cols;
+  if (umLocal) {
+    const l = locais[0];
+    $('titLista').textContent = `Saldo · ${nomeUnidade(l)}`;
+    cols = 8;
+    cab = `<tr><th>Insumo</th><th class="num">Saldo</th><th class="num">Mínimo</th><th class="num">Consumo/dia</th><th class="num">Cobertura</th><th class="num">Custo médio</th><th class="num">Valor</th><th>Situação</th></tr>`;
+    linha = i => { const e = saldo(i.id, l) || { saldo: 0, min: 0, consumo: 0 }; const tra = transitoPara(i.id, [l]);
+      return `<tr data-id="${i.id}" tabindex="0"><td><b>${esc(i.nome)}</b> <small class="sub mono">${i.codigo}</small></td>
+        <td class="num${abaixo(e) ? ' desce' : ''}">${qtd(e.saldo, i.id)}</td><td class="num">${qtd(e.min, i.id)}</td>
+        <td class="num">${e.consumo ? qtd(e.consumo, i.id) : '<span class="sub">—</span>'}</td>
+        <td class="num">${e.consumo ? numero(e.saldo / e.consumo) + ' d' : '<span class="sub">—</span>'}</td>
+        <td class="num">${reais(i.custo)}</td><td class="num">${reais(e.saldo * i.custo)}</td>
+        <td>${abaixo(e) ? '<span class="etiqueta perigo">abaixo do mínimo</span>' : '<span class="etiqueta completa">ok</span>'}${tra ? ` <span class="etiqueta pendente" title="Enviado e ainda não recebido">+${qtd(tra, i.id)} a caminho</span>` : ''}</td></tr>`; };
+  } else {
+    $('titLista').textContent = 'Saldo por local';
+    cols = locais.length + 3;
+    cab = `<tr><th>Insumo</th>${locais.map(l => `<th class="num">${esc(nomeUnidade(l))}<small class="sub" style="display:block;font-weight:500">${esc(nomeEmpresa(UNIDADE_EMPRESA[l]))}</small></th>`).join('')}<th class="num">Total</th><th class="num">Valor</th></tr>`;
+    linha = i => { const tot = locais.reduce((a, l) => a + (saldo(i.id, l)?.saldo || 0), 0);
+      return `<tr data-id="${i.id}" tabindex="0"><td><b>${esc(i.nome)}</b> <small class="sub mono">${i.codigo}</small></td>
+        ${locais.map(l => { const e = saldo(i.id, l); return `<td class="num${abaixo(e) ? ' desce' : ''}" title="${abaixo(e) ? 'Abaixo do mínimo (' + qtd(e.min, i.id) + ')' : ''}">${numero(e?.saldo || 0, un(i.id) === 'kg' ? 1 : 0)}</td>`; }).join('')}
+        <td class="num"><b>${qtd(tot, i.id)}</b></td><td class="num">${reais(tot * i.custo)}</td></tr>`; };
+  }
+  $('contagem').textContent = `${v.length} insumo(s)`;
+  $('tab').innerHTML = `<thead>${cab}</thead><tbody>${Object.entries(grupos).map(([g, ls]) =>
+    `<tr class="grupo"><td colspan="${cols}">${esc(g)} <span class="sub">${ls.length}</span></td></tr>${ls.map(linha).join('')}`).join('')
+    || `<tr><td colspan="${cols}" class="vazio">${aba === 'minimo' ? 'Nenhum item abaixo do mínimo. 👍' : 'Nada encontrado com esses filtros.'}</td></tr>`}</tbody>`;
+
+  // Sempre separado por empresa (das unidades visíveis)
+  const porEmp = EMPRESAS.map(e => ({ e, val: itens.filter(x => UNIDADE_EMPRESA[x.local] === e.id).reduce((a, x) => a + x.saldo * insumo(x.insumo).custo, 0) }));
+  const maior = Math.max(...porEmp.map(x => x.val), 1);
+  $('porEmpresa').innerHTML = porEmp.map(({ e, val }) => `<div class="lista-linha"><div>${etqEmpresa(e.id)}<small>${LOCAIS_ESTOQUE.filter(l => UNIDADE_EMPRESA[l] === e.id).map(nomeUnidade).join(', ')}</small></div>
+    <div class="barra" style="flex:1"><i style="width:${(val / maior * 100).toFixed(1)}%;background:${e.cor}"></i></div><span class="dir">${reais(val)}</span></div>`).join('');
+  const porCat = {}; itens.forEach(x => { const i = insumo(x.insumo); porCat[i.categoria] = (porCat[i.categoria] || 0) + x.saldo * i.custo; });
+  $('porCategoria').innerHTML = Object.entries(porCat).sort((a, b) => b[1] - a[1]).map(([k, val]) =>
+    `<div class="lista-linha"><div>${esc(k)}</div><span class="dir">${reais(val)}</span></div>`).join('') || '<div class="vazio">Sem saldo.</div>';
+}
+
+/* ---------- Detalhe do insumo: saldo em cada local e últimos movimentos ---------- */
+function detalhe(i) {
+  const movs = TRANSFERENCIAS.filter(t => t.itens.some(it => it.insumo === i.id)).flatMap(t => { const it = t.itens.find(x => x.insumo === i.id);
+    return [{ data: t.data, local: t.origem, tipo: `Transferência ${t.numero} para ${nomeUnidade(t.destino)}`, q: -it.enviada },
+      ...(it.recebida != null ? [{ data: t.data, local: t.destino, tipo: `Recebido de ${nomeUnidade(t.origem)} (${t.numero})${it.recebida !== it.enviada ? ' · faltou ' + qtd(it.enviada - it.recebida, i.id) : ''}`, q: it.recebida }] : [])]; });
+  Object.entries(COMPRA_ITENS).forEach(([n, its]) => its.filter(([x]) => x === i.id).forEach(([, q]) => { const nota = NOTAS_ENTRADA.find(z => z.id === n);
+    movs.push({ data: nota.emissao, local: nota.unidade, tipo: `Compra NF ${nota.numero}`, q }); }));
+  movs.sort((a, b) => b.data.localeCompare(a.data));
+  janela(`${i.nome} · ${i.codigo}`, `
+    <div class="sub-tit">Saldo por local</div>
+    <table class="tabela"><thead><tr><th>Local</th><th>Empresa</th><th class="num">Saldo</th><th class="num">Mínimo</th><th class="num">Valor</th></tr></thead><tbody>
+    ${LOCAIS_ESTOQUE.map(l => { const e = saldo(i.id, l); return `<tr><td>${esc(nomeUnidade(l))}</td><td>${etqEmpresa(UNIDADE_EMPRESA[l])}</td>
+      <td class="num${abaixo(e) ? ' desce' : ''}">${qtd(e.saldo, i.id)}</td><td class="num">${qtd(e.min, i.id)}</td><td class="num">${reais(e.saldo * i.custo)}</td></tr>`; }).join('')}</tbody></table>
+    <div class="sub-tit">Últimos movimentos</div>
+    <table class="tabela"><thead><tr><th>Data</th><th>Local</th><th>Movimento</th><th class="num">Qtd.</th></tr></thead><tbody>
+    ${movs.slice(0, 12).map(m => `<tr><td class="mono">${dataBR(m.data + 'T12:00')}</td><td>${esc(nomeUnidade(m.local))}</td><td>${esc(m.tipo)}</td>
+      <td class="num ${m.q < 0 ? 'desce' : 'sobe'}">${m.q > 0 ? '+' : ''}${qtd(m.q, i.id)}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Sem movimentos no exemplo.</td></tr>'}</tbody></table>
+    <div class="form-nota">Baixas por produção (ficha técnica) e perdas entram aqui quando essas telas estiverem prontas. Custo médio atual: ${reais(i.custo)}/${esc(i.un)}.</div>`,
+    'Fechar', () => {});
+}
+
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba;
+  $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
+$('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) detalhe(insumo(tr.dataset.id)); };
+$('tab').onkeydown = e => { if (e.key === 'Enter') e.target.closest('tr[data-id]')?.click(); };
+$('btnExportar').onclick = () => { const locais = locaisVisiveis();
+  exportarCSV('posicao-estoque', ['Código', 'Insumo', 'Categoria', 'Un.', ...locais.map(l => `${nomeUnidade(l)} (${nomeEmpresa(UNIDADE_EMPRESA[l])})`), 'Custo médio', 'Valor total'],
+    linhasVisiveis().map(i => { const s = locais.map(l => saldo(i.id, l)?.saldo || 0);
+      return [i.codigo, i.nome, i.categoria, i.un, ...s.map(x => numero(x, 1)), numero(i.custo, 2), numero(s.reduce((a, x) => a + x, 0) * i.custo, 2)]; })); };
+// Nota de entrada, transferência ou recebimento em outra aba: o saldo se atualiza sozinho
+vigiarDados(['estoque', 'transferencias', 'insumos', 'compra_itens', 'notas_entrada'], desenhar);
+desenhar();
+</script>
+</body>
+</html>

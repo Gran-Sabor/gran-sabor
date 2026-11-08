@@ -22,6 +22,18 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
 - Toda tabela nova: RLS ligado e políticas na mesma migração.
 - Nunca push direto na `main`: ramo próprio + pacote; o Alexandre faz o merge.
 
+## Dados sempre atualizados em toda a cadeia (lição da Drogarema, 08/11/2026)
+Na Drogarema uma tela aberta mostrava valor antigo e um pagamento saiu errado. Aqui, sempre:
+- Cada dado mora num lugar só e cada conta é feita numa função só (hoje `exemplo.js`/`dadoComum`, depois o banco).
+  Tela nenhuma guarda cópia própria nem número calculado congelado; derivado (custo, margem, saldo, líquido) é recalculado da origem.
+- Quem grava avisa (`avisarMudanca('tabela')`) e toda tela que usa o dado se redesenha sozinha (`vigiarDados`),
+  esperando a pessoa terminar de digitar. Com o banco: Supabase Realtime nas mesmas tabelas.
+- Ação que gera efeito (pagar, receber, fechar período, emitir, gerar boleto/acerto, receber transferência) relê o dado
+  na hora de confirmar (`mudouDesde`); se mudou desde que a janela abriu, não faz nada e mostra o valor novo.
+- Uma ação alimenta a cadeia inteira de uma vez (ex.: XML → contas a pagar + estoque + custo médio → ficha → margem).
+  Nada de "lançar depois em outra tela". Depois de pago, diferença vira acerto visível, nunca ajuste silencioso.
+- Teste de toda entrega: alterar numa aba e conferir as outras abas abertas, e tentar confirmar com dado mudado.
+
 ## Visual (padrão para toda tela)
 Clean, bordas finas, pouco espaço vazio. Cabeçalho numa linha; indicadores em faixa fina (`.kpis`), não em
 cartões altos; listas e tabelas aparecem sem rolar. Alertas importantes em popup. Funciona no celular
