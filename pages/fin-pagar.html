@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contas a pagar</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=5">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Contas a pagar</h1><span class="sub">Por vencimento · cada conta tem empresa, unidade, centro de custo e categoria</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn btn-pri" id="btnNovo">+ Nova conta</button></div></div>
+  <div id="filtros"></div>
+  <div class="abas-tela" id="abas">
+    <button type="button" data-aba="aberto" class="ativa">Em aberto</button><button type="button" data-aba="vencidas">Vencidas</button>
+    <button type="button" data-aba="pagas">Pagas</button><button type="button" data-aba="todas">Todas</button></div>
+  <section class="kpis" id="kpis"></section>
+  <div class="grade-2 largo">
+    <section class="cartao"><div class="cartao-cab"><h2>Contas</h2><span class="dir sub" id="contagem"></span></div>
+      <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+    <div class="coluna">
+      <section class="cartao"><div class="cartao-cab"><h2>Por empresa · em aberto</h2></div><div id="porEmpresa"></div></section>
+      <section class="cartao"><div class="cartao-cab"><h2>Por categoria · em aberto</h2></div><div id="porCategoria"></div></section>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/menu.js?v=4"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=4"></script>
+<script src="../assets/js/exemplo.js?v=2"></script>
+<script src="../assets/js/cadastro.js?v=2"></script>
+<script>
+let contas = CONTAS_PAGAR.map(c => ({ ...c }));
+let aba = 'aberto';
+const hoje = hojeISO();
+const nomeCat = id => (CATEGORIAS.find(c => c.id === id) || {}).nome || id;
+const nomeCentro = id => (CENTROS.find(c => c.id === id) || {}).nome || '—';
+const situacao = c => c.pagoEm ? 'paga' : c.vencimento < hoje ? 'vencida' : c.vencimento === hoje ? 'hoje' : 'aberta';
+const ETQ = { paga: '<span class="etiqueta completa">paga</span>', vencida: '<span class="etiqueta perigo">vencida</span>', hoje: '<span class="etiqueta pendente">vence hoje</span>', aberta: '<span class="etiqueta">em aberto</span>' };
+
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, periodo: true, placeholder: 'Fornecedor, documento, categoria, valor… (atalho: /)' });
+// Período vale para o vencimento; vencidas aparecem mesmo antes do período
+const noPeriodo = c => (!filtro.de || c.vencimento >= filtro.de || (!c.pagoEm && c.vencimento < hoje)) && (!filtro.ate || c.vencimento <= filtro.ate);
+const textoBusca = c => [c.favorecido, c.documento, nomeCat(c.categoria), nomeCentro(c.centro), nomeUnidade(c.unidade), nomeEmpresa(c.empresa), numero(c.valor, 2), dataBR(c.vencimento + 'T12:00')].join(' ');
+
+function filtradas() {
+  return contas.filter(c => noFiltro(filtro, c) && noPeriodo(c) && casaBusca(textoBusca(c), filtro.busca))
+    .filter(c => aba === 'todas' || (aba === 'pagas' ? c.pagoEm : aba === 'vencidas' ? situacao(c) === 'vencida' : !c.pagoEm))
+    .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+}
+
+function desenhar() {
+  const base = contas.filter(c => noFiltro(filtro, c) && casaBusca(textoBusca(c), filtro.busca));
+  const abertas = base.filter(c => !c.pagoEm);
+  const soma = l => l.reduce((a, c) => a + (c.pagoEm ? c.valorPago : c.valor), 0);
+  const ate7 = diasDaqui(7);
+  $('kpis').innerHTML = [
+    ['Vence hoje', reais(soma(abertas.filter(c => c.vencimento === hoje))), `${abertas.filter(c => c.vencimento === hoje).length} conta(s)`],
+    ['Vencidas', `<span class="${abertas.some(c => c.vencimento < hoje) ? 'desce' : ''}">${reais(soma(abertas.filter(c => c.vencimento < hoje)))}</span>`, `${abertas.filter(c => c.vencimento < hoje).length} conta(s) em atraso`],
+    ['Próximos 7 dias', reais(soma(abertas.filter(c => c.vencimento > hoje && c.vencimento <= ate7))), 'sem contar hoje'],
+    ['Total em aberto', reais(soma(abertas)), `${abertas.length} conta(s)`],
+    ['Pago no período', reais(soma(base.filter(c => c.pagoEm && noPeriodo(c)))), `${base.filter(c => c.pagoEm && noPeriodo(c)).length} pagamento(s)`]
+  ].map(([t, v, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${v}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+
+  const v = filtradas();
+  $('contagem').textContent = `${v.length} conta(s) · ${reais(v.reduce((a, c) => a + c.valor, 0))}`;
+  $('tab').innerHTML = `<thead><tr><th>Vencimento</th><th>Favorecido · documento</th><th>Categoria</th><th>Empresa · unidade</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead>
+  <tbody>${v.map(c => `<tr data-id="${c.id}" tabindex="0">
+    <td class="mono">${dataBR(c.vencimento + 'T12:00')}</td><td><b>${esc(c.favorecido)}</b><small class="sub"> ${esc(c.documento)}</small></td>
+    <td title="Centro de custo: ${esc(nomeCentro(c.centro))}">${esc(nomeCat(c.categoria))}</td>
+    <td>${etqEmpresa(c.empresa)} <small class="sub">${esc(nomeUnidade(c.unidade))}</small></td>
+    <td class="num">${reais(c.valor)}</td><td>${ETQ[situacao(c)]}</td>
+    <td>${c.pagoEm ? `<small class="sub">${dataBR(c.pagoEm + 'T12:00')}</small>` : '<button type="button" class="btn btn-mini" data-baixar>Pagar</button>'}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="vazio">Nenhuma conta com esses filtros.</td></tr>'}</tbody>`;
+
+  // Resumos laterais (sempre separados por empresa)
+  const total = soma(abertas) || 1;
+  $('porEmpresa').innerHTML = EMPRESAS.map(e => { const val = soma(abertas.filter(c => c.empresa === e.id));
+    return `<div class="lista-linha"><div>${etqEmpresa(e.id)}<small>${abertas.filter(c => c.empresa === e.id).length} conta(s)</small></div>
+      <div class="barra" style="flex:1"><i style="width:${(val / total * 100).toFixed(1)}%;background:${e.cor}"></i></div><span class="dir">${reais(val)}</span></div>`; }).join('');
+  const porCat = {}; abertas.forEach(c => porCat[c.categoria] = (porCat[c.categoria] || 0) + c.valor);
+  $('porCategoria').innerHTML = Object.entries(porCat).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, val]) =>
+    `<div class="lista-linha"><div>${esc(nomeCat(k))}</div><span class="dir">${reais(val)}</span></div>`).join('') || '<div class="vazio">Nada em aberto.</div>';
+}
+
+/* ---------- Pagar (baixa) ---------- */
+function baixar(c) {
+  const v = janela(`Pagar · ${c.favorecido}`, `
+    <div class="form-grade">
+      <label class="c4">Data do pagamento<input name="data" type="date" class="campo" value="${hoje}"></label>
+      <label class="c4">Valor da conta<input class="campo" value="${numero(c.valor, 2)}" readonly></label>
+      <label class="c4">Juros / multa (R$)<input name="juros" class="campo" inputmode="decimal" value="${c.vencimento < hoje ? numero(c.valor * 0.02, 2) : '0,00'}"></label>
+      <label class="c4">Desconto (R$)<input name="desc" class="campo" inputmode="decimal" value="0,00"></label>
+      <label class="c4">Forma<select name="forma" class="campo"><option>Pix</option><option>Boleto</option><option>Transferência</option><option>Dinheiro</option><option>Cartão</option></select></label>
+      <label class="c4">Conta de saída<select name="conta" class="campo">${EMPRESAS.map(e => `<option${e.id === c.empresa ? ' selected' : ''}>Banco · ${esc(e.nome)}</option>`).join('')}</select></label>
+    </div><div class="form-nota" id="totalPago"></div>`, 'Confirmar pagamento', f => {
+    const n = x => Number(String(x).replace(/\./g, '').replace(',', '.')) || 0;
+    Object.assign(c, { pagoEm: f.data.value, valorPago: c.valor + n(f.juros.value) - n(f.desc.value), forma: f.forma.value });
+    desenhar();
+  });
+  const f = v.querySelector('form'), n = x => Number(String(x).replace(/\./g, '').replace(',', '.')) || 0;
+  const tot = () => { v.querySelector('#totalPago').textContent = `Total pago: ${reais(c.valor + n(f.juros.value) - n(f.desc.value))}. A conta de saída é sempre da mesma empresa da conta.`; };
+  f.addEventListener('input', tot); tot();
+}
+
+/* ---------- Nova conta (com parcelas) ---------- */
+function nova(c) {
+  const ed = !!c; c = c || { unidade: filtro.unidade || 'loja1', vencimento: diasDaqui(7), categoria: '3.03' };
+  janela(ed ? 'Editar conta' : 'Nova conta a pagar', `
+    <div class="form-grade">
+      <label class="c6">Favorecido<input name="favorecido" class="campo" list="listaForn" value="${esc(c.favorecido)}" required></label>
+      <label class="c3">Documento<input name="documento" class="campo" value="${esc(c.documento)}" placeholder="NF, boleto…"></label>
+      <label class="c3">Valor (R$)<input name="valor" class="campo" inputmode="decimal" value="${c.valor ? numero(c.valor, 2) : ''}"></label>
+      <label class="c4">Unidade<select name="unidade" class="campo">${UNIDADES.filter(u => u.id !== 'todas').map(u => `<option value="${u.id}"${u.id === c.unidade ? ' selected' : ''}>${esc(u.nome)} · ${esc(nomeEmpresa(UNIDADE_EMPRESA[u.id]))}</option>`).join('')}</select></label>
+      <label class="c4">Centro de custo<select name="centro" class="campo"></select></label>
+      <label class="c4">Categoria<select name="categoria" class="campo">${CATEGORIAS.filter(k => k.tipo === 'despesa').map(k => `<option value="${k.id}"${k.id === c.categoria ? ' selected' : ''}>${k.codigo} ${esc(k.nome)}</option>`).join('')}</select></label>
+      <label class="c4">1º vencimento<input name="vencimento" type="date" class="campo" value="${c.vencimento}"></label>
+      ${ed ? '' : `<label class="c4">Parcelas<input name="parcelas" type="number" min="1" max="24" class="campo" value="1"></label>
+      <label class="c4 marcar"><input name="recorrente" type="checkbox"> Repetir todo mês (12×)</label>`}
+    </div><datalist id="listaForn">${FORNECEDORES.map(f => `<option value="${esc(f.nome)}">`).join('')}</datalist>
+    <div class="form-nota">A empresa vem da unidade. Parcelas dividem o valor; "repetir" copia o valor cheio por 12 meses (aluguel, internet…).</div>`,
+    'Salvar', f => {
+      const valor = Number(f.valor.value.replace(/\./g, '').replace(',', '.'));
+      if (!f.favorecido.value.trim() || !(valor > 0)) return 'Informe favorecido e valor.';
+      const dados = { favorecido: f.favorecido.value.trim(), documento: f.documento.value.trim(), unidade: f.unidade.value, empresa: UNIDADE_EMPRESA[f.unidade.value], centro: f.centro.value, categoria: f.categoria.value };
+      if (ed) { Object.assign(c, dados, { valor, vencimento: f.vencimento.value }); return desenhar(); }
+      const rec = f.recorrente.checked, n = rec ? 12 : Math.max(1, +f.parcelas.value || 1);
+      for (let i = 0; i < n; i++) {
+        const d = new Date(f.vencimento.value + 'T12:00'); d.setMonth(d.getMonth() + i);
+        contas.push({ ...dados, id: 'n' + Date.now() + i, valor: rec ? valor : +(valor / n).toFixed(2), vencimento: d.toISOString().slice(0, 10), documento: dados.documento + (n > 1 ? ` ${i + 1}/${n}` : '') });
+      }
+      desenhar();
+    }, v => {
+      const f = v.querySelector('form');
+      const centros = () => { f.centro.innerHTML = CENTROS.filter(x => x.unidade === f.unidade.value).map(x => `<option value="${x.id}"${x.id === c.centro ? ' selected' : ''}>${esc(x.nome)}</option>`).join(''); };
+      f.unidade.onchange = centros; centros();
+      f.favorecido.onchange = () => { const fo = FORNECEDORES.find(x => x.nome === f.favorecido.value); if (!fo) return;
+        const cat = CATEGORIAS.find(k => k.tipo === 'despesa' && k.nome.toLowerCase().startsWith(fo.categoria.toLowerCase().slice(0, 5))); if (cat) f.categoria.value = cat.id; };
+    });
+}
+
+$('btnNovo').onclick = () => nova();
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba; $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
+$('tab').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (!tr) return; const c = contas.find(x => x.id === tr.dataset.id);
+  if (e.target.closest('[data-baixar]')) baixar(c); else if (!c.pagoEm) nova(c); });
+$('btnExportar').onclick = () => exportarCSV('contas-a-pagar', ['Vencimento', 'Favorecido', 'Documento', 'Categoria', 'Centro de custo', 'Empresa', 'Unidade', 'Valor', 'Situação', 'Pago em', 'Valor pago'],
+  filtradas().map(c => [dataBR(c.vencimento + 'T12:00'), c.favorecido, c.documento, nomeCat(c.categoria), nomeCentro(c.centro), nomeEmpresa(c.empresa), nomeUnidade(c.unidade), numero(c.valor, 2), situacao(c), c.pagoEm ? dataBR(c.pagoEm + 'T12:00') : '', c.valorPago ? numero(c.valorPago, 2) : '']));
+desenhar();
+</script>
+</body>
+</html>

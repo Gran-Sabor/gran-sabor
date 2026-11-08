@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clientes e convênios</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=5">
+</head>
+<body>
+<script src="../assets/js/menu.js?v=4"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=4"></script>
+<script src="../assets/js/exemplo.js?v=2"></script>
+<script src="../assets/js/cadastro.js?v=2"></script>
+<script>
+/* Convênios PJ: empresas clientes que consomem no período e pagam no fechamento.
+   Cada convênio é atendido por uma unidade (e portanto por uma das 3 empresas). */
+montarCadastro({
+  titulo: 'Clientes e convênios', sub: 'Empresas que consomem por período e pagam no fechamento (nota + boleto)',
+  novoRotulo: 'Novo convênio', tituloLista: 'Convênios PJ',
+  buscaDica: 'Nome, CNPJ, unidade… (atalho: /)',
+  dados: CLIENTES_PJ,
+  escopo: l => ({ empresa: l.empresa, unidade: l.unidade }),
+  colunas: [
+    { campo: 'nome', titulo: 'Cliente', fmt: v => `<b>${esc(v)}</b>` },
+    { campo: 'cnpj', titulo: 'CNPJ', fmt: v => `<span class="mono">${fmtDoc(v)}</span>`, busca: l => l.cnpj + ' ' + fmtDoc(l.cnpj) },
+    { campo: 'unidade', titulo: 'Atendido por', fmt: (v, l) => `${etqEmpresa(l.empresa)} <small class="sub">${esc(nomeUnidade(v))}</small>`, busca: l => nomeUnidade(l.unidade) + ' ' + nomeEmpresa(l.empresa) },
+    { campo: 'fechamento', titulo: 'Fechamento', fmt: v => v === 'quinzenal' ? 'Quinzenal (1–15, 16–fim)' : 'Mensal' },
+    { campo: 'prazo', titulo: 'Boleto vence em', fmt: v => `${v} dias` },
+    { campo: 'pessoas', titulo: 'Pessoas', num: true },
+    { campo: 'limite', titulo: 'Limite no período', num: true, fmt: v => reais(v) },
+    { campo: 'ativo', titulo: 'Ativo', fmt: sim }
+  ],
+  kpis: v => [
+    ['Convênios', v.length, `${v.reduce((a, c) => a + c.pessoas, 0)} pessoas`],
+    ...EMPRESAS.map(e => [e.nome, v.filter(c => c.empresa === e.id).length, 'convênio(s)'])
+  ],
+  campos: [
+    { campo: 'nome', titulo: 'Razão social', obrig: true, larg: 'c8', max: 120 },
+    { campo: 'cnpj', titulo: 'CNPJ', tipo: 'doc', obrig: true, larg: 'c4', max: 18 },
+    { campo: 'unidade', titulo: 'Unidade que atende', tipo: 'select', opcoes: () => UNIDADES.filter(u => u.id.startsWith('loja')).map(u => [u.id, `${u.nome} · ${nomeEmpresa(UNIDADE_EMPRESA[u.id])}`]), larg: 'c4' },
+    { campo: 'fechamento', titulo: 'Fechamento', tipo: 'select', opcoes: [['quinzenal', 'Quinzenal'], ['mensal', 'Mensal']], larg: 'c4' },
+    { campo: 'prazo', titulo: 'Boleto vence em (dias)', tipo: 'numero', larg: 'c4' },
+    { campo: 'pessoas', titulo: 'Pessoas no convênio', tipo: 'numero', larg: 'c4' },
+    { campo: 'limite', titulo: 'Limite por período (R$)', tipo: 'dinheiro', larg: 'c4' },
+    { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c4' },
+    { campo: 'email', titulo: 'E-mail para nota e boleto', larg: 'c12', max: 120 }
+  ],
+  novo: f => ({ unidade: f.unidade && f.unidade.startsWith('loja') ? f.unidade : 'loja1', fechamento: 'quinzenal', prazo: 10, pessoas: 10, limite: 7500, ativo: true }),
+  validar: d => { d.empresa = UNIDADE_EMPRESA[d.unidade]; return d.cnpj.length !== 14 ? 'CNPJ incompleto.' : ''; },
+  rodapeForm: () => 'A empresa que emite a nota e o boleto é a dona da unidade que atende.'
+});
+</script>
+</body>
+</html>

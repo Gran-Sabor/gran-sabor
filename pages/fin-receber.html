@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contas a receber</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=5">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Contas a receber</h1><span class="sub">Convênios PJ (consumo → fechamento → nota → boleto), cartões e repasses de delivery</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button></div></div>
+  <div id="filtros"></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="pj" class="ativa">Faturamento PJ</button><button type="button" data-aba="titulos">Títulos a receber</button></div>
+  <section class="kpis" id="kpis"></section>
+
+  <div id="painelPJ" class="grade-2 largo">
+    <section class="cartao"><div class="cartao-cab"><h2>Consumo em aberto · por convênio</h2><span class="dir sub">clique para ver as refeições</span></div>
+      <div class="rolagem"><table class="tabela clicavel" id="tabConsumo"></table></div></section>
+    <section class="cartao"><div class="cartao-cab"><h2>Fechamentos</h2><span class="dir sub">fechado › nota › boleto › pago</span></div>
+      <div id="fechamentos"></div></section>
+  </div>
+
+  <section id="painelTit" class="cartao oculto"><div class="cartao-cab"><h2>Títulos</h2><span class="dir sub" id="contagem"></span></div>
+    <div class="rolagem"><table class="tabela" id="tabTit"></table></div></section>
+</div>
+
+<script src="../assets/js/menu.js?v=4"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=4"></script>
+<script src="../assets/js/exemplo.js?v=2"></script>
+<script src="../assets/js/cadastro.js?v=2"></script>
+<script>
+const hoje = hojeISO();
+let consumos = CONSUMOS_PJ.map(c => ({ ...c }));
+let fechamentos = FECHAMENTOS_PJ.map(f => ({ ...f }));
+let outros = RECEBER_OUTROS.map(r => ({ ...r }));
+let aba = 'pj', proxNota = 2233;
+const cli = id => CLIENTES_PJ.find(c => c.id === id) || {};
+const ETAPAS = ['fechado', 'nota', 'boleto', 'pago'], NOME_ETAPA = { fechado: 'Fechado', nota: 'Nota emitida', boleto: 'Boleto enviado', pago: 'Pago' };
+
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Cliente, CNPJ, NF, valor… (atalho: /)' });
+const buscaCli = c => [c.nome, c.cnpj, fmtDoc(c.cnpj), nomeUnidade(c.unidade), nomeEmpresa(c.empresa)].join(' ');
+
+// Títulos = boletos dos fechamentos + cartões/delivery
+function titulos() {
+  return [
+    ...fechamentos.filter(f => f.etapa === 'boleto' || f.etapa === 'pago').map(f => ({ id: f.id, tipo: 'pj', origem: 'Boleto convênio', pagador: cli(f.cliente).nome, doc: cli(f.cliente).cnpj,
+      empresa: f.empresa, unidade: f.unidade, vencimento: f.vencimento, valor: f.valor, recebidoEm: f.pagoEm || null, ref: f.nota })),
+    ...outros.map(r => ({ ...r, tipo: 'outro', doc: '', ref: '' }))
+  ].filter(t => noFiltro(filtro, t) && casaBusca([t.pagador, t.doc, fmtDoc(t.doc), t.origem, t.ref, nomeEmpresa(t.empresa), nomeUnidade(t.unidade), numero(t.valor, 2)].join(' '), filtro.busca))
+   .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+}
+
+function desenhar() {
+  $('painelPJ').classList.toggle('oculto', aba !== 'pj'); $('painelTit').classList.toggle('oculto', aba !== 'titulos');
+  const clientes = CLIENTES_PJ.filter(c => noFiltro(filtro, c) && casaBusca(buscaCli(c), filtro.busca));
+  const ids = new Set(clientes.map(c => c.id));
+  const abertos = consumos.filter(k => ids.has(k.cliente));
+  const fech = fechamentos.filter(f => ids.has(f.cliente));
+  const tit = titulos(), abertosTit = tit.filter(t => !t.recebidoEm);
+  const soma = (l, k = 'valor') => l.reduce((a, x) => a + x[k], 0);
+
+  $('kpis').innerHTML = (aba === 'pj' ? [
+    ['Consumo em aberto', reais(soma(abertos)), `${numero(soma(abertos, 'refeicoes'))} refeições · ${clientes.length} convênio(s)`],
+    ['Fechados sem nota', fech.filter(f => f.etapa === 'fechado').length, fech.some(f => f.etapa === 'fechado') ? '<span class="desce">emita a nota para cobrar</span>' : 'tudo em dia'],
+    ['Boletos em aberto', reais(soma(fech.filter(f => f.etapa === 'boleto'))), `${fech.filter(f => f.etapa === 'boleto').length} boleto(s)`],
+    ['Boletos vencidos', `<span class="${fech.some(f => f.etapa === 'boleto' && f.vencimento < hoje) ? 'desce' : ''}">${reais(soma(fech.filter(f => f.etapa === 'boleto' && f.vencimento < hoje)))}</span>`, 'cobrar o cliente']
+  ] : [
+    ['A receber hoje', reais(soma(abertosTit.filter(t => t.vencimento === hoje))), `${abertosTit.filter(t => t.vencimento === hoje).length} título(s)`],
+    ['Vencidos', `<span class="${abertosTit.some(t => t.vencimento < hoje) ? 'desce' : ''}">${reais(soma(abertosTit.filter(t => t.vencimento < hoje)))}</span>`, `${abertosTit.filter(t => t.vencimento < hoje).length} título(s)`],
+    ['Próximos 7 dias', reais(soma(abertosTit.filter(t => t.vencimento > hoje && t.vencimento <= diasDaqui(7)))), 'cartões, delivery e boletos'],
+    ['Total a receber', reais(soma(abertosTit)), `${abertosTit.length} título(s)`],
+    ...EMPRESAS.map(e => [e.nome, reais(soma(abertosTit.filter(t => t.empresa === e.id))), 'a receber'])
+  ]).map(([t, v, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${v}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+
+  // Consumo por convênio
+  $('tabConsumo').innerHTML = `<thead><tr><th>Convênio</th><th>Empresa · unidade</th><th>Fechamento</th><th class="num">Refeições</th><th class="num">Valor</th><th>Limite</th><th></th></tr></thead><tbody>${
+    clientes.map(c => { const ks = abertos.filter(k => k.cliente === c.id), val = soma(ks), uso = Math.min(100, val / c.limite * 100);
+      return `<tr data-cli="${c.id}" tabindex="0"><td><b>${esc(c.nome)}</b><small class="sub"> ${fmtDoc(c.cnpj)}</small></td><td>${etqEmpresa(c.empresa)} <small class="sub">${esc(nomeUnidade(c.unidade))}</small></td>
+        <td>${c.fechamento === 'quinzenal' ? 'Quinzenal' : 'Mensal'} · ${c.prazo} dias</td><td class="num">${numero(soma(ks, 'refeicoes'))}</td><td class="num">${reais(val)}</td>
+        <td title="${pct(uso)} do limite de ${reais(c.limite)}"><div class="barra"><i style="width:${uso.toFixed(0)}%${uso > 85 ? ';background:var(--perigo)' : ''}"></i></div></td>
+        <td>${ks.length ? '<button type="button" class="btn btn-mini" data-fechar-periodo>Fechar período</button>' : '<span class="sub">—</span>'}</td></tr>`; }).join('')
+    || '<tr><td colspan="7" class="vazio">Nenhum convênio com esses filtros.</td></tr>'}</tbody>`;
+
+  // Fechamentos com etapas
+  $('fechamentos').innerHTML = fech.slice().sort((a, b) => ETAPAS.indexOf(a.etapa) - ETAPAS.indexOf(b.etapa)).map(f => {
+    const i = ETAPAS.indexOf(f.etapa), venc = f.etapa === 'boleto' && f.vencimento < hoje;
+    const acao = { fechado: 'Emitir nota', nota: 'Gerar boleto', boleto: 'Registrar pagamento' }[f.etapa];
+    return `<div class="fech" data-f="${f.id}"><div class="fech-topo"><b>${esc(cli(f.cliente).nome)}</b>${etqEmpresa(f.empresa)}<span class="dir">${reais(f.valor)}</span></div>
+      <small class="sub">${esc(f.periodo)} · ${numero(f.refeicoes)} refeições${f.nota ? ' · ' + esc(f.nota) : ''}${f.vencimento ? ` · vence ${dataBR(f.vencimento + 'T12:00')}` : ''}${venc ? ' · <b class="desce">vencido</b>' : ''}</small>
+      <div class="etapas">${ETAPAS.map((e, k) => `<span class="${k <= i ? 'feita' : ''}">${NOME_ETAPA[e]}</span>`).join('')}${acao ? `<button type="button" class="btn btn-mini${f.etapa === 'fechado' ? ' btn-pri' : ''}" data-avancar>${acao}</button>` : ''}</div></div>`;
+  }).join('') || '<div class="vazio">Nenhum fechamento com esses filtros.</div>';
+
+  // Títulos
+  $('contagem').textContent = `${tit.length} título(s) · ${reais(soma(tit))}`;
+  $('tabTit').innerHTML = `<thead><tr><th>Vencimento</th><th>Pagador</th><th>Origem</th><th>Empresa · unidade</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead><tbody>${
+    tit.map(t => `<tr data-t="${t.id}"><td class="mono">${dataBR(t.vencimento + 'T12:00')}</td><td><b>${esc(t.pagador)}</b>${t.ref ? `<small class="sub"> ${esc(t.ref)}</small>` : ''}</td><td>${esc(t.origem)}</td>
+      <td>${etqEmpresa(t.empresa)} <small class="sub">${esc(nomeUnidade(t.unidade))}</small></td><td class="num">${reais(t.valor)}</td>
+      <td>${t.recebidoEm ? '<span class="etiqueta completa">recebido</span>' : t.vencimento < hoje ? '<span class="etiqueta perigo">vencido</span>' : t.vencimento === hoje ? '<span class="etiqueta pendente">hoje</span>' : '<span class="etiqueta">a receber</span>'}</td>
+      <td>${t.recebidoEm ? `<small class="sub">${dataBR(t.recebidoEm + 'T12:00')}</small>` : '<button type="button" class="btn btn-mini" data-receber>Receber</button>'}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="vazio">Nenhum título com esses filtros.</td></tr>'}</tbody>`;
+}
+
+/* ---------- Ações ---------- */
+function verConsumo(c) {
+  const ks = consumos.filter(k => k.cliente === c.id).sort((a, b) => a.data.localeCompare(b.data));
+  janela(`${c.nome} · consumo em aberto`, `<div class="rolagem"><table class="tabela"><thead><tr><th>Data</th><th>NFC-e</th><th class="num">Refeições</th><th class="num">Valor</th></tr></thead><tbody>${
+    ks.map(k => `<tr><td>${dataBR(k.data + 'T12:00')}</td><td class="mono">${k.nfce}</td><td class="num">${k.refeicoes}</td><td class="num">${reais(k.valor)}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td>Total</td><td></td><td class="num">${ks.reduce((a, k) => a + k.refeicoes, 0)}</td><td class="num">${reais(ks.reduce((a, k) => a + k.valor, 0))}</td></tr></tfoot></table></div>
+    <div class="form-nota">Cada refeição sai com NFC-e em nome do convênio (CNPJ) na hora da venda.</div>`, 'Fechar', () => {});
+}
+function fecharPeriodo(c) {
+  const ks = consumos.filter(k => k.cliente === c.id);
+  const valor = +ks.reduce((a, k) => a + k.valor, 0).toFixed(2), ref = ks.reduce((a, k) => a + k.refeicoes, 0);
+  janela(`Fechar período · ${c.nome}`, `<p>Fechar <b>${numero(ref)} refeições</b> (${ks.length} cupons) no valor de <b>${reais(valor)}</b>?</p>
+    <div class="form-nota">Depois de fechado, o consumo novo começa um período novo. O próximo passo é emitir a nota do fechamento e depois o boleto (vencimento em ${c.prazo} dias).</div>`,
+    'Fechar período', () => {
+      consumos = consumos.filter(k => k.cliente !== c.id);
+      fechamentos.unshift({ id: 'fx' + Date.now(), cliente: c.id, empresa: c.empresa, unidade: c.unidade, periodo: `Até ${dataBR(hoje + 'T12:00')}`, valor, refeicoes: ref, etapa: 'fechado', nota: '', boleto: '', vencimento: '' });
+      desenhar();
+    });
+}
+function avancar(f) {
+  const c = cli(f.cliente);
+  if (f.etapa === 'fechado') janela('Emitir nota do fechamento', `<p>${esc(c.nome)} · ${fmtDoc(c.cnpj)} · <b>${reais(f.valor)}</b></p>
+      <div class="form-nota">Modelo a confirmar com o contador: (a) as NFC-e de cada refeição já valem e o fechamento sai como fatura listando os cupons; ou (b) NF-e única do período.
+      O sistema terá as duas opções; nunca fecha sem nota.</div>`, 'Emitir nota (simulação)', () => { f.etapa = 'nota'; f.nota = 'NF-e ' + proxNota++; desenhar(); });
+  else if (f.etapa === 'nota') janela('Gerar boleto', `<div class="form-grade"><label class="c4">Vencimento<input name="venc" type="date" class="campo" value="${diasDaqui(c.prazo)}"></label>
+      <label class="c4">Valor<input class="campo" value="${numero(f.valor, 2)}" readonly></label><label class="c4">Banco<input class="campo" value="Banco · ${esc(nomeEmpresa(f.empresa))}" readonly></label></div>
+      <div class="form-nota">O boleto sai pela conta da mesma empresa que vendeu. Envio por e-mail ao convênio junto com a nota e o extrato do consumo.</div>`,
+      'Gerar boleto (simulação)', fm => { f.etapa = 'boleto'; f.vencimento = fm.venc.value; desenhar(); });
+  else if (f.etapa === 'boleto') janela('Registrar pagamento', `<div class="form-grade"><label class="c4">Recebido em<input name="data" type="date" class="campo" value="${hoje}"></label>
+      <label class="c4">Valor<input class="campo" value="${numero(f.valor, 2)}" readonly></label></div>`, 'Confirmar', fm => { f.etapa = 'pago'; f.pagoEm = fm.data.value; desenhar(); });
+}
+
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba; $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
+$('tabConsumo').addEventListener('click', e => { const tr = e.target.closest('tr[data-cli]'); if (!tr) return; const c = cli(tr.dataset.cli);
+  if (e.target.closest('[data-fechar-periodo]')) fecharPeriodo(c); else verConsumo(c); });
+$('fechamentos').addEventListener('click', e => { if (!e.target.closest('[data-avancar]')) return; avancar(fechamentos.find(f => f.id === e.target.closest('[data-f]').dataset.f)); });
+$('tabTit').addEventListener('click', e => { if (!e.target.closest('[data-receber]')) return; const id = e.target.closest('tr').dataset.t;
+  const f = fechamentos.find(x => x.id === id); if (f) return avancar(f);
+  const r = outros.find(x => x.id === id); janela(`Receber · ${r.pagador}`, `<div class="form-grade"><label class="c4">Recebido em<input name="data" type="date" class="campo" value="${hoje}"></label>
+    <label class="c4">Valor<input name="valor" class="campo" value="${numero(r.valor, 2)}"></label></div><div class="form-nota">Diferença de valor (taxa do cartão ou do app) vai para a categoria "Taxas de cartão e apps".</div>`,
+    'Confirmar', fm => { r.recebidoEm = fm.data.value; desenhar(); }); });
+$('btnExportar').onclick = () => aba === 'titulos'
+  ? exportarCSV('titulos-a-receber', ['Vencimento', 'Pagador', 'Origem', 'Empresa', 'Unidade', 'Valor', 'Recebido em'], titulos().map(t => [dataBR(t.vencimento + 'T12:00'), t.pagador, t.origem, nomeEmpresa(t.empresa), nomeUnidade(t.unidade), numero(t.valor, 2), t.recebidoEm ? dataBR(t.recebidoEm + 'T12:00') : '']))
+  : exportarCSV('fechamentos-pj', ['Cliente', 'CNPJ', 'Empresa', 'Período', 'Refeições', 'Valor', 'Etapa', 'Nota', 'Vencimento'], fechamentos.filter(f => noFiltro(filtro, f)).map(f => [cli(f.cliente).nome, fmtDoc(cli(f.cliente).cnpj), nomeEmpresa(f.empresa), f.periodo, f.refeicoes, numero(f.valor, 2), NOME_ETAPA[f.etapa], f.nota, f.vencimento ? dataBR(f.vencimento + 'T12:00') : '']));
+desenhar();
+</script>
+</body>
+</html>
