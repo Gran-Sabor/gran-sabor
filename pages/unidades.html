@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Empresas e unidades</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=3">
+<style>
+  /* No celular a lista mostra só unidade e situação (o resto está no formulário) */
+  @media (max-width: 860px) { #tab th:nth-child(n+2):nth-child(-n+7), #tab td:nth-child(n+2):nth-child(-n+7) { display: none; } }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab">
+    <h1>Empresas e unidades</h1>
+    <span class="sub">Cada unidade é um estabelecimento com CNPJ e inscrição próprios (a NFC-e sai por estabelecimento)</span>
+    <div class="dir">
+      <span class="etiqueta exemplo oculto" id="etqExemplo" title="Banco não ligado: nada é gravado">exemplo</span>
+      <button type="button" class="btn btn-pri" id="btnNova">+ Nova unidade</button>
+    </div>
+  </div>
+
+  <section class="kpis" id="kpis" aria-label="Resumo"></section>
+
+  <section class="cartao">
+    <div class="cartao-cab"><h2>Unidades</h2><span class="dir sub">clique numa linha para editar</span></div>
+    <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div>
+  </section>
+</div>
+
+<template id="tplForm">
+  <div class="veu">
+    <form class="janela larga" role="dialog" aria-modal="true" aria-labelledby="tForm" novalidate>
+      <div class="janela-cab"><h2 id="tForm"></h2>
+        <button type="button" class="btn btn-ico" data-fechar aria-label="Fechar"></button></div>
+      <div class="form">
+        <fieldset><legend>Identificação</legend><div class="form-grade">
+          <label class="c4">Nome<input name="nome" class="campo" maxlength="60" required></label>
+          <label class="c3">Tipo<select name="tipo" class="campo">
+            <option value="loja">Loja</option><option value="central">Central de carnes</option><option value="escritorio">Escritório</option></select></label>
+          <label class="c2">Código<input name="codigo" class="campo" maxlength="20" placeholder="ex.: loja4" title="Letras minúsculas, números e _ (não muda depois)"></label>
+          <label class="c1">Ordem<input name="ordem" class="campo" type="number" min="0" max="99"></label>
+          <label class="c2 marcar"><input name="ativo" type="checkbox"> Ativa</label>
+        </div></fieldset>
+
+        <fieldset><legend>Dados fiscais</legend><div class="form-grade">
+          <label class="c4">CNPJ<input name="cnpj" class="campo" maxlength="18" placeholder="00.000.000/0000-00" autocomplete="off"></label>
+          <label class="c8">Razão social<input name="razao_social" class="campo" maxlength="120"></label>
+          <label class="c6">Nome fantasia<input name="nome_fantasia" class="campo" maxlength="120"></label>
+          <label class="c3">Inscrição estadual<input name="inscricao_estadual" class="campo" maxlength="20"></label>
+          <label class="c3">Inscrição municipal<input name="inscricao_municipal" class="campo" maxlength="20"></label>
+          <label class="c4">Regime tributário<select name="regime_tributario" class="campo">
+            <option value="">—</option><option value="simples">Simples Nacional</option><option value="presumido">Lucro Presumido</option><option value="real">Lucro Real</option></select></label>
+        </div></fieldset>
+
+        <fieldset><legend>Endereço</legend><div class="form-grade">
+          <label class="c3">CEP<input name="cep" class="campo" maxlength="9" placeholder="00000-000" inputmode="numeric"></label>
+          <label class="c7">Rua / avenida<input name="logradouro" class="campo" maxlength="120"></label>
+          <label class="c2">Número<input name="numero" class="campo" maxlength="10"></label>
+          <label class="c4">Complemento<input name="complemento" class="campo" maxlength="60"></label>
+          <label class="c3">Bairro<input name="bairro" class="campo" maxlength="60"></label>
+          <label class="c3">Cidade<input name="cidade" class="campo" maxlength="60"></label>
+          <label class="c2">UF<input name="uf" class="campo" maxlength="2"></label>
+        </div></fieldset>
+
+        <fieldset><legend>Contato</legend><div class="form-grade">
+          <label class="c4">Telefone<input name="telefone" class="campo" maxlength="20" inputmode="tel"></label>
+          <label class="c8">E-mail<input name="email" class="campo" type="email" maxlength="120"></label>
+        </div></fieldset>
+        <div class="login-msg" id="fMsg" role="alert"></div>
+      </div>
+      <div class="janela-rodape"><span class="sub" id="fCarimbo"></span>
+        <button type="button" class="btn" data-fechar>Cancelar</button><button type="submit" class="btn btn-pri">Salvar</button></div>
+    </form>
+  </div>
+</template>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=2"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=2"></script>
+<script>
+const TIPOS = { loja: 'Loja', central: 'Central de carnes', escritorio: 'Escritório' };
+const REGIMES = { simples: 'Simples Nacional', presumido: 'Lucro Presumido', real: 'Lucro Real' };
+// O que precisa estar preenchido para a unidade emitir nota (lojas e central)
+const OBRIGATORIOS = { cnpj: 'CNPJ', razao_social: 'razão social', inscricao_estadual: 'inscrição estadual', regime_tributario: 'regime',
+  cep: 'CEP', logradouro: 'rua', numero: 'número', cidade: 'cidade', uf: 'UF' };
+
+// Exemplo (modo demonstração): nada é gravado
+const EXEMPLO = [
+  { id: 'e1', codigo: 'loja1', nome: 'Loja 1', tipo: 'loja', ordem: 1, ativo: true, cnpj: '11222333000181', razao_social: 'Empresa Exemplo A Ltda',
+    inscricao_estadual: '000000000', regime_tributario: 'simples', cep: '01001000', logradouro: 'Praça da Sé', numero: '100', bairro: 'Sé', cidade: 'São Paulo', uf: 'SP' },
+  { id: 'e2', codigo: 'loja2', nome: 'Loja 2', tipo: 'loja', ordem: 2, ativo: true, cnpj: '11222333000262', razao_social: 'Empresa Exemplo A Ltda', regime_tributario: 'simples' },
+  { id: 'e3', codigo: 'loja3', nome: 'Loja 3', tipo: 'loja', ordem: 3, ativo: true },
+  { id: 'e4', codigo: 'central', nome: 'Central de carnes', tipo: 'central', ordem: 4, ativo: true },
+  { id: 'e5', codigo: 'escritorio', nome: 'Escritório', tipo: 'escritorio', ordem: 5, ativo: true }
+];
+
+let lista = [];
+
+/* ---------- CNPJ (numérico e o novo alfanumérico) ---------- */
+const limparCnpj = s => String(s || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+function cnpjValido(c) {
+  if (!/^[0-9A-Z]{12}[0-9]{2}$/.test(c) || /^(\w)\1{13}$/.test(c)) return false;
+  const dv = n => { let soma = 0, peso = n - 7;
+    for (let i = 0; i < n; i++) { soma += (c.charCodeAt(i) - 48) * peso; peso = peso === 2 ? 9 : peso - 1; }
+    const r = soma % 11; return r < 2 ? 0 : 11 - r; };
+  return dv(12) === +c[12] && dv(13) === +c[13];
+}
+const fmtCnpj = c => { c = limparCnpj(c); return c.length === 14 ? `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}` : c; };
+const fmtCep = c => { c = String(c || '').replace(/\D/g, ''); return c.length === 8 ? c.slice(0, 5) + '-' + c.slice(5) : c; };
+const faltando = u => !u.ativo || u.tipo === 'escritorio' ? [] : Object.keys(OBRIGATORIOS).filter(k => !u[k]);
+
+/* ---------- Carregar e desenhar ---------- */
+async function carregar() {
+  if (!db) { lista = lista.length ? lista : EXEMPLO.map(x => ({ ...x })); $('etqExemplo').classList.remove('oculto'); return desenhar(); }
+  const { data, error } = await db.from('unidades').select('*').order('ordem').order('nome');
+  if (error) { $('tab').innerHTML = `<tbody><tr><td class="vazio">Não foi possível ler as unidades. Atualize a página.</td></tr></tbody>`; return; }
+  lista = data; desenhar();
+}
+
+function desenhar() {
+  const ativas = lista.filter(u => u.ativo);
+  const raizes = new Set(ativas.filter(u => u.cnpj).map(u => u.cnpj.slice(0, 8)));
+  const incompletas = ativas.filter(u => faltando(u).length);
+  $('kpis').innerHTML = [
+    ['Unidades ativas', ativas.length, `${lista.length - ativas.length} inativa(s)`],
+    ['Lojas', ativas.filter(u => u.tipo === 'loja').length, 'emitem NFC-e'],
+    ['Empresas (CNPJ raiz)', raizes.size, 'contadas pelos 8 primeiros caracteres'],
+    ['Cadastro incompleto', incompletas.length, incompletas.length ? `<span class="desce">${incompletas.map(u => esc(u.nome)).join(', ')}</span>` : '<span class="sobe">tudo preenchido</span>']
+  ].map(([t, v, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${v}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+
+  $('tab').innerHTML = `<thead><tr><th>Unidade</th><th>Tipo</th><th>Razão social</th><th>CNPJ</th><th>Inscr. estadual</th><th>Regime</th><th>Cidade / UF</th><th>Situação</th></tr></thead>
+  <tbody>${lista.map(u => { const f = faltando(u);
+    return `<tr data-id="${esc(u.id)}" tabindex="0"${u.ativo ? '' : ' class="inativa"'}>
+      <td><b>${esc(u.nome)}</b> <small class="sub">${esc(u.codigo)}</small></td><td>${TIPOS[u.tipo] || ''}</td>
+      <td>${esc(u.razao_social) || '<span class="sub">—</span>'}</td><td class="mono">${u.cnpj ? fmtCnpj(u.cnpj) : '<span class="sub">—</span>'}</td>
+      <td>${esc(u.inscricao_estadual) || '<span class="sub">—</span>'}</td><td>${REGIMES[u.regime_tributario] || '<span class="sub">—</span>'}</td>
+      <td>${u.cidade ? esc(u.cidade) + ' / ' + esc(u.uf) : '<span class="sub">—</span>'}</td>
+      <td>${!u.ativo ? '<span class="etiqueta">inativa</span>' : u.tipo === 'escritorio' ? '<span class="etiqueta" title="Escritório não emite nota">não emite nota</span>' : f.length ? `<span class="etiqueta pendente" title="Falta: ${esc(f.map(k => OBRIGATORIOS[k]).join(', '))}">falta ${f.length}</span>` : '<span class="etiqueta completa">completo</span>'}</td></tr>`; }).join('')}</tbody>`;
+}
+
+/* ---------- Formulário (popup) ---------- */
+function abrirForm(u) {
+  const novo = !u;
+  u = u || { tipo: 'loja', ativo: true, ordem: (Math.max(0, ...lista.map(x => x.ordem || 0)) + 1) };
+  const v = $('tplForm').content.firstElementChild.cloneNode(true);
+  const f = v.querySelector('form'), msg = t => { v.querySelector('#fMsg').textContent = t; };
+  v.querySelector('#tForm').textContent = novo ? 'Nova unidade' : u.nome;
+  v.querySelector('[data-fechar]').innerHTML = icone('fechar');
+  for (const el of f.elements) if (el.name) {
+    if (el.type === 'checkbox') el.checked = !!u[el.name];
+    else el.value = el.name === 'cnpj' ? fmtCnpj(u.cnpj) : el.name === 'cep' ? fmtCep(u.cep) : (u[el.name] ?? '');
+  }
+  f.codigo.readOnly = !novo;
+  if (u.atualizado_em) v.querySelector('#fCarimbo').textContent = 'Alterado em ' + new Date(u.atualizado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+
+  f.cnpj.oninput = () => { const c = limparCnpj(f.cnpj.value); if (c.length === 14) f.cnpj.value = fmtCnpj(c); };
+  f.cnpj.onblur = () => { const c = limparCnpj(f.cnpj.value); f.cnpj.classList.toggle('erro', !!c && !cnpjValido(c)); if (c && !cnpjValido(c)) msg('CNPJ inválido: confira os números.'); else msg(''); };
+  f.uf.oninput = () => { f.uf.value = f.uf.value.toUpperCase().replace(/[^A-Z]/g, ''); };
+  f.nome.oninput = () => { if (novo && !f.codigo.dataset.mexeu) f.codigo.value = f.nome.value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 20); };
+  f.codigo.oninput = () => { f.codigo.dataset.mexeu = 1; };
+  // CEP: preenche o endereço pelo ViaCEP (serviço público e gratuito)
+  f.cep.onblur = async () => {
+    const c = f.cep.value.replace(/\D/g, ''); f.cep.value = fmtCep(c);
+    if (c.length !== 8 || f.logradouro.value) return;
+    try {
+      const r = await (await fetch(`https://viacep.com.br/ws/${c}/json/`)).json();
+      if (r.erro) return msg('CEP não encontrado.');
+      f.logradouro.value = r.logradouro || ''; f.bairro.value = r.bairro || ''; f.cidade.value = r.localidade || ''; f.uf.value = r.uf || '';
+      f.numero.focus();
+    } catch { /* sem internet ou serviço fora: preenche à mão */ }
+  };
+
+  const fim = () => { v.remove(); document.removeEventListener('keydown', tecla); };
+  const tecla = e => { if (e.key === 'Escape') fim(); };
+  v.onclick = e => { if (e.target === v || e.target.closest('[data-fechar]')) fim(); };
+
+  f.onsubmit = async e => {
+    e.preventDefault(); msg('');
+    const d = {};
+    for (const el of f.elements) if (el.name) d[el.name] = el.type === 'checkbox' ? el.checked : el.value.trim();
+    d.cnpj = limparCnpj(d.cnpj); d.cep = d.cep.replace(/\D/g, ''); d.ordem = parseInt(d.ordem, 10) || 0;
+    for (const k of Object.keys(d)) if (d[k] === '') d[k] = null;
+    if (!d.nome || d.nome.length < 2) return msg('Informe o nome da unidade.');
+    if (novo && !/^[a-z0-9_]{2,20}$/.test(d.codigo || '')) return msg('Código: use de 2 a 20 letras minúsculas, números ou _.');
+    if (d.cnpj && !cnpjValido(d.cnpj)) return msg('CNPJ inválido: confira os números.');
+    if (d.cep && d.cep.length !== 8) return msg('CEP deve ter 8 números.');
+    if (d.uf && !/^[A-Z]{2}$/.test(d.uf)) return msg('UF deve ter 2 letras.');
+    if (!novo) delete d.codigo;
+    const b = f.querySelector('.btn-pri'); b.disabled = true;
+    let error = null;
+    if (!db) { if (novo) lista.push({ ...d, id: 'e' + Date.now() }); else Object.assign(lista.find(x => x.id === u.id), d); }
+    else ({ error } = novo ? await db.from('unidades').insert(d) : await db.from('unidades').update(d).eq('id', u.id));
+    b.disabled = false;
+    if (error) return msg(/duplicate|unique/i.test(error.message) ? 'Já existe uma unidade com esse código.' : 'Não foi possível salvar: ' + error.message);
+    fim(); await carregar(); avisarCasca('unidades');
+  };
+  document.addEventListener('keydown', tecla);
+  document.body.appendChild(v);
+  f.nome.focus();
+}
+
+$('btnNova').onclick = () => abrirForm();
+$('tab').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (tr) abrirForm(lista.find(u => String(u.id) === tr.dataset.id)); });
+$('tab').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.closest('tr[data-id]')?.click(); });
+carregar();
+</script>
+</body>
+</html>
