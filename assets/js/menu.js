@@ -42,12 +42,14 @@ const MENU = [
     { id: 'conferencia',    nome: 'Conferência vendas × notas × caixa' }
   ]},
   { grupo: 'Pessoas e RH', icone: 'pessoas', itens: [
-    { id: 'colaboradores',  nome: 'Colaboradores' },
-    { id: 'escala',         nome: 'Escala' },
+    { id: 'colaboradores',  nome: 'Colaboradores', arquivo: 'pages/rh-colaboradores.html' },
+    { id: 'escala',         nome: 'Escala', arquivo: 'pages/rh-escala.html' },
+    { id: 'lancamentos',    nome: 'Lançamentos do mês', arquivo: 'pages/rh-lancamentos.html' },
+    { id: 'adiantamento',   nome: 'Adiantamento salarial', arquivo: 'pages/rh-adiantamento.html' },
+    { id: 'holerites',      nome: 'Folha e holerites', arquivo: 'pages/rh-holerite.html' },
+    { id: 'decimo',         nome: '13º salário', arquivo: 'pages/rh-decimo.html' },
+    { id: 'ferias',         nome: 'Férias', arquivo: 'pages/rh-ferias.html' },
     { id: 'ponto',          nome: 'Ponto e horas extras' },
-    { id: 'holerites',      nome: 'Holerites' },
-    { id: 'ferias',         nome: 'Férias' },
-    { id: 'folha',          nome: 'Fechamento da folha' },
     { id: 'eventos_folha',  nome: 'Eventos da folha', arquivo: 'pages/rh-eventos.html' }
   ]},
   { grupo: 'Marketing', icone: 'marketing', itens: [

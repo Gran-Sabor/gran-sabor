@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escala</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=9">
+<style>
+  .esc td.dia, .esc th.dia { text-align: center; padding-left: 2px; padding-right: 2px; min-width: 38px; }
+  .esc th.dia small { display: block; font-weight: 500; color: var(--texto-3); }
+  .esc th.fer, .esc td.fer { background: color-mix(in srgb, var(--alerta-suave) 70%, transparent); }
+  .esc th.dom, .esc td.dom { background: var(--superficie-2); }
+  .turno { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 22px; border-radius: 5px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid var(--borda); background: var(--superficie); color: var(--texto-2); }
+  .turno.t-M { background: #fdf0e6; color: #9a4a1c; border-color: transparent; } .turno.t-T { background: #e8eef6; color: #2c5f8a; border-color: transparent; }
+  .turno.t-I { background: #eef3e6; color: #4d6b22; border-color: transparent; } .turno.t-C { background: #f1ecf6; color: #6a4a8a; border-color: transparent; }
+  .turno.t-F { background: transparent; color: var(--texto-3); border-style: dashed; }
+  .turno.t-FER, .turno.t-AF { cursor: default; background: var(--alerta-suave); color: var(--alerta); border-color: transparent; font-size: 10px; }
+  .esc tfoot td { font-size: 11.5px; text-align: center; }
+  .legenda { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--texto-2); padding: 8px 12px; border-top: 1px solid var(--borda); }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Escala</h1><span class="sub">Turnos por unidade · férias e afastamentos entram sozinhos · clique no dia para trocar o turno</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <span class="comp-nav"><button type="button" class="btn btn-ico" id="semAnt" aria-label="Semanas anteriores">‹</button><b id="perTxt"></b><button type="button" class="btn btn-ico" id="semProx" aria-label="Próximas semanas">›</button></span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button></div></div>
+  <div id="filtros"></div>
+  <div id="alertas"></div>
+  <section class="kpis" id="kpis"></section>
+  <div id="conteudo"></div>
+</div>
+
+<script src="../assets/js/menu.js?v=6"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=4"></script>
+<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Regras (exemplo, a Gran Sabor e o contador confirmam):
+   - Escala 6x1: no máximo 6 dias seguidos de trabalho. Folga no domingo pelo menos 1 vez a cada 3 semanas (comércio).
+   - Férias e afastamento vêm dos cadastros (não se digita na escala). Trabalhou no feriado: hora extra 100% ou folga
+     compensatória; o botão lança a hora extra direto nos lançamentos do mês. */
+const DIAS = 14, SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const segunda = d => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); };
+let inicio = segunda(hojeISO());
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador ou cargo… (atalho: /)' });
+const datas = () => Array.from({ length: DIAS }, (_, i) => FOLHA.somaDias(inicio, i));
+const trabalha = t => ['M', 'T', 'I', 'C'].includes(t);
+const CICLO = ['M', 'I', 'T', 'C', 'F'];
+// Alertas de um colaborador olhando também as 3 semanas antes da janela
+function alertasDe(c) {
+  const a = [], dias = Array.from({ length: DIAS + 21 }, (_, i) => FOLHA.somaDias(inicio, i - 21));
+  let seguidos = 0, max = 0, maxAte = '';
+  dias.forEach(d => { if (trabalha(FOLHA.turnoNoDia(c, d))) { seguidos++; if (seguidos > max) { max = seguidos; maxAte = d; } } else seguidos = 0; });
+  if (max > 6 && maxAte >= inicio) a.push(`${max} dias seguidos sem folga (até ${dataBR(maxAte + 'T12:00').slice(0, 5)})`);
+  const doms = dias.filter(d => new Date(d + 'T12:00').getDay() === 0 && d >= FOLHA.somaDias(inicio, -7));
+  for (let i = 0; i + 2 < doms.length; i++) if (doms.slice(i, i + 3).every(d => trabalha(FOLHA.turnoNoDia(c, d)))) { a.push(`3 domingos seguidos trabalhando (até ${dataBR(doms[i + 2] + 'T12:00').slice(0, 5)})`); break; }
+  datas().filter(d => FERIADOS[d] && trabalha(FOLHA.turnoNoDia(c, d))).forEach(d => a.push({ feriado: d }));
+  return a;
+}
+
+function desenhar() {
+  const ds = datas(), unidades = UNIDADES.filter(u => u.id !== 'todas' && LOCAIS_ESTOQUE.concat('escritorio').includes(u.id) && noFiltro(filtro, { empresa: UNIDADE_EMPRESA[u.id], unidade: u.id }));
+  $('perTxt').textContent = `${dataBR(ds[0] + 'T12:00').slice(0, 5)} a ${dataBR(ds[DIAS - 1] + 'T12:00').slice(0, 5)}`;
+  const cs = COLABORADORES.filter(c => c.ativo && unidades.some(u => u.id === c.unidade) && casaBusca([c.nome, CARGOS[c.cargo]].join(' '), filtro.busca));
+  const todosAlertas = cs.flatMap(c => alertasDe(c).map(x => ({ c, x })));
+  const feriadosTrab = todosAlertas.filter(a => a.x.feriado), regras = todosAlertas.filter(a => !a.x.feriado);
+  const hoje = hojeISO(), escalados = cs.filter(c => trabalha(FOLHA.turnoNoDia(c, hoje)));
+  $('kpis').innerHTML = [
+    ['Trabalhando hoje', escalados.length, `de ${cs.length} colaborador(es)`],
+    ['Folgas hoje', cs.filter(c => FOLHA.turnoNoDia(c, hoje) === 'F').length, 'pela escala'],
+    ['Férias / afastados', `${cs.filter(c => FOLHA.turnoNoDia(c, hoje) === 'FER').length} / ${cs.filter(c => c.situacao === 'afastado').length}`, 'vêm dos cadastros'],
+    ['Alertas da escala', `<span class="${regras.length ? 'desce' : ''}">${regras.length}</span>`, `${feriadosTrab.length} feriado(s) trabalhado(s)`]
+  ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  $('alertas').innerHTML = regras.length ? `<div class="aviso perigo"><b>Ajuste a escala:</b> ${regras.map(a => `${esc(a.c.nome)}: ${esc(a.x)}`).join(' · ')}</div>` : '';
+  $('conteudo').innerHTML = unidades.map(u => {
+    const us = cs.filter(c => c.unidade === u.id); if (!us.length) return '';
+    return `<section class="cartao" style="margin-top:10px"><div class="cartao-cab"><h2>${esc(u.nome)}</h2>${etqEmpresa(UNIDADE_EMPRESA[u.id])}<span class="dir sub">${us.length} pessoa(s)</span></div>
+      <div class="rolagem"><table class="tabela esc"><thead><tr><th>Colaborador</th>${ds.map(d => { const w = new Date(d + 'T12:00').getDay();
+        return `<th class="dia${FERIADOS[d] ? ' fer' : w === 0 ? ' dom' : ''}" title="${esc(FERIADOS[d] || '')}">${d.slice(8)}<small>${SEM[w]}</small></th>`; }).join('')}</tr></thead><tbody>
+      ${us.map(c => { const al = alertasDe(c).filter(x => !x.feriado);
+        return `<tr><td><b>${esc(c.nome.split(' ').slice(0, 2).join(' '))}</b> <small class="sub">${esc(CARGOS[c.cargo])}</small>${al.length ? ` <span class="etiqueta perigo" title="${esc(al.join(' · '))}">!</span>` : ''}</td>
+        ${ds.map(d => { const t = FOLHA.turnoNoDia(c, d), w = new Date(d + 'T12:00').getDay();
+          return `<td class="dia${FERIADOS[d] ? ' fer' : w === 0 ? ' dom' : ''}">${t ? `<span class="turno t-${t}" data-c="${c.id}" data-d="${d}" title="${esc((TURNOS[t] || [t === 'FER' ? 'Férias' : 'Afastado'])[0])} ${esc(TURNOS[t]?.[1] || '')}">${t === 'FER' ? 'Fér' : t === 'AF' ? 'Af' : t}</span>` : ''}</td>`; }).join('')}</tr>`; }).join('')}</tbody>
+      <tfoot><tr><td>Trabalhando</td>${ds.map(d => `<td class="dia">${us.filter(c => trabalha(FOLHA.turnoNoDia(c, d))).length}</td>`).join('')}</tr></tfoot></table></div>
+      ${feriadosTrab.filter(a => a.c.unidade === u.id).length ? `<div class="aviso" style="margin:8px 12px">Feriado trabalhado: ${feriadosTrab.filter(a => a.c.unidade === u.id).map(a =>
+        `${esc(a.c.nome.split(' ')[0])} em ${dataBR(a.x.feriado + 'T12:00').slice(0, 5)} ${LANCAMENTOS.some(l => l.colab === a.c.id && l.evento === '011' && l.obs.includes(a.x.feriado)) ? '<span class="etiqueta completa">HE lançada</span>'
+          : `<button type="button" class="btn btn-mini" data-he="${a.c.id}|${a.x.feriado}">Lançar HE 100%</button>`}`).join(' · ')}</div>` : ''}
+      <div class="legenda">${Object.entries(TURNOS).map(([k, [n, h]]) => `<span><span class="turno t-${k}">${k}</span> ${n} ${h}</span>`).join('')}<span><span class="turno t-FER">Fér</span> Férias</span></div></section>`;
+  }).join('') || '<div class="vazio">Nenhum colaborador com esses filtros.</div>';
+}
+
+$('conteudo').onclick = e => {
+  const he = e.target.closest('[data-he]');
+  if (he) { const [cId, d] = he.dataset.he.split('|'), c = colab(cId), comp = d.slice(0, 7);
+    if (FECHAMENTOS_FOLHA.some(f => f.comp === comp && !f.reabertaEm)) return janela('Folha fechada', `<p>A folha de ${nomeComp(comp)} já foi fechada. Reabra antes de lançar.</p>`, 'Entendi', () => {});
+    return janela(`Hora extra no feriado · ${c.nome}`, `<p>${esc(FERIADOS[d])} (${dataBR(d + 'T12:00')}).</p>
+      <div class="form-grade"><label class="c4">Horas<input name="h" class="campo" inputmode="decimal" value="7,33"></label></div>
+      <div class="form-nota">Entra em Lançamentos de ${nomeComp(comp)} como hora extra 100% e o holerite recalcula sozinho. Se for dar folga compensatória, não lance.</div>`, 'Lançar', f => {
+        const h = Number(f.h.value.replace(',', '.')); if (!(h > 0)) return 'Informe as horas.';
+        if (LANCAMENTOS.some(l => l.colab === cId && l.evento === '011' && l.obs.includes(d))) { desenhar(); return 'Esta hora extra já foi lançada em outra tela.'; }
+        LANCAMENTOS.push({ id: 'l' + Date.now(), comp, colab: cId, evento: '011', qtd: h, valor: 0, obs: `Feriado ${d}`, criadoEm: hojeISO() });
+        desenhar(); avisarMudanca('lancamentos'); }); }
+  const t = e.target.closest('.turno[data-c]'); if (!t) return;
+  const atual = FOLHA.turnoNoDia(colab(t.dataset.c), t.dataset.d); if (['FER', 'AF'].includes(atual)) return;
+  const prox = CICLO[(CICLO.indexOf(atual) + 1) % CICLO.length];
+  (ESCALA[t.dataset.c] ||= {})[t.dataset.d] = prox; desenhar(); avisarMudanca('escala');
+};
+$('semAnt').onclick = () => { inicio = FOLHA.somaDias(inicio, -7); desenhar(); };
+$('semProx').onclick = () => { inicio = FOLHA.somaDias(inicio, 7); desenhar(); };
+$('btnExportar').onclick = () => exportarCSV(`escala-${inicio}`, ['Empresa', 'Unidade', 'Colaborador', 'Cargo', ...datas().map(d => dataBR(d + 'T12:00'))],
+  COLABORADORES.filter(c => c.ativo && noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade })).map(c => [nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.nome, CARGOS[c.cargo], ...datas().map(d => FOLHA.turnoNoDia(c, d))]));
+vigiarDados(['escala', 'ferias', 'colaboradores', 'lancamentos'], desenhar);
+desenhar();
+</script>
+</body>
+</html>

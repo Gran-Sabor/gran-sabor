@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folha e holerites</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=9">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Folha e holerites</h1><span class="sub">Calculada na hora pelos cadastros e lançamentos · fechamento gera as contas a pagar por empresa</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <span class="comp-nav"><button type="button" class="btn btn-ico" id="compAnt" aria-label="Mês anterior">‹</button><b id="compTxt"></b><button type="button" class="btn btn-ico" id="compProx" aria-label="Próximo mês">›</button></span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn btn-pri" id="btnFechar">Fechar folha</button></div></div>
+  <div id="filtros"></div>
+  <div id="aviso"></div>
+  <section class="kpis" id="kpis"></section>
+  <div class="grade-2 largo">
+    <section class="cartao"><div class="cartao-cab"><h2>Holerites</h2><span class="dir sub" id="contagem"></span></div>
+      <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+    <div class="coluna"><section class="cartao"><div class="cartao-cab"><h2>Por empresa</h2></div><div id="porEmpresa"></div></section></div>
+  </div>
+</div>
+
+<script src="../assets/js/menu.js?v=6"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=4"></script>
+<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Regras (exemplo, o contador confirma):
+   - A folha não é digitada: sai de cadastro + lançamentos + adiantamento, pela folha.js (conta única).
+   - Fechar a folha congela uma foto dos totais e gera, POR EMPRESA, as contas a pagar: salários líquidos
+     (5º dia útil), INSS e FGTS (dia 20). Antes de gerar, o sistema refaz a conta e confere com o que você viu.
+   - Depois de fechada, se algo mudar (ex.: salário no cadastro), aparece a diferença em destaque.
+     Conta ainda não paga é ajustada; conta já paga vira acerto visível, nunca ajuste escondido. */
+let comp = COMPETENCIA_ATUAL;
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador, matrícula, cargo… (atalho: /)' });
+const fechamento = () => FECHAMENTOS_FOLHA.find(f => f.comp === comp && !f.reabertaEm);
+const naTela = c => noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade }) && casaBusca([c.nome, c.matricula, CARGOS[c.cargo]].join(' '), filtro.busca);
+const contasDo = fe => (fe?.contas || []).map(id => CONTAS_PAGAR.find(c => c.id === id)).filter(Boolean);
+function quintoDiaUtil(comp) {
+  const [a, m] = comp.split('-').map(Number); const d = new Date(a, m, 1, 12); let n = 0;   // mês seguinte
+  while (true) { const iso = d.toISOString().slice(0, 10); if (d.getDay() !== 0 && !FERIADOS[iso] && ++n === 5) return iso; d.setDate(d.getDate() + 1); }
+}
+const dia20 = comp => { const [a, m] = comp.split('-').map(Number); return new Date(a, m, 20, 12).toISOString().slice(0, 10); };
+// Diferença entre a foto do fechamento e a conta de agora, por empresa
+function diferencas(fe, agora) {
+  return EMPRESAS.map(e => ({ e, antes: fe.totais[e.id], agora: agora.porEmpresa[e.id] }))
+    .filter(x => ['liquido', 'inss', 'fgts'].some(k => Math.abs((x.antes?.[k] || 0) - (x.agora?.[k] || 0)) >= 0.01));
+}
+
+function desenhar() {
+  $('compTxt').textContent = nomeComp(comp);
+  const f = FOLHA.folha(comp), fe = fechamento(), hs = f.holerites.filter(h => naTela(h.colab));
+  const difs = fe ? diferencas(fe, f) : [];
+  const pagas = contasDo(fe).filter(c => c.pagoEm);
+  $('aviso').innerHTML = !fe ? `<div class="aviso">Folha de ${nomeComp(comp)} <b>aberta</b>: muda sozinha a cada lançamento. Ao fechar, as contas a pagar são geradas por empresa.</div>`
+    : difs.length ? `<div class="aviso perigo"><b>⚠ A folha de agora está diferente do fechamento de ${dataBR(fe.fechadaEm + 'T12:00')}.</b> ${difs.map(d => `${esc(d.e.nome)}: líquido ${reais(d.antes.liquido)} → ${reais(d.agora.liquido)}`).join(' · ')}.
+        ${pagas.length ? 'Parte das contas já foi paga: a diferença vira acerto na próxima folha.' : ''} <button type="button" class="btn btn-mini" id="btnAjustar">${pagas.length ? 'Registrar acerto' : 'Ajustar contas a pagar'}</button></div>`
+    : `<div class="aviso">Folha de ${nomeComp(comp)} <b>fechada</b> em ${dataBR(fe.fechadaEm + 'T12:00')} · bate com a conta de agora. ${contasDo(fe).length} conta(s) a pagar geradas${pagas.length ? `, ${pagas.length} já paga(s)` : ''}.</div>`;
+  $('btnFechar').textContent = fe ? 'Reabrir folha' : 'Fechar folha';
+  const soma = k => hs.reduce((a, h) => a + (h[k] || 0), 0);
+  $('kpis').innerHTML = [
+    ['Proventos (bruto)', reais(soma('bruto')), `${hs.filter(h => !h.afastado).length} holerite(s)`],
+    ['Descontos', reais(soma('descontos')), `adiantamento ${reais(soma('adiantamento'))}`],
+    ['Líquido a pagar', reais(soma('liquido')), `5º dia útil: ${dataBR(quintoDiaUtil(comp) + 'T12:00')}`],
+    ['INSS + FGTS', reais(soma('inss') + soma('fgts')), `vencem ${dataBR(dia20(comp) + 'T12:00')}`]
+  ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  $('contagem').textContent = `${hs.length} colaborador(es)`;
+  const grupos = {}; hs.forEach(h => (grupos[h.colab.empresa] ||= []).push(h));
+  $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th class="so-largo">Unidade</th><th class="num">Bruto</th><th class="num">Descontos</th><th class="num">Líquido</th><th class="num so-largo">FGTS</th></tr></thead><tbody>
+    ${EMPRESAS.filter(e => grupos[e.id]).map(e => `<tr class="grupo"><td colspan="6">${esc(e.nome)} <span class="sub">${grupos[e.id].length}</span></td></tr>` + grupos[e.id].map(h =>
+      `<tr data-id="${h.colab.id}" tabindex="0"><td><b>${esc(h.colab.nome)}</b> <small class="sub">${esc(CARGOS[h.colab.cargo])}</small>${h.afastado ? ' <span class="etiqueta pendente">afastado (INSS)</span>' : ''}</td>
+        <td class="so-largo">${esc(nomeUnidade(h.colab.unidade))}</td><td class="num">${reais(h.bruto)}</td><td class="num">${reais(h.descontos)}</td><td class="num"><b>${reais(h.liquido)}</b></td><td class="num so-largo">${reais(h.fgts)}</td></tr>`).join('')).join('')
+    || '<tr><td colspan="6" class="vazio">Ninguém com esses filtros.</td></tr>'}</tbody>`;
+  $('porEmpresa').innerHTML = EMPRESAS.map(e => { const t = f.porEmpresa[e.id];
+    return `<div class="lista-linha"><div>${etqEmpresa(e.id)}<small>${t.pessoas} pessoa(s) · INSS ${reais(t.inss)} · FGTS ${reais(t.fgts)}</small></div><span class="dir">${reais(t.liquido)}</span></div>`; }).join('');
+  $('btnAjustar')?.addEventListener('click', () => ajustar(fe, f, difs));
+}
+
+/* ---------- Holerite ---------- */
+function holerite(c) {
+  const h = FOLHA.holerite(c, comp), pro = h.itens.filter(i => i.tipo === 'provento'), des = h.itens.filter(i => i.tipo === 'desconto');
+  const corpo = `<div class="sub">${esc(nomeEmpresa(c.empresa))} · ${esc(nomeUnidade(c.unidade))} · matrícula ${c.matricula} · ${esc(CARGOS[c.cargo])} · admissão ${dataBR(c.admissao + 'T12:00')}</div>
+    <table class="tabela holerite"><thead><tr><th>Descrição</th><th class="num">Ref.</th><th class="num">Proventos</th><th class="num">Descontos</th></tr></thead><tbody>
+    ${[...pro, ...des].map(i => `<tr><td><span class="mono cod">${i.codigo}</span> ${esc(i.nome)}</td><td class="num">${esc(i.ref)}</td><td class="num">${i.tipo === 'provento' ? reais(i.valor) : ''}</td><td class="num">${i.tipo === 'desconto' ? reais(i.valor) : ''}</td></tr>`).join('')
+    || '<tr><td colspan="4" class="vazio">Sem holerite neste mês (afastado ou ainda não admitido).</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="2">Totais</td><td class="num">${reais(h.bruto)}</td><td class="num">${reais(h.descontos)}</td></tr>
+    <tr><td colspan="2"><b>Líquido a receber</b></td><td colspan="2" class="num"><b>${reais(h.liquido)}</b></td></tr></tfoot></table>
+    <div class="form-nota">Base INSS ${reais(h.baseInss)} · FGTS do mês ${reais(h.fgts)} · Tabelas de INSS e IRRF de exemplo (o contador confirma). Férias saem em recibo à parte.</div>`;
+  janela(`Holerite ${nomeComp(comp)} · ${c.nome}`, corpo, 'Imprimir', () => {
+    const w = window.open('', '_blank'); if (!w) return 'O navegador bloqueou a janela de impressão.';
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Holerite ${nomeComp(comp)} · ${esc(c.nome)}</title><link rel="stylesheet" href="../assets/css/estilo.css?v=9"><body style="padding:20px;background:#fff"><h2>Holerite ${nomeComp(comp)} · ${esc(c.nome)}</h2>${corpo}<script>setTimeout(()=>print(),300)<\/script>`);
+    w.document.close();
+  });
+}
+
+/* ---------- Fechar / reabrir ---------- */
+function fechar() {
+  const fe = fechamento();
+  if (fe) {
+    const pagas = contasDo(fe).filter(c => c.pagoEm);
+    if (pagas.length) return janela('Não dá para reabrir', `<p>Já existem ${pagas.length} conta(s) desta folha pagas no financeiro. Lance a correção na próxima competência (acerto) para manter o histórico certo.</p>`, 'Entendi', () => {});
+    return janela(`Reabrir folha ${nomeComp(comp)}`, `<p>As ${contasDo(fe).length} contas a pagar geradas (ainda não pagas) serão retiradas e os lançamentos voltam a aceitar alterações.</p>`, 'Reabrir', () => {
+      if (contasDo(fe).some(c => c.pagoEm)) { desenhar(); return 'Uma conta desta folha acabou de ser paga em outra tela. Nada foi reaberto.'; }
+      fe.contas.forEach(id => { const i = CONTAS_PAGAR.findIndex(c => c.id === id); if (i >= 0) CONTAS_PAGAR.splice(i, 1); });
+      fe.reabertaEm = hojeISO(); desenhar(); avisarMudanca('fechamentos_folha', 'contas_pagar');
+    });
+  }
+  const f = FOLHA.folha(comp), foto = JSON.stringify(f.porEmpresa);
+  janela(`Fechar folha ${nomeComp(comp)}`, `
+    <table class="tabela"><thead><tr><th>Empresa</th><th class="num">Pessoas</th><th class="num">Líquido</th><th class="num">INSS</th><th class="num">FGTS</th></tr></thead><tbody>
+    ${EMPRESAS.map(e => { const t = f.porEmpresa[e.id]; return `<tr><td>${etqEmpresa(e.id)}</td><td class="num">${t.pessoas}</td><td class="num">${reais(t.liquido)}</td><td class="num">${reais(t.inss)}</td><td class="num">${reais(t.fgts)}</td></tr>`; }).join('')}</tbody></table>
+    <div class="form-nota">Gera, para cada empresa, 3 contas a pagar: salários (${dataBR(quintoDiaUtil(comp) + 'T12:00')}), INSS e FGTS (${dataBR(dia20(comp) + 'T12:00')}). Os lançamentos de ${nomeComp(comp)} ficam travados.</div>`, 'Fechar e gerar contas', () => {
+    // Refaz a conta na hora: se algo mudou desde que a janela abriu, não fecha com o valor velho
+    const agora = FOLHA.folha(comp);
+    if (JSON.stringify(agora.porEmpresa) !== foto) { desenhar(); return 'A folha mudou enquanto esta janela estava aberta (lançamento ou cadastro). Nada foi fechado: feche e confira de novo.'; }
+    if (fechamento()) return 'Esta folha acabou de ser fechada em outra tela.';
+    const contas = gerarContas(agora);
+    FECHAMENTOS_FOLHA.push({ comp, fechadaEm: hojeISO(), totais: JSON.parse(foto), contas });
+    desenhar(); avisarMudanca('fechamentos_folha', 'contas_pagar');
+  });
+}
+function gerarContas(f, sufixo = '') {
+  const ids = [];
+  EMPRESAS.forEach(e => { const t = f.porEmpresa[e.id]; if (!t.pessoas) return;
+    const un = (COLABORADORES.find(c => c.empresa === e.id) || {}).unidade, centro = (CENTROS.find(c => c.unidade === un) || {}).id;
+    [['Salários', t.liquido, quintoDiaUtil(comp), '4.01'], ['INSS (GPS)', t.inss, dia20(comp), '4.02'], ['FGTS', t.fgts, dia20(comp), '4.02']].forEach(([nome, valor, venc, cat], k) => {
+      if (Math.abs(valor) < 0.01) return; const id = `fo${comp}${e.id}${k}${sufixo}${Date.now()}`; ids.push(id);
+      CONTAS_PAGAR.push({ id, favorecido: nome === 'Salários' ? 'Folha de pagamento' : nome.startsWith('INSS') ? 'Receita Federal (INSS)' : 'Caixa (FGTS)', documento: `${nome} ${nomeComp(comp)}${sufixo}`,
+        unidade: un, empresa: e.id, centro, categoria: cat, valor: FOLHA.r2(valor), vencimento: venc, pagoEm: null, folha: comp }); }); });
+  return ids;
+}
+// Depois do fechamento algo mudou: ajusta o que não foi pago; o que já foi pago vira conta de acerto separada
+function ajustar(fe, f, difs) {
+  janela('Ajustar a folha fechada', `<p>${difs.map(d => `${esc(d.e.nome)}: líquido ${reais(d.antes.liquido)} → <b>${reais(d.agora.liquido)}</b>`).join('<br>')}</p>
+    <div class="form-nota">Contas ainda não pagas recebem o valor novo. Se a conta já foi paga, entra uma conta separada só com a diferença ("acerto"), para o histórico ficar claro.</div>`, 'Ajustar', () => {
+    const agora = FOLHA.folha(comp);
+    if (JSON.stringify(agora.porEmpresa) !== JSON.stringify(f.porEmpresa)) { desenhar(); return 'A folha mudou de novo enquanto esta janela estava aberta. Confira e tente de novo.'; }
+    difs.forEach(({ e }) => { const a = fe.totais[e.id], n = agora.porEmpresa[e.id];
+      [['Salários', 'liquido'], ['INSS (GPS)', 'inss'], ['FGTS', 'fgts']].forEach(([nome, k]) => {
+        const dif = FOLHA.r2(n[k] - a[k]); if (Math.abs(dif) < 0.01) return;
+        const conta = contasDo(fe).find(c => c.empresa === e.id && c.documento.startsWith(nome));
+        if (conta && !conta.pagoEm) conta.valor = n[k];
+        else { const sub = { porEmpresa: { [e.id]: { pessoas: 1, liquido: k === 'liquido' ? dif : 0, inss: k === 'inss' ? dif : 0, fgts: k === 'fgts' ? dif : 0 } } };
+          EMPRESAS.forEach(x => sub.porEmpresa[x.id] ||= { pessoas: 0 }); fe.contas.push(...gerarContas(sub, ' · acerto')); } }); });
+    fe.totais = agora.porEmpresa; desenhar(); avisarMudanca('fechamentos_folha', 'contas_pagar');
+  });
+}
+
+const mudaComp = d => { const [a, m] = comp.split('-').map(Number), x = new Date(a, m - 1 + d, 1); comp = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`; desenhar(); };
+$('compAnt').onclick = () => mudaComp(-1); $('compProx').onclick = () => mudaComp(1);
+$('btnFechar').onclick = fechar;
+$('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) holerite(colab(tr.dataset.id)); };
+$('tab').onkeydown = e => { if (e.key === 'Enter') e.target.closest('tr[data-id]')?.click(); };
+$('btnExportar').onclick = () => exportarCSV(`folha-${comp}`, ['Competência', 'Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Código', 'Evento', 'Referência', 'Provento', 'Desconto'],
+  FOLHA.folha(comp).holerites.filter(h => naTela(h.colab)).flatMap(h => h.itens.map(i => [nomeComp(comp), nomeEmpresa(h.colab.empresa), nomeUnidade(h.colab.unidade), h.colab.matricula, h.colab.nome,
+    i.codigo, i.nome, i.ref, i.tipo === 'provento' ? numero(i.valor, 2) : '', i.tipo === 'desconto' ? numero(i.valor, 2) : ''])));
+// Lançamento, cadastro, adiantamento ou pagamento em outra aba: a folha se recalcula sozinha
+vigiarDados(['lancamentos', 'colaboradores', 'eventos', 'adiantamentos', 'fechamentos_folha', 'contas_pagar'], desenhar);
+desenhar();
+</script>
+</body>
+</html>

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cardápio e produtos</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=7">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=9">
 <style>
   #tab th.emp { border-left: 1px solid var(--borda); }
   #tab td.emp { border-left: 1px solid var(--borda); }
@@ -26,10 +26,10 @@
   <div class="form-nota" id="nota"></div>
 </div>
 
-<script src="../assets/js/menu.js?v=5"></script>
+<script src="../assets/js/menu.js?v=6"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=3"></script>
+<script src="../assets/js/exemplo.js?v=4"></script>
 <script src="../assets/js/cadastro.js?v=3"></script>
 <script>
 /* Regras (exemplo, números a confirmar com a Gran Sabor e o contador):
@@ -46,8 +46,8 @@ $('abas').innerHTML = ABAS.map(([k, n], i) => `<button type="button" data-aba="$
 const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, unidade: false, placeholder: 'Produto, código, grupo, preparo… (atalho: /)' });
 const emps = () => filtro.empresa ? [filtro.empresa] : EMPRESAS.map(e => e.id);
 const fora = p => emps().some(e => margemProduto(p, e).cmv > metaCMV(p));
-const nomeComp = c => c.tipo === 'ficha' ? (FICHAS.find(f => f.id === c.ref) || {}).nome : insumo(c.ref).nome;
-const textoBusca = p => [p.nome, p.codigo, p.grupo, p.comp.map(nomeComp).join(' '), ...emps().map(e => numero(p.precos[e], 2))].join(' ');
+const nomeComponente = c => c.tipo === 'ficha' ? (FICHAS.find(f => f.id === c.ref) || {}).nome : insumo(c.ref).nome;
+const textoBusca = p => [p.nome, p.codigo, p.grupo, p.comp.map(nomeComponente).join(' '), ...emps().map(e => numero(p.precos[e], 2))].join(' ');
 const porUn = p => p.un === 'kg' ? '/kg' : '';
 const corCMV = (m, p) => m.cmv > metaCMV(p) ? 'desce' : 'sobe';
 

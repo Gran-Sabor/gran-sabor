@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Colaboradores</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=9">
+</head>
+<body>
+<script src="../assets/js/menu.js?v=6"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=4"></script>
+<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Colaboradores: a empresa (CNPJ) que registra vem da unidade. Salário, VT e
+   dependentes alimentam direto a folha, o adiantamento, o 13º e as férias. */
+const SIT = { ativo: ['ativo', 'completa'], ferias: ['em férias', 'destaque'], afastado: ['afastado', 'pendente'], desligado: ['desligado', ''] };
+const tempoCasa = d => { const m = Math.floor((new Date() - new Date(d + 'T12:00')) / 2629746e3); return m < 12 ? `${m} m` : `${Math.floor(m / 12)} a ${m % 12} m`; };
+montarCadastro({
+  titulo: 'Colaboradores', sub: 'Cadastro de funcionários · a empresa que registra vem da unidade',
+  novoRotulo: 'Novo colaborador', tituloLista: 'Colaboradores por unidade',
+  dados: COLABORADORES, tabela: 'colaboradores', depende: ['ferias'],
+  escopo: l => ({ empresa: l.empresa, unidade: l.unidade }),
+  agrupar: l => `${nomeUnidade(l.unidade)} · ${nomeEmpresa(l.empresa)}`,
+  buscaDica: 'Nome, matrícula, cargo… (atalho: /)',
+  abas: [{ nome: 'Ativos', filtro: l => l.situacao !== 'desligado' }, { nome: 'Em férias ou afastados', filtro: l => ['ferias', 'afastado'].includes(l.situacao) },
+         { nome: 'Desligados', filtro: l => l.situacao === 'desligado' }, { nome: 'Todos', filtro: () => true }],
+  colunas: [
+    { campo: 'matricula', titulo: 'Matr.', fmt: v => `<span class="mono">${esc(v)}</span>` },
+    { campo: 'nome', titulo: 'Nome', fmt: v => `<b>${esc(v)}</b>` },
+    { campo: 'cargo', titulo: 'Cargo', fmt: v => esc(CARGOS[v] || v), busca: l => CARGOS[l.cargo] },
+    { campo: 'admissao', titulo: 'Admissão', fmt: v => `${dataBR(v + 'T12:00')} <small class="sub">${tempoCasa(v)}</small>`, csv: l => dataBR(l.admissao + 'T12:00') },
+    { campo: 'salario', titulo: 'Salário', num: true, fmt: v => reais(v), csv: l => numero(l.salario, 2) },
+    { campo: 'turno', titulo: 'Turno', fmt: v => esc(TURNOS[v]?.[0] || v) },
+    { campo: 'situacao', titulo: 'Situação', fmt: v => `<span class="etiqueta ${SIT[v]?.[1] || ''}">${SIT[v]?.[0] || v}</span>` }
+  ],
+  kpis: v => {
+    const at = v.filter(c => c.situacao !== 'desligado');
+    return [
+      ['Colaboradores', at.length, EMPRESAS.map(e => `${e.nome.replace('Empresa ', 'E')}: ${at.filter(c => c.empresa === e.id).length}`).join(' · ')],
+      ['Folha base (salários)', reais(at.reduce((a, c) => a + c.salario, 0)), 'sem encargos e variáveis'],
+      ['Em férias / afastados', `${at.filter(c => c.situacao === 'ferias').length} / ${at.filter(c => c.situacao === 'afastado').length}`, 'não entram na escala'],
+      ['Em experiência', at.filter(c => (new Date() - new Date(c.admissao + 'T12:00')) / 864e5 <= 90).length, 'até 90 dias de casa']
+    ];
+  },
+  campos: [
+    { campo: 'nome', titulo: 'Nome completo', obrig: true, larg: 'c8', max: 80, secao: 'Pessoal' },
+    { campo: 'matricula', titulo: 'Matrícula', obrig: true, larg: 'c4', max: 6, somenteLeitura: true, secao: 'Pessoal' },
+    { campo: 'dependentes', titulo: 'Dependentes (IR)', tipo: 'numero', larg: 'c4', secao: 'Pessoal' },
+    { campo: 'pix', titulo: 'Chave Pix para pagamento', larg: 'c8', max: 80, dica: 'CPF, celular ou e-mail', secao: 'Pessoal' },
+    { campo: 'unidade', titulo: 'Unidade', tipo: 'select', opcoes: () => UNIDADES.filter(u => u.id !== 'todas').map(u => [u.id, `${u.nome} · ${nomeEmpresa(UNIDADE_EMPRESA[u.id])}`]), larg: 'c6', secao: 'Contrato' },
+    { campo: 'cargo', titulo: 'Cargo', tipo: 'select', opcoes: Object.entries(CARGOS), larg: 'c6', secao: 'Contrato' },
+    { campo: 'admissao', titulo: 'Admissão (aaaa-mm-dd)', obrig: true, larg: 'c4', max: 10, secao: 'Contrato' },
+    { campo: 'salario', titulo: 'Salário (R$)', tipo: 'dinheiro', obrig: true, larg: 'c4', secao: 'Contrato' },
+    { campo: 'turno', titulo: 'Turno padrão', tipo: 'select', opcoes: Object.entries(TURNOS).filter(([k]) => k !== 'F').map(([k, [n, h]]) => [k, `${n} ${h}`]), larg: 'c4', secao: 'Contrato' },
+    { campo: 'vt', titulo: 'Vale-transporte por dia (R$)', tipo: 'dinheiro', larg: 'c4', dica: '0 = não usa', secao: 'Benefícios' },
+    { campo: 'optanteVT', titulo: 'Optante do VT (desconta até 6%)', tipo: 'check', larg: 'c8', secao: 'Benefícios' },
+    { campo: 'situacao', titulo: 'Situação', tipo: 'select', opcoes: Object.entries(SIT).map(([k, [n]]) => [k, n]), larg: 'c4', secao: 'Benefícios' }
+  ],
+  novo: f => ({ unidade: f.unidade || 'loja1', cargo: 'atendente', turno: 'M', situacao: 'ativo', admissao: hojeISO(), dependentes: 0, vt: 10.6, optanteVT: true, ativo: true,
+    matricula: String(Math.max(...COLABORADORES.map(c => +c.matricula)) + 1).padStart(4, '0') }),
+  validar: (d, item) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.admissao)) return 'Admissão no formato aaaa-mm-dd.';
+    if (!(d.salario > 0)) return 'Informe o salário.';
+    d.empresa = UNIDADE_EMPRESA[d.unidade]; d.ativo = d.situacao !== 'desligado'; d.matricula = d.matricula || item.matricula; d.dependentes = d.dependentes || 0; d.vt = d.vt || 0;
+    return '';
+  },
+  gerarId: d => 'c' + d.matricula,
+  rodapeForm: () => 'A empresa que registra é a da unidade. Mudou o salário? Holerite, adiantamento, 13º e férias recalculam sozinhos.'
+});
+</script>
+</body>
+</html>
