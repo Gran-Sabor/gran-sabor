@@ -13,14 +13,14 @@ const MENU = [
     { id: 'fechamento_cx',  nome: 'Abertura e fechamento de caixa' }
   ]},
   { grupo: 'Cozinha e produção', icone: 'cozinha', itens: [
-    { id: 'ficha_tecnica',  nome: 'Ficha técnica' },
+    { id: 'ficha_tecnica',  nome: 'Ficha técnica', arquivo: 'pages/coz-ficha.html' },
     { id: 'producao',       nome: 'Produção do dia' },
     { id: 'cortes',         nome: 'Cortes de carne (central)' }
   ]},
   { grupo: 'Estoque', icone: 'estoque', itens: [
-    { id: 'posicao',        nome: 'Posição de estoque' },
+    { id: 'posicao',        nome: 'Posição de estoque', arquivo: 'pages/est-posicao.html' },
     { id: 'movimentos',     nome: 'Movimentações' },
-    { id: 'transferencias', nome: 'Transferências entre unidades' },
+    { id: 'transferencias', nome: 'Transferências entre unidades', arquivo: 'pages/est-transferencias.html' },
     { id: 'perdas',         nome: 'Perdas e consumo interno' },
     { id: 'inventario',     nome: 'Inventário' }
   ]},
@@ -63,7 +63,7 @@ const MENU = [
   ]},
   { grupo: 'Cadastros', icone: 'cadastros', itens: [
     { id: 'unidades',       nome: 'Empresas e unidades', arquivo: 'pages/unidades.html' },
-    { id: 'produtos',       nome: 'Cardápio e produtos' },
+    { id: 'produtos',       nome: 'Cardápio e produtos', arquivo: 'pages/cad-produtos.html' },
     { id: 'insumos',        nome: 'Insumos', arquivo: 'pages/cad-insumos.html' },
     { id: 'fornecedores',   nome: 'Fornecedores', arquivo: 'pages/cad-fornecedores.html' },
     { id: 'clientes',       nome: 'Clientes e convênios', arquivo: 'pages/cad-clientes.html' },

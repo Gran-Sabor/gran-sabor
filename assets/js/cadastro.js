@@ -6,7 +6,8 @@
    EXEMPLO em memória (nada é gravado).
    ===================================================================== */
 function montarCadastro(cfg) {
-  let lista = cfg.dados.map(x => ({ ...x }));
+  // A lista é a mesma de todas as abas (dadoComum): nada de cópia própria que fica velha
+  let lista = cfg.dados;
   let filtro;
   document.body.innerHTML = `<div class="tela">
     <div class="tela-cab"><h1>${esc(cfg.titulo)}</h1>${cfg.sub ? `<span class="sub">${esc(cfg.sub)}</span>` : ''}
@@ -49,6 +50,7 @@ function montarCadastro(cfg) {
   function abrirForm(item) {
     const novo = !item;
     item = item || (cfg.novo ? cfg.novo(filtro) : { ativo: true });
+    const foto = JSON.parse(JSON.stringify(item));
     const secoes = [...new Set(cfg.campos.map(c => c.secao || ''))];
     const campo = c => {
       const v = item[c.campo];
@@ -90,16 +92,20 @@ function montarCadastro(cfg) {
       });
       const faltou = cfg.campos.find(c => c.obrig && (d[c.campo] == null || d[c.campo] === '' || (Array.isArray(d[c.campo]) && !d[c.campo].length)));
       const erro = faltou ? `Preencha: ${faltou.titulo}.` : cfg.validar ? cfg.validar(d, item, lista) : '';
-      if (erro) { f.querySelector('#fMsg').textContent = erro; return; }
+      // Alguém mudou este cadastro em outra aba enquanto o formulário estava aberto? Não sobrescreve.
+      const mudou = !novo && mudouDesde(foto, lista.find(x => x.id === item.id), Object.keys(foto), 'Este cadastro');
+      if (erro || mudou) { f.querySelector('#fMsg').textContent = erro || mudou; return; }
       if (novo) lista.unshift({ ...d, id: cfg.gerarId ? cfg.gerarId(d) : 'n' + Date.now() });
       else Object.assign(lista.find(x => x.id === item.id), d);
-      fim(); desenhar();
+      fim(); desenhar(); if (cfg.tabela) avisarMudanca(cfg.tabela);
     };
     document.addEventListener('keydown', tecla);
     document.body.appendChild(v);
     f.querySelector('input:not([readonly]),select')?.focus();
   }
 
+  // Outra aba mudou estes dados (ou algo de que eles dependem): redesenha sozinho
+  if (cfg.tabela) vigiarDados([cfg.tabela, ...(cfg.depende || [])], desenhar);
   $('btnNovo').onclick = () => abrirForm();
   $('btnExportar').onclick = () => exportarCSV(cfg.arquivoCSV || cfg.titulo, cfg.colunas.map(c => c.titulo),
     visiveis().map(l => cfg.colunas.map(c => c.csv ? c.csv(l) : strip(c.fmt ? c.fmt(l[c.campo], l) : l[c.campo]).replace(/\s+/g, ' ').trim())));

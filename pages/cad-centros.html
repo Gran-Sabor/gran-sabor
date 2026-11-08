@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Centros de custo</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=5">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=7">
 </head>
 <body>
-<script src="../assets/js/menu.js?v=4"></script>
+<script src="../assets/js/menu.js?v=5"></script>
 <script src="../assets/js/icones.js?v=1"></script>
-<script src="../assets/js/tela.js?v=4"></script>
-<script src="../assets/js/exemplo.js?v=2"></script>
-<script src="../assets/js/cadastro.js?v=2"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
 <script>
 /* Centro de custo = unidade + setor. A empresa vem da unidade, então todo
    gasto lançado num centro já cai na empresa certa. */
@@ -20,7 +20,7 @@ const SETORES = { cozinha: 'Cozinha', salao: 'Salão e caixa', delivery: 'Delive
 montarCadastro({
   titulo: 'Centros de custo', sub: 'Onde o gasto acontece: unidade + setor (a empresa vem da unidade)',
   novoRotulo: 'Novo centro de custo', tituloLista: 'Centros por unidade',
-  dados: CENTROS,
+  dados: CENTROS, tabela: 'centros',
   escopo: l => ({ empresa: l.empresa, unidade: l.unidade }),
   agrupar: l => `${nomeUnidade(l.unidade)} · ${nomeEmpresa(l.empresa)}`,
   colunas: [

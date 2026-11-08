@@ -74,3 +74,64 @@ function exportarCSV(nome, cabecalho, linhas) {
 const fmtDoc = c => { c = String(c || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
   return c.length === 14 ? `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}`
     : c.length === 11 ? `${c.slice(0, 3)}.${c.slice(3, 6)}.${c.slice(6, 9)}-${c.slice(9)}` : c; };
+
+/* =====================================================================
+   DADOS SEMPRE ATUALIZADOS EM TODA A CADEIA (regra aprendida na Drogarema)
+   Na Drogarema uma tela aberta há horas mostrava o valor antigo e um
+   pagamento saiu errado. Por isso, aqui:
+   1. Cada dado mora num lugar só (dadoComum / banco) e cada conta é feita
+      numa função só (calculos em exemplo.js → depois no banco). Nenhuma tela
+      guarda cópia própria nem número calculado "congelado".
+   2. Quem grava avisa (avisarMudanca) e toda tela aberta que usa aquele dado
+      se redesenha sozinha (vigiarDados), sem atrapalhar quem está digitando.
+   3. Antes de pagar, enviar, fechar ou gerar algo, a tela relê o dado e, se
+      ele mudou desde que a janela abriu, NÃO confirma: mostra o valor novo.
+   ===================================================================== */
+// Um único conjunto de dados para todas as abas do sistema (as abas são iframes da mesma casca)
+// A casca = a janela mais de cima que ainda é do próprio sistema (na prévia, o sistema roda dentro de outra página)
+function casca() {
+  let w = window;
+  try { while (w.parent !== w && w.parent.location.origin === location.origin) w = w.parent; } catch {}
+  return w;
+}
+function dadoComum(nome, criar) {
+  const raiz = casca();
+  const loja = raiz.__gsDados || (raiz.__gsDados = {});
+  if (!(nome in loja)) loja[nome] = criar();
+  return loja[nome];
+}
+// Avisa todas as abas abertas (e outras janelas do navegador) que estes dados mudaram
+const _idTela = Math.random().toString(36).slice(2);   // para a tela não reagir ao próprio aviso
+const _canalDados = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('gs-dados') : null;
+function avisarMudanca(...tabelas) {
+  const msg = { tipo: 'dados', tabelas, quando: Date.now(), de: _idTela };
+  const raiz = casca();
+  const frames = [raiz, ...Array.from({ length: raiz.frames.length }, (_, i) => raiz.frames[i])];
+  frames.forEach(f => { try { f.postMessage(msg, location.origin); } catch {} });
+  try { _canalDados?.postMessage(msg); } catch {}
+}
+// Redesenha a tela quando algum dado que ela usa mudar. Espera terminar a digitação e fechar a janela aberta.
+function vigiarDados(tabelas, redesenhar) {
+  let pendente = false;
+  const ocupado = () => !!document.querySelector('.veu') ||
+    (document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) && document.activeElement.type !== 'search' && !document.activeElement.closest('.filtros'));
+  const aplicar = () => { if (!pendente || ocupado()) return; pendente = false; redesenhar(); seloAtualizado(); };
+  const ouvir = d => { if (d?.tipo === 'dados' && d.de !== _idTela && d.tabelas.some(t => tabelas.includes(t))) { pendente = true; aplicar(); } };
+  window.addEventListener('message', e => { if (e.origin === location.origin) ouvir(e.data); });
+  _canalDados?.addEventListener('message', e => ouvir(e.data));
+  setInterval(aplicar, 1500);
+  document.addEventListener('visibilitychange', aplicar);
+  // Com o banco ligado, a mesma função também vai ouvir as mudanças do Supabase (Realtime) dessas tabelas.
+}
+function seloAtualizado() {
+  let el = document.getElementById('seloAtualizado');
+  if (!el) { el = document.createElement('div'); el.id = 'seloAtualizado'; el.className = 'selo-atualizado'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.textContent = '↻ atualizado automaticamente às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  el.classList.remove('oculto'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('oculto'), 6000);
+}
+// Confere, na hora de confirmar, se o dado ainda é o mesmo que a pessoa viu. Retorna a mensagem de bloqueio ou ''.
+function mudouDesde(foto, agora, campos, rotulo = 'Os dados') {
+  const dif = campos.filter(c => JSON.stringify(foto[c]) !== JSON.stringify(agora?.[c]));
+  return !agora ? `${rotulo} não existe mais (foi apagado em outra tela). Nada foi feito.`
+    : dif.length ? `${rotulo} mudou enquanto esta janela estava aberta. Nada foi feito: feche, confira o valor novo e confirme de novo.` : '';
+}

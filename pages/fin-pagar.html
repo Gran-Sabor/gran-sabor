@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Contas a pagar</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=5">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=7">
 </head>
 <body>
 <div class="tela">
@@ -28,13 +28,14 @@
   </div>
 </div>
 
-<script src="../assets/js/menu.js?v=4"></script>
+<script src="../assets/js/menu.js?v=5"></script>
 <script src="../assets/js/icones.js?v=1"></script>
-<script src="../assets/js/tela.js?v=4"></script>
-<script src="../assets/js/exemplo.js?v=2"></script>
-<script src="../assets/js/cadastro.js?v=2"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
 <script>
-let contas = CONTAS_PAGAR.map(c => ({ ...c }));
+// Mesma lista de todas as abas: nota de entrada, acerto entre empresas e esta tela mexem nos mesmos dados
+const contas = CONTAS_PAGAR;
 let aba = 'aberto';
 const hoje = hojeISO();
 const nomeCat = id => (CATEGORIAS.find(c => c.id === id) || {}).nome || id;
@@ -89,6 +90,7 @@ function desenhar() {
 
 /* ---------- Pagar (baixa) ---------- */
 function baixar(c) {
+  const foto = { ...c };
   const v = janela(`Pagar · ${c.favorecido}`, `
     <div class="form-grade">
       <label class="c4">Data do pagamento<input name="data" type="date" class="campo" value="${hoje}"></label>
@@ -98,9 +100,12 @@ function baixar(c) {
       <label class="c4">Forma<select name="forma" class="campo"><option>Pix</option><option>Boleto</option><option>Transferência</option><option>Dinheiro</option><option>Cartão</option></select></label>
       <label class="c4">Conta de saída<select name="conta" class="campo">${EMPRESAS.map(e => `<option${e.id === c.empresa ? ' selected' : ''}>Banco · ${esc(e.nome)}</option>`).join('')}</select></label>
     </div><div class="form-nota" id="totalPago"></div>`, 'Confirmar pagamento', f => {
+    // Relê a conta na hora de pagar: se mudou (valor, vencimento, já paga) desde que a janela abriu, não paga
+    const mudou = mudouDesde(foto, contas.find(x => x.id === c.id), ['valor', 'vencimento', 'pagoEm', 'favorecido', 'empresa'], 'Esta conta');
+    if (mudou) { desenhar(); return mudou; }
     const n = x => Number(String(x).replace(/\./g, '').replace(',', '.')) || 0;
     Object.assign(c, { pagoEm: f.data.value, valorPago: c.valor + n(f.juros.value) - n(f.desc.value), forma: f.forma.value });
-    desenhar();
+    desenhar(); avisarMudanca('contas_pagar');
   });
   const f = v.querySelector('form'), n = x => Number(String(x).replace(/\./g, '').replace(',', '.')) || 0;
   const tot = () => { v.querySelector('#totalPago').textContent = `Total pago: ${reais(c.valor + n(f.juros.value) - n(f.desc.value))}. A conta de saída é sempre da mesma empresa da conta.`; };
@@ -109,7 +114,7 @@ function baixar(c) {
 
 /* ---------- Nova conta (com parcelas) ---------- */
 function nova(c) {
-  const ed = !!c; c = c || { unidade: filtro.unidade || 'loja1', vencimento: diasDaqui(7), categoria: '3.03' };
+  const ed = !!c; const foto = ed ? { ...c } : null; c = c || { unidade: filtro.unidade || 'loja1', vencimento: diasDaqui(7), categoria: '3.03' };
   janela(ed ? 'Editar conta' : 'Nova conta a pagar', `
     <div class="form-grade">
       <label class="c6">Favorecido<input name="favorecido" class="campo" list="listaForn" value="${esc(c.favorecido)}" required></label>
@@ -127,13 +132,14 @@ function nova(c) {
       const valor = Number(f.valor.value.replace(/\./g, '').replace(',', '.'));
       if (!f.favorecido.value.trim() || !(valor > 0)) return 'Informe favorecido e valor.';
       const dados = { favorecido: f.favorecido.value.trim(), documento: f.documento.value.trim(), unidade: f.unidade.value, empresa: UNIDADE_EMPRESA[f.unidade.value], centro: f.centro.value, categoria: f.categoria.value };
-      if (ed) { Object.assign(c, dados, { valor, vencimento: f.vencimento.value }); return desenhar(); }
+      if (ed) { const mudou = mudouDesde(foto, contas.find(x => x.id === c.id), ['valor', 'vencimento', 'pagoEm', 'favorecido'], 'Esta conta'); if (mudou) return mudou;
+        Object.assign(c, dados, { valor, vencimento: f.vencimento.value }); desenhar(); return avisarMudanca('contas_pagar'); }
       const rec = f.recorrente.checked, n = rec ? 12 : Math.max(1, +f.parcelas.value || 1);
       for (let i = 0; i < n; i++) {
         const d = new Date(f.vencimento.value + 'T12:00'); d.setMonth(d.getMonth() + i);
         contas.push({ ...dados, id: 'n' + Date.now() + i, valor: rec ? valor : +(valor / n).toFixed(2), vencimento: d.toISOString().slice(0, 10), documento: dados.documento + (n > 1 ? ` ${i + 1}/${n}` : '') });
       }
-      desenhar();
+      desenhar(); avisarMudanca('contas_pagar');
     }, v => {
       const f = v.querySelector('form');
       const centros = () => { f.centro.innerHTML = CENTROS.filter(x => x.unidade === f.unidade.value).map(x => `<option value="${x.id}"${x.id === c.centro ? ' selected' : ''}>${esc(x.nome)}</option>`).join(''); };
@@ -149,6 +155,8 @@ $('tab').addEventListener('click', e => { const tr = e.target.closest('tr[data-i
   if (e.target.closest('[data-baixar]')) baixar(c); else if (!c.pagoEm) nova(c); });
 $('btnExportar').onclick = () => exportarCSV('contas-a-pagar', ['Vencimento', 'Favorecido', 'Documento', 'Categoria', 'Centro de custo', 'Empresa', 'Unidade', 'Valor', 'Situação', 'Pago em', 'Valor pago'],
   filtradas().map(c => [dataBR(c.vencimento + 'T12:00'), c.favorecido, c.documento, nomeCat(c.categoria), nomeCentro(c.centro), nomeEmpresa(c.empresa), nomeUnidade(c.unidade), numero(c.valor, 2), situacao(c), c.pagoEm ? dataBR(c.pagoEm + 'T12:00') : '', c.valorPago ? numero(c.valorPago, 2) : '']));
+// Conta nova vinda do XML ou do acerto entre empresas, baixa feita em outra aba: a lista se atualiza sozinha
+vigiarDados(['contas_pagar', 'categorias', 'centros', 'fornecedores'], desenhar);
 desenhar();
 </script>
 </body>

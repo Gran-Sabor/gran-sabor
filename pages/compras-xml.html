@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notas de entrada (XML)</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=5">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=7">
 </head>
 <body>
 <div class="tela">
@@ -27,19 +27,21 @@
   </div>
 </div>
 
-<script src="../assets/js/menu.js?v=4"></script>
+<script src="../assets/js/menu.js?v=5"></script>
 <script src="../assets/js/icones.js?v=1"></script>
-<script src="../assets/js/tela.js?v=4"></script>
-<script src="../assets/js/exemplo.js?v=2"></script>
-<script src="../assets/js/cadastro.js?v=2"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
 <script>
-let notas = NOTAS_ENTRADA.map(n => ({ ...n, chave: '', fornNome: (FORNECEDORES.find(f => f.id === n.fornecedor) || {}).nome }));
+// Mesma lista de todas as abas. O nome do fornecedor vem sempre do cadastro (se mudar lá, muda aqui)
+const notas = NOTAS_ENTRADA;
+const fornNome = n => (FORNECEDORES.find(f => f.id === n.fornecedor) || {}).nome || n.fornNome || '—';
 const vinculos = {};   // "CNPJfornecedor|código do produto" → insumo (lembra para as próximas notas)
 const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, periodo: true, placeholder: 'Fornecedor, número, CNPJ… (atalho: /)' });
 
 function desenhar() {
   const v = notas.filter(n => noFiltro(filtro, n) && (!filtro.de || n.emissao >= filtro.de) && (!filtro.ate || n.emissao <= filtro.ate)
-    && casaBusca([n.fornNome, n.numero, n.chave, nomeEmpresa(n.empresa), nomeUnidade(n.unidade), numero(n.valor, 2)].join(' '), filtro.busca))
+    && casaBusca([fornNome(n), n.numero, n.chave, nomeEmpresa(n.empresa), nomeUnidade(n.unidade), numero(n.valor, 2)].join(' '), filtro.busca))
     .sort((a, b) => b.emissao.localeCompare(a.emissao));
   const soma = l => l.reduce((a, n) => a + n.valor, 0);
   $('kpis').innerHTML = [
@@ -49,7 +51,7 @@ function desenhar() {
   ].map(([t, val, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${val}</div><div class="kpi-ctx">${c}</div></div>`).join('');
   $('contagem').textContent = `${v.length} nota(s)`;
   $('tab').innerHTML = `<thead><tr><th>Emissão</th><th>Nota</th><th>Fornecedor</th><th>Empresa · entrada em</th><th class="num">Itens</th><th class="num">Valor</th><th>Parcelas</th><th>Situação</th></tr></thead><tbody>${
-    v.map(n => `<tr><td class="mono">${dataBR(n.emissao + 'T12:00')}</td><td class="mono">${esc(n.numero)}/${esc(n.serie)}</td><td><b>${esc(n.fornNome)}</b></td>
+    v.map(n => `<tr><td class="mono">${dataBR(n.emissao + 'T12:00')}</td><td class="mono">${esc(n.numero)}/${esc(n.serie)}</td><td><b>${esc(fornNome(n))}</b></td>
       <td>${etqEmpresa(n.empresa)} <small class="sub">${esc(nomeUnidade(n.unidade))}</small></td><td class="num">${n.itens}</td><td class="num">${reais(n.valor)}</td><td>${n.parcelas}×</td>
       <td>${n.situacao === 'lançada' ? '<span class="etiqueta completa">lançada</span>' : `<span class="etiqueta pendente">${esc(n.situacao)}</span>`}</td></tr>`).join('')
     || '<tr><td colspan="8" class="vazio">Nenhuma nota com esses filtros.</td></tr>'}</tbody>`;
@@ -105,19 +107,41 @@ function conferir(nf) {
       nf.itens.map((it, i) => `<tr><td>${esc(it.nome)}<small class="sub"> NCM ${esc(it.ncm)}</small></td><td class="num">${numero(it.qtd, 3)}</td><td>${esc(it.un)}</td><td class="num">${reais(it.vun)}</td><td class="num">${reais(it.total)}</td>
         <td><select class="campo campo-mini" data-item="${i}"><option value="">— não ligado —</option>${INSUMOS.map(x => `<option value="${x.id}"${x.id === sugerir(nf, it) ? ' selected' : ''}>${esc(x.nome)} (${x.un})</option>`).join('')}</select></td>
         <td class="num"><input class="campo campo-mini" data-fator="${i}" value="1" inputmode="decimal" title="Quantas unidades de estoque vêm em 1 ${esc(it.un)} (ex.: caixa com 12 = 12)" style="width:56px"></td></tr>`).join('')}</tbody></table></div>
-    <h3 class="sub-tit">Parcelas · vão para contas a pagar</h3>
+    <h3 class="sub-tit">Parcelas · entram em contas a pagar ao lançar</h3>
     <div class="rolagem"><table class="tabela"><thead><tr><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>${
       parcelas.map(p => `<tr><td>${esc(p.numero)}</td><td>${dataBR(p.vencimento + 'T12:00')}</td><td class="num">${reais(p.valor)}</td></tr>`).join('')}</tbody></table></div>
     ${nf.parcelas.length ? '' : '<div class="form-nota">A nota não trouxe parcelas: foi criada uma, para 30 dias. Ajuste em contas a pagar se precisar.</div>'}`,
     emp && !repetida ? 'Lançar entrada' : 'Fechar', f => {
       if (!emp || repetida) return;
+      // Relê na hora: outra aba pode ter lançado a mesma nota enquanto esta janela estava aberta
+      if (nf.chave && notas.some(n => n.chave === nf.chave)) { desenhar(); return 'Esta nota acabou de ser lançada em outra tela. Nada foi feito.'; }
       const sels = [...f.querySelectorAll('[data-item]')];
       sels.forEach(s => { if (s.value) vinculos[nf.emitCnpj + '|' + nf.itens[+s.dataset.item].codigo] = s.value; });
       const faltam = sels.filter(s => !s.value).length;
       notas.unshift({ id: 'x' + Date.now(), numero: nf.numero, serie: nf.serie, chave: nf.chave, fornecedor: forn?.id, fornNome: nf.emitNome, empresa: emp.id, unidade: f.unidade.value,
         emissao: nf.emissao, valor: nf.valor, itens: nf.itens.length, parcelas: parcelas.length, situacao: faltam ? `falta vincular ${faltam} item(ns)` : 'lançada' });
+      lancarCadeia(notas[0], nf, parcelas, f, forn);
       desenhar();
     });
+}
+
+/* A nota alimenta toda a cadeia de uma vez, na mesma ação (nada fica para "lembrar de lançar depois"):
+   parcelas → contas a pagar · itens ligados → estoque da unidade e custo médio do insumo
+   → custo das fichas técnicas → margem do cardápio. Compra da central → fica disponível para dividir. */
+function lancarCadeia(nota, nf, parcelas, f, forn) {
+  const n = x => Number(String(x).replace(/\./g, '').replace(',', '.')) || 1;
+  const centro = (CENTROS.find(c => c.unidade === nota.unidade && /estoque|cozinha/.test(c.setor)) || CENTROS.find(c => c.unidade === nota.unidade) || {}).id;
+  parcelas.forEach((p, i) => CONTAS_PAGAR.push({ id: 'cp' + Date.now() + i, favorecido: forn?.nome || nf.emitNome, documento: `NF ${nf.numero} ${i + 1}/${parcelas.length}`,
+    unidade: nota.unidade, empresa: nota.empresa, centro, categoria: f.categoria.value, valor: p.valor, vencimento: p.vencimento, pagoEm: null, nota: nota.id }));
+  const rateio = [];
+  f.querySelectorAll('[data-item]').forEach(s => { if (!s.value) return;
+    const it = nf.itens[+s.dataset.item], fator = n(f.querySelector(`[data-fator="${s.dataset.item}"]`).value), q = it.qtd * fator, ins = INSUMOS.find(x => x.id === s.value);
+    const total = ESTOQUE.filter(e => e.insumo === ins.id).reduce((a, e) => a + Math.max(0, e.saldo), 0);
+    ins.custo = +((total * ins.custo + it.total) / (total + q)).toFixed(4);          // custo médio ponderado
+    const e = ESTOQUE.find(x => x.insumo === ins.id && x.local === nota.unidade); if (e) e.saldo = +(e.saldo + q).toFixed(3);
+    rateio.push([ins.id, q]); });
+  if (nota.unidade === 'central' && rateio.length) COMPRA_ITENS[nota.id] = rateio;
+  avisarMudanca('notas_entrada', 'contas_pagar', 'estoque', 'insumos', 'compra_itens');
 }
 
 async function abrirArquivos(files) {
@@ -146,7 +170,8 @@ $('soltar').addEventListener('dragleave', () => $('soltar').classList.remove('so
 $('soltar').addEventListener('drop', e => { e.preventDefault(); $('soltar').classList.remove('sobre'); abrirArquivos(e.dataTransfer.files); });
 $('btnExemplo').onclick = () => conferir(lerXML(XML_EXEMPLO));
 $('btnExportar').onclick = () => exportarCSV('notas-de-entrada', ['Emissão', 'Número', 'Série', 'Fornecedor', 'Empresa', 'Unidade', 'Itens', 'Valor', 'Parcelas', 'Situação'],
-  notas.filter(n => noFiltro(filtro, n)).map(n => [dataBR(n.emissao + 'T12:00'), n.numero, n.serie, n.fornNome, nomeEmpresa(n.empresa), nomeUnidade(n.unidade), n.itens, numero(n.valor, 2), n.parcelas, n.situacao]));
+  notas.filter(n => noFiltro(filtro, n)).map(n => [dataBR(n.emissao + 'T12:00'), n.numero, n.serie, fornNome(n), nomeEmpresa(n.empresa), nomeUnidade(n.unidade), n.itens, numero(n.valor, 2), n.parcelas, n.situacao]));
+vigiarDados(['notas_entrada', 'fornecedores'], desenhar);
 desenhar();
 </script>
 </body>

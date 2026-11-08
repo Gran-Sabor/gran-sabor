@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transferências</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=7">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Transferências entre unidades</h1><span class="sub">Compra única na central, dividida entre as lojas · cada envio é conferido no recebimento</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn" id="btnDividir">Dividir compra</button>
+      <button type="button" class="btn btn-pri" id="btnNovo">+ Nova transferência</button></div></div>
+  <div id="filtros"></div>
+  <div class="abas-tela" id="abas">
+    <button type="button" data-aba="lista" class="ativa">Transferências</button><button type="button" data-aba="compras">Compras a dividir</button>
+    <button type="button" data-aba="acerto">Acerto entre empresas</button></div>
+  <section class="kpis" id="kpis"></section>
+  <div id="conteudo"></div>
+</div>
+
+<script src="../assets/js/menu.js?v=5"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Regras (exemplo, a confirmar com a Gran Sabor e o contador):
+   - A central compra de uma vez e divide entre as lojas. Cada divisão vira uma
+     transferência: sai da origem no envio e entra no destino só no recebimento.
+   - Quem recebe confere item a item; diferença fica marcada como divergência.
+   - Mesma empresa (mesmo CNPJ raiz) = transferência entre filiais.
+     Empresas diferentes = a mercadoria muda de dono: precisa de nota fiscal e
+     gera um acerto (a empresa que recebeu paga a que enviou, pelo custo). */
+let aba = 'lista';
+const hoje = hojeISO();
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, periodo: true, placeholder: 'Número, insumo, unidade, nota… (atalho: /)' });
+const emp = l => UNIDADE_EMPRESA[l];
+const entreEmpresas = t => emp(t.origem) !== emp(t.destino);
+const valorT = (t, campo = 'enviada') => t.itens.reduce((a, it) => a + (it[campo] ?? 0) * it.custo, 0);
+const qtd = (v, i) => `${numero(v, insumo(i).un === 'kg' ? 1 : 0)} ${insumo(i).un}`;
+const lojas = LOCAIS_ESTOQUE.filter(l => l !== 'central');
+const ETQ = { 'em trânsito': '<span class="etiqueta pendente">a receber</span>', recebida: '<span class="etiqueta completa">recebida</span>', divergente: '<span class="etiqueta perigo">divergência</span>' };
+const etqTipo = t => entreEmpresas(t) ? '<span class="etiqueta destaque" title="Empresas diferentes: precisa de nota fiscal e gera acerto">entre empresas</span>' : '<span class="etiqueta">mesma empresa</span>';
+const textoBusca = t => [t.numero, nomeUnidade(t.origem), nomeUnidade(t.destino), nomeEmpresa(emp(t.origem)), nomeEmpresa(emp(t.destino)),
+  t.itens.map(it => insumo(it.insumo).nome).join(' '), t.compra ? 'NF ' + NOTAS_ENTRADA.find(n => n.id === t.compra)?.numero : '', t.situacao].join(' ');
+// Filtro: vale se a origem OU o destino estiver na empresa/unidade escolhida
+const naEscolha = t => noFiltro(filtro, { empresa: [emp(t.origem), emp(t.destino)] }) && (!filtro.unidade || [t.origem, t.destino].includes(filtro.unidade));
+const noPeriodo = t => (!filtro.de || t.data >= filtro.de || t.situacao === 'em trânsito') && (!filtro.ate || t.data <= filtro.ate);
+const base = () => TRANSFERENCIAS.filter(t => naEscolha(t) && casaBusca(textoBusca(t), filtro.busca));
+const saldoEm = (i, l) => ESTOQUE.find(e => e.insumo === i && e.local === l);
+
+function desenhar() {
+  const b = base(), per = b.filter(noPeriodo);
+  const transito = b.filter(t => t.situacao === 'em trânsito'), diverg = b.filter(t => t.situacao === 'divergente');
+  const pend = pendenciasAcerto();
+  $('kpis').innerHTML = [
+    ['A receber', reais(transito.reduce((a, t) => a + valorT(t), 0)), `${transito.length} transferência(s) em trânsito`],
+    ['Com divergência', `<span class="${diverg.length ? 'desce' : ''}">${reais(diverg.reduce((a, t) => a + valorT(t) - valorT(t, 'recebida'), 0))}</span>`, `${diverg.length} transferência(s) com falta`],
+    ['Enviado no período', reais(per.reduce((a, t) => a + valorT(t), 0)), `${per.length} transferência(s)`],
+    ['Acerto pendente', reais(pend.reduce((a, p) => a + p.valor, 0)), 'entre empresas, pelo custo']
+  ].map(([t, val, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${val}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  ({ lista: desenharLista, compras: desenharCompras, acerto: desenharAcerto })[aba](per);
+}
+
+/* ---------- Lista ---------- */
+function desenharLista(v) {
+  v = [...v].sort((a, b) => (a.situacao === 'em trânsito' ? 0 : 1) - (b.situacao === 'em trânsito' ? 0 : 1) || b.data.localeCompare(a.data));
+  $('conteudo').innerHTML = `<section class="cartao"><div class="cartao-cab"><h2>Transferências</h2><span class="dir sub">${v.length} · ${reais(v.reduce((a, t) => a + valorT(t), 0))}</span></div>
+    <div class="rolagem"><table class="tabela clicavel" id="tab"><thead><tr><th>Nº · data</th><th>Origem → destino</th><th>Itens</th><th class="num">Valor (custo)</th><th>Tipo</th><th>Situação</th><th></th></tr></thead><tbody>
+    ${v.map(t => `<tr data-id="${t.id}" tabindex="0"><td><b class="mono">${t.numero}</b> <small class="sub">${dataBR(t.data + 'T12:00')}</small></td>
+      <td>${esc(nomeUnidade(t.origem))} ${etqEmpresa(emp(t.origem))} → ${esc(nomeUnidade(t.destino))} ${etqEmpresa(emp(t.destino))}</td>
+      <td>${t.itens.length} item(ns)<small class="sub"> ${esc(t.itens.slice(0, 2).map(it => insumo(it.insumo).nome).join(', '))}${t.itens.length > 2 ? '…' : ''}</small>${t.compra ? ` <small class="sub">· NF ${esc(NOTAS_ENTRADA.find(n => n.id === t.compra)?.numero)}</small>` : ''}</td>
+      <td class="num">${reais(valorT(t))}</td><td>${etqTipo(t)}</td><td>${ETQ[t.situacao]}</td>
+      <td>${t.situacao === 'em trânsito' ? '<button type="button" class="btn btn-mini" data-receber>Receber</button>' : ''}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="vazio">Nenhuma transferência com esses filtros.</td></tr>'}</tbody></table></div></section>`;
+}
+
+/* ---------- Compras a dividir (controle paralelo da compra única) ---------- */
+const comprasCentral = () => Object.keys(COMPRA_ITENS).map(id => NOTAS_ENTRADA.find(n => n.id === id)).filter(Boolean);
+const enviadoDaCompra = (n, i, l) => TRANSFERENCIAS.filter(t => t.compra === n && (!l || t.destino === l)).flatMap(t => t.itens).filter(it => it.insumo === i).reduce((a, it) => a + it.enviada, 0);
+function desenharCompras() {
+  $('conteudo').innerHTML = `<div class="aviso">A compra entra toda na central e daqui é dividida entre as lojas. O que não foi enviado continua no estoque da central.</div>` +
+  comprasCentral().filter(n => noFiltro(filtro, { empresa: [n.empresa, ...lojas.map(emp)] })).map(n => {
+    const its = COMPRA_ITENS[n.id], tot = its.reduce((a, [i, q]) => a + q * insumo(i).custo, 0), env = its.reduce((a, [i]) => a + enviadoDaCompra(n.id, i) * insumo(i).custo, 0);
+    return `<section class="cartao" style="margin-top:10px"><div class="cartao-cab"><h2>NF ${esc(n.numero)} · ${esc(FORNECEDORES.find(f => f.id === n.fornecedor)?.nome)}</h2>
+      <span class="sub">${dataBR(n.emissao + 'T12:00')} · ${esc(nomeUnidade(n.unidade))} ${etqEmpresa(n.empresa)}</span>
+      <span class="dir sub">${pct(env / tot * 100)} dividido</span><button type="button" class="btn btn-mini" data-dividir="${n.id}">Dividir</button></div>
+      <div class="rolagem"><table class="tabela"><thead><tr><th>Insumo</th><th class="num">Comprado</th>${lojas.map(l => `<th class="num">${esc(nomeUnidade(l))}</th>`).join('')}<th class="num">Ficou na central</th><th style="width:120px"></th></tr></thead><tbody>
+      ${its.map(([i, q]) => { const e = enviadoDaCompra(n.id, i);
+        return `<tr><td><b>${esc(insumo(i).nome)}</b></td><td class="num">${qtd(q, i)}</td>${lojas.map(l => `<td class="num">${numero(enviadoDaCompra(n.id, i, l), 1)}</td>`).join('')}
+        <td class="num"><b>${qtd(q - e, i)}</b></td><td><div class="barra"><i style="width:${Math.min(100, e / q * 100).toFixed(0)}%"></i></div></td></tr>`; }).join('')}</tbody></table></div></section>`;
+  }).join('');
+}
+
+/* ---------- Acerto entre empresas ---------- */
+// Quem recebeu deve a quem enviou (pelo que foi recebido × custo do envio)
+function pendenciasAcerto() {
+  const m = {};
+  base().filter(t => entreEmpresas(t) && t.situacao !== 'em trânsito' && !t.acertoEm).forEach(t => {
+    const k = emp(t.origem) + '>' + emp(t.destino); (m[k] ||= { credora: emp(t.origem), devedora: emp(t.destino), valor: 0, ts: [] });
+    m[k].valor += valorT(t, 'recebida'); m[k].ts.push(t);
+  });
+  return Object.values(m);
+}
+function desenharAcerto() {
+  const pend = pendenciasAcerto(), feitos = base().filter(t => entreEmpresas(t) && t.acertoEm);
+  $('conteudo').innerHTML = `<div class="aviso">Mercadoria que passa de uma empresa (CNPJ) para outra muda de dono: precisa de nota fiscal e a empresa que recebeu paga a que enviou.
+    O contador define a operação (venda ou outra). Entre unidades da mesma empresa é só transferência entre filiais, sem acerto.</div>
+    <div class="grade-2" style="margin-top:10px">
+    <section class="cartao"><div class="cartao-cab"><h2>A acertar</h2></div>
+      <table class="tabela"><thead><tr><th>Quem recebeu (paga)</th><th>Quem enviou (recebe)</th><th class="num">Transferências</th><th class="num">Valor</th><th></th></tr></thead><tbody>
+      ${pend.map((p, k) => `<tr><td>${etqEmpresa(p.devedora)}</td><td>${etqEmpresa(p.credora)}</td><td class="num">${p.ts.map(t => t.numero).join(', ')}</td>
+        <td class="num"><b>${reais(p.valor)}</b></td><td><button type="button" class="btn btn-mini" data-acertar="${k}">Gerar acerto</button></td></tr>`).join('')
+      || '<tr><td colspan="5" class="vazio">Nada pendente entre empresas.</td></tr>'}</tbody></table></section>
+    <section class="cartao"><div class="cartao-cab"><h2>Já acertadas</h2></div>
+      <table class="tabela"><thead><tr><th>Transferência</th><th>De → para</th><th class="num">Valor</th><th>Acerto</th></tr></thead><tbody>
+      ${feitos.map(t => `<tr><td class="mono">${t.numero}</td><td>${etqEmpresa(emp(t.origem))} → ${etqEmpresa(emp(t.destino))}</td><td class="num">${reais(valorT(t, 'recebida'))}</td><td class="mono">${dataBR(t.acertoEm + 'T12:00')}</td></tr>`).join('')
+      || '<tr><td colspan="4" class="vazio">Nenhum acerto ainda.</td></tr>'}</tbody></table></section></div>`;
+}
+function acertar(p) {
+  const valor = p.valor, ids = p.ts.map(t => t.id).join();
+  janela('Gerar acerto entre empresas', `
+    <div class="valor-fixo">${nomeEmpresa(p.devedora)} paga ${reais(p.valor)} para ${nomeEmpresa(p.credora)}</div>
+    <div class="form-grade"><label class="c4">Vencimento<input name="venc" type="date" class="campo" value="${diasDaqui(10)}"></label>
+      <label class="c8">Referência<input class="campo" readonly value="Transferências ${p.ts.map(t => t.numero).join(', ')}"></label></div>
+    <div class="form-nota">Ao confirmar: cria uma conta a pagar na ${esc(nomeEmpresa(p.devedora))} e uma conta a receber na ${esc(nomeEmpresa(p.credora))}, no mesmo valor e vencimento,
+      com as categorias "Compras entre empresas do grupo" e "Vendas entre empresas do grupo". A nota fiscal entre as empresas é emitida pelo fiscal.</div>`, 'Gerar acerto', fm => {
+    // Relê na hora: se outra aba recebeu, corrigiu ou já acertou alguma transferência, o valor mudou e não gera
+    const agora = pendenciasAcerto().find(x => x.credora === p.credora && x.devedora === p.devedora);
+    if (!agora || agora.ts.map(t => t.id).join() !== ids || Math.abs(agora.valor - valor) > 0.004) { desenhar(); return 'O valor a acertar mudou enquanto a janela estava aberta. Nada foi gerado: feche e confira de novo.'; }
+    const ref = 'Acerto ' + p.ts.map(t => t.numero).join(', '), v = +valor.toFixed(2), venc = fm.venc.value;
+    const unD = LOCAIS_ESTOQUE.find(l => emp(l) === p.devedora), unC = LOCAIS_ESTOQUE.find(l => emp(l) === p.credora);
+    CONTAS_PAGAR.push({ id: 'ac' + Date.now(), favorecido: (EMPRESAS.find(e => e.id === p.credora) || {}).razao, documento: ref, unidade: unD, empresa: p.devedora,
+      centro: (CENTROS.find(c => c.unidade === unD) || {}).id, categoria: '3.07', valor: v, vencimento: venc, pagoEm: null });
+    RECEBER_OUTROS.push({ id: 'ar' + Date.now(), origem: 'Acerto entre empresas', pagador: (EMPRESAS.find(e => e.id === p.devedora) || {}).razao, unidade: unC, empresa: p.credora, vencimento: venc, valor: v, recebidoEm: null });
+    p.ts.forEach(t => t.acertoEm = hoje); desenhar();
+    avisarMudanca('transferencias', 'contas_pagar', 'receber_outros');
+  });
+}
+
+/* ---------- Receber (conferência) ---------- */
+function receber(t) {
+  janela(`Receber ${t.numero} · ${nomeUnidade(t.origem)} → ${nomeUnidade(t.destino)}`, `
+    <table class="tabela"><thead><tr><th>Insumo</th><th class="num">Enviado</th><th class="num" style="width:140px">Recebido</th></tr></thead><tbody>
+    ${t.itens.map((it, k) => `<tr><td>${esc(insumo(it.insumo).nome)}</td><td class="num">${qtd(it.enviada, it.insumo)}</td>
+      <td><input class="campo" name="r${k}" inputmode="decimal" value="${numero(it.enviada, insumo(it.insumo).un === 'kg' ? 1 : 0)}"></td></tr>`).join('')}</tbody></table>
+    <label>Observação<input name="obs" class="campo" maxlength="120" placeholder="Ex.: 2,5 kg de frango vieram fora do padrão"></label>
+    <div class="form-nota">Confira pesando. Se faltar algo, a transferência fica marcada com divergência e o que faltou continua na conta de quem enviou.</div>`, 'Confirmar recebimento', f => {
+    if (t.situacao !== 'em trânsito') { desenhar(); return 'Esta transferência já foi recebida em outra tela. Nada foi feito.'; }
+    const n = x => Number(String(x).replace(/\./g, '').replace(',', '.'));
+    const rec = t.itens.map((_, k) => n(f['r' + k].value));
+    if (rec.some(x => !(x >= 0))) return 'Informe as quantidades recebidas.';
+    const amais = t.itens.find((it, k) => rec[k] > it.enviada + 0.001);
+    if (amais) return `${insumo(amais.insumo).nome}: recebido maior que o enviado. Confira a pesagem (não dá para receber mais do que saiu).`;
+    t.itens.forEach((it, k) => { it.recebida = rec[k]; const d = saldoEm(it.insumo, t.destino); if (d) d.saldo = +(d.saldo + rec[k]).toFixed(2); });
+    t.situacao = t.itens.some(it => Math.abs(it.recebida - it.enviada) > 0.001) ? 'divergente' : 'recebida';
+    t.obs = f.obs.value.trim(); desenhar(); avisarMudanca('transferencias', 'estoque');
+  });
+}
+
+/* ---------- Nova transferência ---------- */
+const opcoesLocal = sel => LOCAIS_ESTOQUE.map(l => `<option value="${l}"${l === sel ? ' selected' : ''}>${esc(nomeUnidade(l))} · ${esc(nomeEmpresa(emp(l)))}</option>`).join('');
+function nova(pre) {
+  pre = pre || { origem: 'central', destino: filtro.unidade && filtro.unidade !== 'central' ? filtro.unidade : 'loja1', itens: [{}] };
+  const v = janela('Nova transferência', `
+    <div class="form-grade"><label class="c6">Sai de<select name="origem" class="campo">${opcoesLocal(pre.origem)}</select></label>
+      <label class="c6">Vai para<select name="destino" class="campo">${opcoesLocal(pre.destino)}</select></label></div>
+    <div id="tipoAviso"></div>
+    <table class="tabela"><thead><tr><th>Insumo</th><th class="num">Saldo na origem</th><th class="num" style="width:130px">Quantidade</th><th></th></tr></thead><tbody id="linhas"></tbody></table>
+    <button type="button" class="btn btn-mini" id="maisLinha">+ item</button>
+    <div class="form-nota" id="totalT"></div>`, 'Enviar', f => {
+    if (f.origem.value === f.destino.value) return 'Origem e destino precisam ser diferentes.';
+    const n = x => Number(String(x).replace(/\./g, '').replace(',', '.'));
+    const its = [...f.querySelectorAll('#linhas tr')].map(tr => ({ insumo: tr.querySelector('select').value, q: n(tr.querySelector('input').value) })).filter(x => x.q > 0);
+    if (!its.length) return 'Inclua ao menos um item com quantidade.';
+    const falta = its.find(x => x.q > (saldoEm(x.insumo, f.origem.value)?.saldo || 0));
+    if (falta) return `Saldo insuficiente de ${insumo(falta.insumo).nome} na origem.`;
+    its.forEach(x => { const s = saldoEm(x.insumo, f.origem.value); s.saldo = +(s.saldo - x.q).toFixed(2); });
+    const num = 'T-' + String(TRANSFERENCIAS.length + 1).padStart(4, '0');
+    TRANSFERENCIAS.push({ id: 't' + Date.now(), numero: num, data: hoje, origem: f.origem.value, destino: f.destino.value, compra: pre.compra || null,
+      itens: its.map(x => ({ insumo: x.insumo, enviada: x.q, recebida: null, custo: insumo(x.insumo).custo })), situacao: 'em trânsito', acertoEm: null, obs: '' });
+    desenhar(); avisarMudanca('transferencias', 'estoque');
+  });
+  const f = v.querySelector('form');
+  const linha = it => { const tr = document.createElement('tr');
+    tr.innerHTML = `<td><select class="campo">${INSUMOS.map(i => `<option value="${i.id}"${i.id === it.insumo ? ' selected' : ''}>${esc(i.nome)}</option>`).join('')}</select></td>
+      <td class="num" data-saldo></td><td><input class="campo" inputmode="decimal" value="${it.q ? numero(it.q, 1) : ''}"></td>
+      <td><button type="button" class="btn btn-ico" aria-label="Tirar item" data-tirar>${icone('fechar')}</button></td>`;
+    $('linhas').appendChild(tr); };
+  const atualizar = () => {
+    const n = x => Number(String(x).replace(/\./g, '').replace(',', '.')) || 0; let tot = 0;
+    f.querySelectorAll('#linhas tr').forEach(tr => { const i = tr.querySelector('select').value, s = saldoEm(i, f.origem.value)?.saldo || 0, q = n(tr.querySelector('input').value);
+      tr.querySelector('[data-saldo]').innerHTML = `<span class="${q > s ? 'desce' : ''}">${qtd(s, i)}</span>`; tot += q * insumo(i).custo; });
+    const t = { origem: f.origem.value, destino: f.destino.value };
+    $('tipoAviso').innerHTML = entreEmpresas(t) ? `<div class="aviso">${esc(nomeEmpresa(emp(t.origem)))} → ${esc(nomeEmpresa(emp(t.destino)))}: são empresas diferentes. Vai precisar de nota fiscal e entra no acerto entre empresas.</div>` : '';
+    $('totalT').textContent = `Valor pelo custo médio: ${reais(tot)}. Sai do estoque da origem agora e entra no destino quando ele confirmar o recebimento.`; };
+  (pre.itens.length ? pre.itens : [{}]).forEach(linha);
+  $('maisLinha').onclick = () => { linha({}); atualizar(); };
+  f.addEventListener('input', atualizar); f.addEventListener('change', atualizar);
+  f.addEventListener('click', e => { if (e.target.closest('[data-tirar]') && f.querySelectorAll('#linhas tr').length > 1) { e.target.closest('tr').remove(); atualizar(); } });
+  atualizar();
+}
+
+/* ---------- Dividir compra: uma transferência por loja ---------- */
+function dividir(id) {
+  const ns = comprasCentral(); id = id || ns[0].id;
+  const v = janela('Dividir compra entre as lojas', `
+    <div class="form-grade"><label class="c8">Compra<select name="compra" class="campo">${ns.map(n => `<option value="${n.id}"${n.id === id ? ' selected' : ''}>NF ${esc(n.numero)} · ${esc(FORNECEDORES.find(f => f.id === n.fornecedor)?.nome)} · ${dataBR(n.emissao + 'T12:00')}</option>`).join('')}</select></label>
+      <div class="c4" style="align-self:end"><button type="button" class="btn" id="sugerir" title="Divide o que ainda está na central conforme o consumo médio de cada loja">Sugerir pelo consumo</button></div></div>
+    <div class="rolagem"><table class="tabela" id="grade"></table></div>
+    <div class="form-nota" id="notaDiv"></div>`, 'Criar transferências', f => {
+    const n = x => Number(String(x).replace(/\./g, '').replace(',', '.')) || 0, nota = f.compra.value;
+    const por = {}; f.querySelectorAll('[data-i]').forEach(inp => { const q = n(inp.value); if (q > 0) (por[inp.dataset.l] ||= []).push({ insumo: inp.dataset.i, q }); });
+    if (!Object.keys(por).length) return 'Informe quanto vai para cada loja.';
+    for (const [i, comp] of COMPRA_ITENS[nota]) { const soma = Object.values(por).flat().filter(x => x.insumo === i).reduce((a, x) => a + x.q, 0);
+      if (soma > comp - enviadoDaCompra(nota, i) + 0.001) return `${insumo(i).nome}: dividindo mais do que ficou na central.`; }
+    Object.entries(por).forEach(([l, its]) => {
+      its.forEach(x => { const s = saldoEm(x.insumo, 'central'); s.saldo = +(s.saldo - x.q).toFixed(2); });
+      TRANSFERENCIAS.push({ id: 't' + Date.now() + l, numero: 'T-' + String(TRANSFERENCIAS.length + 1).padStart(4, '0'), data: hoje, origem: 'central', destino: l, compra: nota,
+        itens: its.map(x => ({ insumo: x.insumo, enviada: x.q, recebida: null, custo: insumo(x.insumo).custo })), situacao: 'em trânsito', acertoEm: null, obs: '' });
+    });
+    desenhar(); avisarMudanca('transferencias', 'estoque');
+  });
+  const f = v.querySelector('form');
+  const montar = () => { const nota = f.compra.value;
+    $('grade').innerHTML = `<thead><tr><th>Insumo</th><th class="num">Na central</th>${lojas.map(l => `<th class="num">${esc(nomeUnidade(l))}<small class="sub" style="display:block;font-weight:500">${esc(nomeEmpresa(emp(l)))}</small></th>`).join('')}</tr></thead><tbody>
+      ${COMPRA_ITENS[nota].map(([i, q]) => `<tr><td>${esc(insumo(i).nome)}</td><td class="num">${qtd(q - enviadoDaCompra(nota, i), i)}</td>
+        ${lojas.map(l => `<td><input class="campo campo-num" data-i="${i}" data-l="${l}" inputmode="decimal" style="min-width:70px"></td>`).join('')}</tr>`).join('')}</tbody>`;
+    nota_(); };
+  const nota_ = () => { const n = x => Number(String(x).replace(/\./g, '').replace(',', '.')) || 0;
+    const entre = lojas.filter(l => [...f.querySelectorAll(`[data-l="${l}"]`)].some(x => n(x.value) > 0) && emp(l) !== emp('central'));
+    $('notaDiv').textContent = 'Cria uma transferência por loja. ' + (entre.length ? `${entre.map(nomeUnidade).join(' e ')} ${entre.length > 1 ? 'são' : 'é'} de outra empresa: entra no acerto entre empresas e precisa de nota fiscal.` : ''); };
+  f.compra.onchange = montar; f.addEventListener('input', nota_);
+  $('sugerir').onclick = () => { const nota = f.compra.value;
+    COMPRA_ITENS[nota].forEach(([i, q]) => { const resto = q - enviadoDaCompra(nota, i);
+      const cons = lojas.map(l => saldoEm(i, l)?.consumo || 0), tot = cons.reduce((a, x) => a + x, 0) || 1;
+      lojas.forEach((l, k) => { f.querySelector(`[data-i="${i}"][data-l="${l}"]`).value = numero(Math.floor(resto * cons[k] / tot * 10) / 10, 1); }); });
+    nota_(); };
+  montar();
+}
+
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba;
+  $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
+$('conteudo').onclick = e => {
+  const d = e.target.closest('[data-dividir]'); if (d) return dividir(d.dataset.dividir);
+  const a = e.target.closest('[data-acertar]'); if (a) return acertar(pendenciasAcerto()[+a.dataset.acertar]);
+  const tr = e.target.closest('tr[data-id]'); if (!tr) return;
+  const t = TRANSFERENCIAS.find(x => x.id === tr.dataset.id);
+  if (e.target.closest('[data-receber]')) return receber(t);
+  detalhe(t);
+};
+function detalhe(t) {
+  janela(`${t.numero} · ${nomeUnidade(t.origem)} → ${nomeUnidade(t.destino)}`, `
+    <div class="sub">${dataBR(t.data + 'T12:00')} · ${etqTipo(t)} ${ETQ[t.situacao]}${t.compra ? ` · da compra NF ${esc(NOTAS_ENTRADA.find(n => n.id === t.compra)?.numero)}` : ''}</div>
+    <table class="tabela"><thead><tr><th>Insumo</th><th class="num">Enviado</th><th class="num">Recebido</th><th class="num">Custo</th><th class="num">Valor</th></tr></thead><tbody>
+    ${t.itens.map(it => `<tr><td>${esc(insumo(it.insumo).nome)}</td><td class="num">${qtd(it.enviada, it.insumo)}</td>
+      <td class="num${it.recebida != null && it.recebida < it.enviada ? ' desce' : ''}">${it.recebida == null ? '<span class="sub">a receber</span>' : qtd(it.recebida, it.insumo)}</td>
+      <td class="num">${reais(it.custo)}</td><td class="num">${reais(it.enviada * it.custo)}</td></tr>`).join('')}</tbody></table>
+    ${t.obs ? `<div class="form-nota">Obs.: ${esc(t.obs)}</div>` : ''}${entreEmpresas(t) ? `<div class="form-nota">Acerto entre empresas: ${t.acertoEm ? 'feito em ' + dataBR(t.acertoEm + 'T12:00') : 'pendente'}.</div>` : ''}`,
+    t.situacao === 'em trânsito' ? 'Receber' : 'Fechar', () => { if (t.situacao === 'em trânsito') setTimeout(() => receber(t)); });
+}
+$('btnNovo').onclick = () => nova();
+$('btnDividir').onclick = () => dividir();
+$('btnExportar').onclick = () => exportarCSV('transferencias', ['Número', 'Data', 'Origem', 'Empresa origem', 'Destino', 'Empresa destino', 'Insumo', 'Enviado', 'Recebido', 'Un.', 'Custo', 'Valor', 'Situação', 'Compra'],
+  base().filter(noPeriodo).flatMap(t => t.itens.map(it => [t.numero, dataBR(t.data + 'T12:00'), nomeUnidade(t.origem), nomeEmpresa(emp(t.origem)), nomeUnidade(t.destino), nomeEmpresa(emp(t.destino)),
+    insumo(it.insumo).nome, numero(it.enviada, 2), it.recebida == null ? '' : numero(it.recebida, 2), insumo(it.insumo).un, numero(it.custo, 2), numero(it.enviada * it.custo, 2), t.situacao,
+    t.compra ? 'NF ' + NOTAS_ENTRADA.find(n => n.id === t.compra)?.numero : ''])));
+vigiarDados(['transferencias', 'estoque', 'insumos', 'compra_itens', 'notas_entrada'], desenhar);
+desenhar();
+</script>
+</body>
+</html>
