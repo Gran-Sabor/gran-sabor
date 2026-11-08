@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adiantamento salarial</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=9">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Adiantamento salarial</h1><span class="sub">Vale do dia 20 · gera as contas a pagar por empresa e desconta sozinho no holerite</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <span class="comp-nav"><button type="button" class="btn btn-ico" id="compAnt" aria-label="Mês anterior">‹</button><b id="compTxt"></b><button type="button" class="btn btn-ico" id="compProx" aria-label="Próximo mês">›</button></span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn btn-pri" id="btnGerar">Gerar adiantamentos</button></div></div>
+  <div id="filtros"></div>
+  <div id="aviso"></div>
+  <section class="kpis" id="kpis"></section>
+  <section class="cartao"><div class="cartao-cab"><h2>Colaboradores</h2><span class="dir sub" id="contagem"></span></div>
+    <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+</div>
+
+<script src="../assets/js/menu.js?v=6"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=4"></script>
+<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Regras (exemplo, a Gran Sabor confirma):
+   - 40% do salário, pago no dia 20. Quem entrou depois do dia 15 do mês ou está afastado não recebe.
+   - Gerar cria um adiantamento por pessoa e UMA conta a pagar por empresa (dia 20).
+   - Pago = a conta foi paga no contas a pagar (uma fonte só). O holerite desconta o que foi pago. */
+let comp = COMPETENCIA_ATUAL;
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador, matrícula, cargo… (atalho: /)' });
+const naTela = c => noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade }) && casaBusca([c.nome, c.matricula, CARGOS[c.cargo]].join(' '), filtro.busca);
+const doMes = () => ADIANTAMENTOS.filter(a => a.comp === comp);
+const dia = () => `${comp}-${String(REGRA_ADIANTAMENTO.dia).padStart(2, '0')}`;
+const folhaFechada = () => FECHAMENTOS_FOLHA.some(f => f.comp === comp && !f.reabertaEm);
+
+function desenhar() {
+  $('compTxt').textContent = nomeComp(comp);
+  const ads = doMes(), gerado = ads.length > 0;
+  const linhas = COLABORADORES.filter(c => c.ativo && c.admissao.slice(0, 7) <= comp && naTela(c)).map(c => ({ c, dir: FOLHA.adiantamentoDe(c, comp), a: ads.find(a => a.colab === c.id) }));
+  $('btnGerar').disabled = gerado || folhaFechada();
+  $('aviso').innerHTML = folhaFechada() ? `<div class="aviso">A folha de ${nomeComp(comp)} já foi fechada.</div>`
+    : !gerado ? `<div class="aviso">Adiantamentos de ${nomeComp(comp)} ainda não gerados. Pagamento previsto em ${dataBR(dia() + 'T12:00')}. Os valores abaixo são a prévia.</div>` : '';
+  const pago = linhas.filter(l => l.a && FOLHA.adiantamentoPago(l.a)), aPagar = linhas.filter(l => l.a && !FOLHA.adiantamentoPago(l.a));
+  const soma = ls => ls.reduce((s, l) => s + (l.a ? l.a.valor : l.dir.valor || 0), 0);
+  $('kpis').innerHTML = [
+    [gerado ? 'Gerado' : 'Prévia', reais(soma(gerado ? linhas.filter(l => l.a) : linhas.filter(l => l.dir.direito))), `${(gerado ? linhas.filter(l => l.a) : linhas.filter(l => l.dir.direito)).length} pessoa(s)`],
+    ['A pagar', reais(soma(aPagar)), `dia ${dataBR(dia() + 'T12:00')}`],
+    ['Pago', reais(soma(pago)), 'desconta no holerite'],
+    ['Sem direito', linhas.filter(l => !l.dir.direito).length, 'afastados ou admitidos depois do dia 15']
+  ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  $('contagem').textContent = `${linhas.length} colaborador(es)`;
+  const grupos = {}; linhas.forEach(l => (grupos[l.c.empresa] ||= []).push(l));
+  $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th class="so-largo">Unidade</th><th class="num">Salário</th><th class="num">Adiantamento</th><th>Situação</th></tr></thead><tbody>
+    ${EMPRESAS.filter(e => grupos[e.id]).map(e => `<tr class="grupo"><td colspan="5">${esc(e.nome)} <span class="sub">${reais(soma(grupos[e.id].filter(l => l.a || l.dir.direito)))}</span></td></tr>` + grupos[e.id].map(({ c, dir, a }) =>
+      `<tr data-id="${c.id}" tabindex="0"><td><b>${esc(c.nome)}</b> <small class="sub">${esc(CARGOS[c.cargo])}</small></td><td class="so-largo">${esc(nomeUnidade(c.unidade))}</td>
+        <td class="num">${reais(c.salario)}</td><td class="num">${a ? `<b>${reais(a.valor)}</b>` : dir.direito ? `<span class="sub">${reais(dir.valor)}</span>` : '—'}</td>
+        <td>${a ? (FOLHA.adiantamentoPago(a) ? `<span class="etiqueta completa">pago ${dataBR(FOLHA.adiantamentoPago(a) + 'T12:00')}</span>` : '<span class="etiqueta pendente">a pagar</span>')
+          : dir.direito ? '<span class="sub">prévia</span>' : `<span class="etiqueta">sem direito · ${esc(dir.motivo)}</span>`}</td></tr>`).join('')).join('')
+    || '<tr><td colspan="5" class="vazio">Ninguém com esses filtros.</td></tr>'}</tbody>`;
+}
+
+function gerar() {
+  const lista = COLABORADORES.filter(c => c.ativo).map(c => ({ c, d: FOLHA.adiantamentoDe(c, comp) })).filter(x => x.d.direito);
+  const foto = JSON.stringify(lista.map(x => [x.c.id, x.d.valor]));
+  janela(`Gerar adiantamentos de ${nomeComp(comp)}`, `
+    <table class="tabela"><thead><tr><th>Empresa</th><th class="num">Pessoas</th><th class="num">Valor</th></tr></thead><tbody>
+    ${EMPRESAS.map(e => { const ls = lista.filter(x => x.c.empresa === e.id); return `<tr><td>${etqEmpresa(e.id)}</td><td class="num">${ls.length}</td><td class="num">${reais(ls.reduce((a, x) => a + x.d.valor, 0))}</td></tr>`; }).join('')}</tbody></table>
+    <div class="form-nota">Cria uma conta a pagar por empresa com vencimento em ${dataBR(dia() + 'T12:00')} (categoria Salários). Quando ela for paga no financeiro, o desconto entra sozinho no holerite.</div>`, 'Gerar', () => {
+    const agora = COLABORADORES.filter(c => c.ativo).map(c => ({ c, d: FOLHA.adiantamentoDe(c, comp) })).filter(x => x.d.direito);
+    if (JSON.stringify(agora.map(x => [x.c.id, x.d.valor])) !== foto) { desenhar(); return 'O cadastro mudou enquanto a janela estava aberta (salário ou pessoas). Nada foi gerado: confira de novo.'; }
+    if (doMes().length) { desenhar(); return 'Os adiantamentos deste mês acabaram de ser gerados em outra tela.'; }
+    EMPRESAS.forEach(e => { const ls = agora.filter(x => x.c.empresa === e.id); if (!ls.length) return;
+      const id = `ad${comp}${e.id}${Date.now()}`, un = ls[0].c.unidade;
+      CONTAS_PAGAR.push({ id, favorecido: 'Adiantamento salarial (colaboradores)', documento: `Vale ${nomeComp(comp)} · ${ls.length} pessoa(s)`, unidade: un, empresa: e.id,
+        centro: (CENTROS.find(c => c.unidade === un) || {}).id, categoria: '4.01', valor: FOLHA.r2(ls.reduce((a, x) => a + x.d.valor, 0)), vencimento: dia(), pagoEm: null, adiantamento: comp });
+      ls.forEach(x => ADIANTAMENTOS.push({ id: `a${x.c.id}${comp}`, comp, colab: x.c.id, valor: x.d.valor, pagoEm: null, conta: id })); });
+    desenhar(); avisarMudanca('adiantamentos', 'contas_pagar');
+  });
+}
+
+function editar(c) {
+  const a = doMes().find(x => x.colab === c.id);
+  if (!a) return janela(c.nome, `<p>${FOLHA.adiantamentoDe(c, comp).direito ? 'Os adiantamentos deste mês ainda não foram gerados.' : 'Sem direito ao adiantamento neste mês.'}</p>`, 'Fechar', () => {});
+  if (FOLHA.adiantamentoPago(a)) return janela(c.nome, `<p>Adiantamento de ${reais(a.valor)} já pago em ${dataBR(FOLHA.adiantamentoPago(a) + 'T12:00')}. Ele já está descontado no holerite.</p>`, 'Fechar', () => {});
+  const foto = { ...a }, conta = CONTAS_PAGAR.find(x => x.id === a.conta);
+  janela(`Adiantamento · ${c.nome}`, `<div class="form-grade"><label class="c6">Valor (R$)<input name="valor" class="campo" inputmode="decimal" value="${numero(a.valor, 2)}"></label>
+    <label class="c6 marcar"><input type="checkbox" name="tirar"> Não vai receber neste mês</label></div>
+    <div class="form-nota">A conta a pagar da ${esc(nomeEmpresa(c.empresa))} é ajustada junto, para o financeiro pagar o valor certo.</div>`, 'Salvar', f => {
+    const m = mudouDesde(foto, ADIANTAMENTOS.find(x => x.id === a.id), ['valor', 'pagoEm'], 'Este adiantamento'); if (m) return m;
+    if (conta?.pagoEm) { desenhar(); return 'A conta deste adiantamento já foi paga no financeiro. Nada foi alterado.'; }
+    const novo = f.tirar.checked ? 0 : Number(f.valor.value.replace(/\./g, '').replace(',', '.'));
+    if (!(novo >= 0) || novo > c.salario) return 'Valor inválido.';
+    if (conta) conta.valor = FOLHA.r2(conta.valor - a.valor + novo);
+    if (novo === 0) ADIANTAMENTOS.splice(ADIANTAMENTOS.indexOf(a), 1); else a.valor = novo;
+    desenhar(); avisarMudanca('adiantamentos', 'contas_pagar');
+  });
+}
+
+const mudaComp = d => { const [a, m] = comp.split('-').map(Number), x = new Date(a, m - 1 + d, 1); comp = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`; desenhar(); };
+$('compAnt').onclick = () => mudaComp(-1); $('compProx').onclick = () => mudaComp(1);
+$('btnGerar').onclick = gerar;
+$('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) editar(colab(tr.dataset.id)); };
+$('btnExportar').onclick = () => exportarCSV(`adiantamento-${comp}`, ['Competência', 'Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Salário', 'Adiantamento', 'Situação'],
+  COLABORADORES.filter(c => c.ativo && naTela(c)).map(c => { const a = doMes().find(x => x.colab === c.id);
+    return [nomeComp(comp), nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.matricula, c.nome, numero(c.salario, 2), a ? numero(a.valor, 2) : '', a ? (FOLHA.adiantamentoPago(a) ? 'pago' : 'a pagar') : 'não gerado']; }));
+vigiarDados(['adiantamentos', 'colaboradores', 'contas_pagar', 'fechamentos_folha'], desenhar);
+desenhar();
+</script>
+</body>
+</html>

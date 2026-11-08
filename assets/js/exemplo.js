@@ -315,3 +315,78 @@ const margemProduto = (p, emp) => {
 };
 // Preço sugerido para atingir um CMV desejado
 const precoParaCMV = (custo, cmv) => cmv > 0 ? custo / (cmv / 100) : 0;
+
+/* =====================================================================
+   BLOCO 4 · RH (colaboradores, lançamentos, adiantamento, folha, 13º, férias)
+   Nomes inventados; nenhum CPF. As contas da folha ficam em folha.js.
+   ===================================================================== */
+const COMPETENCIA_ATUAL = hojeISO().slice(0, 7);          // AAAA-MM
+const compAnterior = c => { const [a, m] = c.split('-').map(Number); return m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, '0')}`; };
+const nomeComp = c => { const [a, m] = c.split('-'); return `${m}/${a}`; };
+
+const CARGOS = { cozinheiro: 'Cozinheiro(a)', aux_cozinha: 'Auxiliar de cozinha', atendente: 'Atendente de salão', caixa: 'Operador(a) de caixa',
+  acougueiro: 'Açougueiro(a)', aux_acougue: 'Auxiliar de açougue', motorista: 'Motorista', gerente: 'Gerente administrativo', aux_adm: 'Auxiliar administrativo', comprador: 'Comprador(a)' };
+const COLABORADORES = dadoComum('COLABORADORES', () => [
+  // matrícula, nome (inventado), cargo, unidade, admissão, salário, VT/dia, dependentes, turno, situação
+  ['0101', 'Ana Paula Ribeiro',     'cozinheiro',  'loja1',      '2020-03-02', 2650, 10.6, 1, 'M', 'ativo'],
+  ['0102', 'Bruno Henrique Lopes',  'aux_cozinha', 'loja1',      '2023-07-10', 1780, 10.6, 0, 'M', 'ativo'],
+  ['0103', 'Carla Nunes Teixeira',  'caixa',       'loja1',      '2021-11-15', 1850, 0,    2, 'I', 'ativo'],
+  ['0104', 'Diego Martins Alves',   'atendente',   'loja1',      '2026-10-20', 1720, 10.6, 0, 'T', 'ativo'],
+  ['0201', 'Elaine Cristina Prado', 'cozinheiro',  'loja2',      '2019-05-06', 2700, 10.6, 0, 'M', 'ativo'],
+  ['0202', 'Fábio Souza Ramos',     'aux_cozinha', 'loja2',      '2024-02-01', 1780, 10.6, 1, 'M', 'ferias'],
+  ['0203', 'Gabriela Moura Lima',   'caixa',       'loja2',      '2022-08-22', 1850, 10.6, 0, 'I', 'ativo'],
+  ['0204', 'Hugo Ferreira Dias',    'atendente',   'loja2',      '2025-04-14', 1720, 10.6, 0, 'T', 'ativo'],
+  ['0301', 'Isabela Rocha Campos',  'cozinheiro',  'loja3',      '2022-01-10', 2650, 0,    1, 'M', 'ativo'],
+  ['0302', 'João Victor Mendes',    'aux_cozinha', 'loja3',      '2025-09-01', 1780, 10.6, 0, 'M', 'ativo'],
+  ['0303', 'Karina Almeida Costa',  'caixa',       'loja3',      '2023-03-20', 1850, 10.6, 3, 'I', 'afastado'],
+  ['0304', 'Lucas Barbosa Pinto',   'atendente',   'loja3',      '2024-11-04', 1720, 10.6, 0, 'T', 'ativo'],
+  ['0401', 'Marcos Antônio Silva',  'acougueiro',  'central',    '2018-06-11', 2950, 10.6, 2, 'M', 'ativo'],
+  ['0402', 'Natália Gomes Freitas', 'aux_acougue', 'central',    '2024-06-03', 1900, 10.6, 0, 'M', 'ativo'],
+  ['0403', 'Otávio Pereira Reis',   'motorista',   'central',    '2021-02-08', 2450, 0,    1, 'M', 'ativo'],
+  ['0501', 'Patrícia Duarte Melo',  'gerente',     'escritorio', '2017-09-04', 5300, 0,    2, 'C', 'ativo'],
+  ['0502', 'Rafael Tavares Cunha',  'aux_adm',     'escritorio', '2023-10-16', 2350, 10.6, 0, 'C', 'ativo'],
+  ['0503', 'Sabrina Lopes Vieira',  'comprador',   'escritorio', '2022-05-09', 3150, 10.6, 1, 'C', 'ativo']
+].map(([matricula, nome, cargo, unidade, admissao, salario, vt, dependentes, turno, situacao]) => ({
+  id: 'c' + matricula, matricula, nome, cargo, unidade, empresa: UNIDADE_EMPRESA[unidade], admissao, salario, vt, optanteVT: vt > 0, dependentes, turno, situacao,
+  jornada: '44h semanais', pix: '', ativo: situacao !== 'desligado' })));
+const colab = id => COLABORADORES.find(c => c.id === id) || { nome: id, salario: 0 };
+
+/* ---------- Lançamentos do mês (horas extras, faltas, consumo...) ---------- */
+// qtd = horas ou dias; valor = R$ (eventos "valor")
+const LANCAMENTOS = dadoComum('LANCAMENTOS', () => {
+  const r = []; let n = 1;
+  const l = (comp, c, ev, qtd, valor, obs = '') => r.push({ id: 'l' + n++, comp, colab: 'c' + c, evento: ev, qtd, valor, obs, criadoEm: comp + '-25' });
+  const ant = compAnterior(COMPETENCIA_ATUAL), at = COMPETENCIA_ATUAL;
+  [[ant, 1], [at, 0.6]].forEach(([comp, k]) => {
+    l(comp, '0101', '010', Math.round(12 * k), 0, 'Evento corporativo'); l(comp, '0201', '010', Math.round(8 * k), 0);
+    l(comp, '0401', '010', Math.round(16 * k), 0, 'Recebimento de carga'); l(comp, '0401', '011', 6, 0, 'Feriado');
+    l(comp, '0103', '040', 0, 120); l(comp, '0203', '040', 0, 120);
+    l(comp, '0102', '110', 0, 64.5, 'Consumo no restaurante'); l(comp, '0204', '110', 0, 38.9);
+    l(comp, '0304', '104', 1, 0, 'Falta sem atestado'); l(comp, '0302', '105', 2, 0);
+  });
+  l(COMPETENCIA_ATUAL, '0501', '030', 0, 500, 'Meta do trimestre');
+  return r;
+});
+
+/* ---------- Adiantamento salarial (vale do dia 20) ---------- */
+const REGRA_ADIANTAMENTO = { pct: 40, dia: 20, minimoDiasCasa: 15 };   // exemplo: 40% do salário, pago dia 20
+const ADIANTAMENTOS = dadoComum('ADIANTAMENTOS', () => COLABORADORES.filter(c => c.admissao <= compAnterior(COMPETENCIA_ATUAL) + '-05' && c.situacao !== 'afastado')
+  .map(c => ({ id: 'a' + c.id + compAnterior(COMPETENCIA_ATUAL), comp: compAnterior(COMPETENCIA_ATUAL), colab: c.id, valor: +(c.salario * REGRA_ADIANTAMENTO.pct / 100).toFixed(2), pagoEm: compAnterior(COMPETENCIA_ATUAL) + '-20' })));
+
+/* ---------- Fechamentos da folha (uma linha por competência) ---------- */
+// totais: foto do que foi fechado, por empresa, para comparar com a conta de agora
+const FECHAMENTOS_FOLHA = dadoComum('FECHAMENTOS_FOLHA', () => []);
+
+/* ---------- 13º e férias ---------- */
+const PAGAMENTOS_13 = dadoComum('PAGAMENTOS_13', () => []);   // { colab, ano, parcela: 1|2, bruto, inss, irrf, liquido, pagoEm }
+const FERIAS = dadoComum('FERIAS', () => [
+  { id: 'f1', colab: 'c0202', aquisitivo: '2025-02-01', inicio: diasDaqui(-6), dias: 30, abono: false, pagoEm: diasDaqui(-8) },
+  { id: 'f2', colab: 'c0101', aquisitivo: '2024-03-02', inicio: '2025-07-01', dias: 30, abono: false, pagoEm: '2025-06-27' },
+  { id: 'f3', colab: 'c0401', aquisitivo: '2024-06-11', inicio: '2025-08-04', dias: 20, abono: true, pagoEm: '2025-07-31' }
+]);
+
+/* ---------- Escala (turnos por dia) ---------- */
+const TURNOS = { M: ['Manhã', '06:00–14:20'], T: ['Tarde', '14:00–22:20'], I: ['Intermediário', '10:00–18:20'], C: ['Comercial', '08:00–17:48'], F: ['Folga', ''] };
+const FERIADOS = dadoComum('FERIADOS', () => ({ '2026-11-15': 'Proclamação da República', '2026-11-20': 'Consciência Negra', '2026-12-25': 'Natal', '2027-01-01': 'Confraternização' }));
+// ESCALA[colab][data] = turno; dia sem registro = turno padrão do cadastro, com folga em rodízio
+const ESCALA = dadoComum('ESCALA', () => ({}));

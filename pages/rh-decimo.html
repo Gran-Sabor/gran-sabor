@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>13º salário</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=9">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>13º salário</h1><span class="sub">Avos por colaborador · 1ª parcela até 30/11 e 2ª até 20/12 · gera as contas a pagar por empresa</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <span class="comp-nav"><button type="button" class="btn btn-ico" id="anoAnt" aria-label="Ano anterior">‹</button><b id="anoTxt"></b><button type="button" class="btn btn-ico" id="anoProx" aria-label="Próximo ano">›</button></span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn" id="btnP1">Gerar 1ª parcela</button>
+      <button type="button" class="btn btn-pri" id="btnP2">Gerar 2ª parcela</button></div></div>
+  <div id="filtros"></div>
+  <div id="aviso"></div>
+  <section class="kpis" id="kpis"></section>
+  <section class="cartao"><div class="cartao-cab"><h2>Colaboradores</h2><span class="dir sub" id="contagem"></span></div>
+    <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+  <div class="form-nota">Base de exemplo: salário do cadastro ÷ 12 × avos (mês com 15 dias ou mais de trabalho). Médias de horas extras e tabelas de INSS/IRRF o contador confirma.</div>
+</div>
+
+<script src="../assets/js/menu.js?v=6"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=4"></script>
+<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Regras (exemplo):
+   - 1ª parcela = metade do 13º, sem descontos, até 30/11. 2ª parcela = total − 1ª − INSS − IRRF, até 20/12.
+   - Gerar cria o registro de cada pessoa e UMA conta a pagar por empresa. Pago = conta paga (uma fonte só).
+   - Valores sempre da folha.js; na hora de gerar, o sistema refaz a conta e confere. */
+let ano = Number(hojeISO().slice(0, 4));
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador, matrícula, cargo… (atalho: /)' });
+const naTela = c => noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade }) && casaBusca([c.nome, c.matricula, CARGOS[c.cargo]].join(' '), filtro.busca);
+const prazo = p => p === 1 ? `${ano}-11-30` : `${ano}-12-20`;
+const pagto = (c, p) => PAGAMENTOS_13.find(x => x.colab === c.id && x.ano === ano && x.parcela === p);
+const pago = x => x && (x.pagoEm || (CONTAS_PAGAR.find(c => c.id === x.conta) || {}).pagoEm);
+const elegiveis = () => COLABORADORES.filter(c => c.ativo && FOLHA.avos13(c, ano) > 0);
+const etq = (x, p) => !x ? `<span class="sub">prévia</span>` : pago(x) ? '<span class="etiqueta completa">pago</span>' : `<span class="etiqueta pendente">a pagar ${dataBR(prazo(p) + 'T12:00').slice(0, 5)}</span>`;
+
+function desenhar() {
+  $('anoTxt').textContent = ano;
+  const ls = elegiveis().filter(naTela).map(c => ({ c, d: FOLHA.decimo(c, ano), p1: pagto(c, 1), p2: pagto(c, 2) }));
+  const g1 = elegiveis().some(c => pagto(c, 1)), g2 = elegiveis().some(c => pagto(c, 2));
+  $('btnP1').disabled = g1; $('btnP2').disabled = !g1 || g2;
+  const hoje = hojeISO(), dias = p => Math.ceil((new Date(prazo(p) + 'T12:00') - new Date(hoje + 'T12:00')) / 864e5);
+  $('aviso').innerHTML = !g1 && dias(1) >= 0 && dias(1) <= 40 ? `<div class="aviso">A 1ª parcela vence em <b>${dias(1)} dia(s)</b> (${dataBR(prazo(1) + 'T12:00')}). Gere para o financeiro programar o pagamento.</div>`
+    : !g1 && dias(1) < 0 && ano === Number(hoje.slice(0, 4)) ? '<div class="aviso perigo"><b>1ª parcela em atraso.</b> Gere e pague o quanto antes.</div>'
+    : g1 && !g2 && dias(2) <= 30 && dias(2) >= 0 ? `<div class="aviso">A 2ª parcela vence em <b>${dias(2)} dia(s)</b> (${dataBR(prazo(2) + 'T12:00')}).</div>` : '';
+  const s = f => ls.reduce((a, l) => a + f(l), 0);
+  $('kpis').innerHTML = [
+    ['13º total', reais(s(l => l.d.total)), `${ls.length} pessoa(s)`],
+    ['1ª parcela', reais(s(l => l.p1 ? l.p1.valor : l.d.primeira)), g1 ? `${ls.filter(l => pago(l.p1)).length} paga(s)` : 'ainda não gerada'],
+    ['2ª parcela líquida', reais(s(l => l.p2 ? l.p2.valor : l.d.segunda)), g2 ? `${ls.filter(l => pago(l.p2)).length} paga(s)` : 'prévia'],
+    ['INSS + IRRF do 13º', reais(s(l => l.d.inss + l.d.irrf)), 'descontados na 2ª parcela']
+  ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  $('contagem').textContent = `${ls.length} colaborador(es)`;
+  const grupos = {}; ls.forEach(l => (grupos[l.c.empresa] ||= []).push(l));
+  $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th class="num">Avos</th><th class="num">13º total</th><th class="num">1ª parcela</th><th></th><th class="num so-largo">INSS</th><th class="num so-largo">IRRF</th><th class="num">2ª parcela</th><th></th></tr></thead><tbody>
+    ${EMPRESAS.filter(e => grupos[e.id]).map(e => `<tr class="grupo"><td colspan="9">${esc(e.nome)} <span class="sub">${reais(grupos[e.id].reduce((a, l) => a + l.d.total, 0))}</span></td></tr>` + grupos[e.id].map(({ c, d, p1, p2 }) =>
+      `<tr data-id="${c.id}" tabindex="0"><td><b>${esc(c.nome)}</b> <small class="sub">${esc(nomeUnidade(c.unidade))}</small></td><td class="num">${d.avos}/12</td><td class="num">${reais(d.total)}</td>
+        <td class="num">${reais(p1 ? p1.valor : d.primeira)}</td><td>${etq(p1, 1)}</td><td class="num so-largo">${reais(d.inss)}</td><td class="num so-largo">${reais(d.irrf)}</td>
+        <td class="num"><b>${reais(p2 ? p2.valor : d.segunda)}</b></td><td>${etq(p2, 2)}</td></tr>`).join('')).join('')
+    || '<tr><td colspan="9" class="vazio">Ninguém com esses filtros.</td></tr>'}</tbody>`;
+}
+
+function gerar(p) {
+  const calc = () => elegiveis().map(c => { const d = FOLHA.decimo(c, ano); return { c, d, valor: p === 1 ? d.primeira : d.segunda }; });
+  const lista = calc(), foto = JSON.stringify(lista.map(x => [x.c.id, x.valor]));
+  janela(`Gerar ${p}ª parcela do 13º · ${ano}`, `
+    <table class="tabela"><thead><tr><th>Empresa</th><th class="num">Pessoas</th><th class="num">${p === 1 ? 'Valor' : 'Líquido'}</th>${p === 2 ? '<th class="num">INSS</th>' : ''}</tr></thead><tbody>
+    ${EMPRESAS.map(e => { const ls = lista.filter(x => x.c.empresa === e.id); return `<tr><td>${etqEmpresa(e.id)}</td><td class="num">${ls.length}</td><td class="num">${reais(ls.reduce((a, x) => a + x.valor, 0))}</td>${p === 2 ? `<td class="num">${reais(ls.reduce((a, x) => a + x.d.inss, 0))}</td>` : ''}</tr>`; }).join('')}</tbody></table>
+    <div class="form-nota">Cria ${p === 1 ? 'uma conta' : 'duas contas (líquido e INSS)'} a pagar por empresa com vencimento em ${dataBR(prazo(p) + 'T12:00')}.</div>`, 'Gerar', () => {
+    const agora = calc();
+    if (JSON.stringify(agora.map(x => [x.c.id, x.valor])) !== foto) { desenhar(); return 'O cadastro mudou enquanto a janela estava aberta. Nada foi gerado: confira de novo.'; }
+    if (elegiveis().some(c => pagto(c, p))) { desenhar(); return 'Esta parcela acabou de ser gerada em outra tela.'; }
+    EMPRESAS.forEach(e => { const ls = agora.filter(x => x.c.empresa === e.id); if (!ls.length) return;
+      const un = ls[0].c.unidade, centro = (CENTROS.find(c => c.unidade === un) || {}).id, id = `13${ano}${p}${e.id}${Date.now()}`;
+      CONTAS_PAGAR.push({ id, favorecido: `13º salário · ${p}ª parcela`, documento: `13º ${ano} ${p}/2 · ${ls.length} pessoa(s)`, unidade: un, empresa: e.id, centro, categoria: '4.04',
+        valor: FOLHA.r2(ls.reduce((a, x) => a + x.valor, 0)), vencimento: prazo(p), pagoEm: null });
+      if (p === 2) CONTAS_PAGAR.push({ id: id + 'i', favorecido: 'Receita Federal (INSS)', documento: `INSS 13º ${ano}`, unidade: un, empresa: e.id, centro, categoria: '4.02',
+        valor: FOLHA.r2(ls.reduce((a, x) => a + x.d.inss, 0)), vencimento: prazo(2), pagoEm: null });
+      ls.forEach(x => PAGAMENTOS_13.push({ id: `p13${x.c.id}${ano}${p}`, colab: x.c.id, ano, parcela: p, valor: x.valor, inss: p === 2 ? x.d.inss : 0, irrf: p === 2 ? x.d.irrf : 0, conta: id, pagoEm: null })); });
+    desenhar(); avisarMudanca('pagamentos_13', 'contas_pagar');
+  });
+}
+function detalhe(c) {
+  const d = FOLHA.decimo(c, ano);
+  janela(`13º ${ano} · ${c.nome}`, `<table class="tabela"><tbody>
+    <tr><td>Salário base</td><td class="num">${reais(c.salario)}</td></tr><tr><td>Avos (admissão ${dataBR(c.admissao + 'T12:00')})</td><td class="num">${d.avos}/12</td></tr>
+    <tr><td><b>13º total</b></td><td class="num"><b>${reais(d.total)}</b></td></tr><tr><td>1ª parcela (sem descontos)</td><td class="num">${reais(d.primeira)}</td></tr>
+    <tr><td>INSS</td><td class="num desce">−${reais(d.inss)}</td></tr><tr><td>IRRF (tributação exclusiva, ${c.dependentes} dep.)</td><td class="num desce">−${reais(d.irrf)}</td></tr>
+    <tr><td><b>2ª parcela líquida</b></td><td class="num"><b>${reais(d.segunda)}</b></td></tr></tbody></table>`, 'Fechar', () => {});
+}
+
+$('anoAnt').onclick = () => { ano--; desenhar(); }; $('anoProx').onclick = () => { ano++; desenhar(); };
+$('btnP1').onclick = () => gerar(1); $('btnP2').onclick = () => gerar(2);
+$('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) detalhe(colab(tr.dataset.id)); };
+$('btnExportar').onclick = () => exportarCSV(`13-salario-${ano}`, ['Ano', 'Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Avos', '13º total', '1ª parcela', 'INSS', 'IRRF', '2ª parcela líquida'],
+  elegiveis().filter(naTela).map(c => { const d = FOLHA.decimo(c, ano);
+    return [ano, nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.matricula, c.nome, d.avos, numero(d.total, 2), numero(d.primeira, 2), numero(d.inss, 2), numero(d.irrf, 2), numero(d.segunda, 2)]; }));
+vigiarDados(['colaboradores', 'pagamentos_13', 'contas_pagar'], desenhar);
+desenhar();
+</script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lançamentos do mês</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=9">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Lançamentos do mês</h1><span class="sub">Horas extras, faltas, atrasos, consumo, gratificações · entram no holerite na hora</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <span class="comp-nav"><button type="button" class="btn btn-ico" id="compAnt" aria-label="Mês anterior">‹</button><b id="compTxt"></b><button type="button" class="btn btn-ico" id="compProx" aria-label="Próximo mês">›</button></span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn btn-pri" id="btnNovo">+ Lançar</button></div></div>
+  <div id="filtros"></div>
+  <div id="avisoComp"></div>
+  <section class="kpis" id="kpis"></section>
+  <div class="grade-2 largo">
+    <section class="cartao"><div class="cartao-cab"><h2>Lançamentos</h2><span class="dir sub" id="contagem"></span></div>
+      <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+    <div class="coluna"><section class="cartao"><div class="cartao-cab"><h2>Por empresa</h2></div><div id="porEmpresa"></div></section></div>
+  </div>
+</div>
+
+<script src="../assets/js/menu.js?v=6"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=4"></script>
+<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Regras (exemplo):
+   - Cada lançamento é de um colaborador, numa competência (mês). O valor em R$ de horas e dias é
+     calculado pela folha.js (a mesma conta do holerite), nunca digitado.
+   - Competência fechada não aceita lançamento: reabra a folha antes (e o sistema mostra a diferença). */
+let comp = COMPETENCIA_ATUAL;
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador, evento, observação… (atalho: /)' });
+const MANUAIS = () => EVENTOS.filter(e => e.ativo && ['horas', 'dias', 'valor'].includes(e.forma));
+const ev = cod => EVENTOS.find(e => e.codigo === cod) || { nome: cod, tipo: 'provento', forma: 'valor' };
+const fechada = () => FECHAMENTOS_FOLHA.find(f => f.comp === comp && !f.reabertaEm);
+const doFiltro = l => { const c = colab(l.colab); return noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade }) &&
+  casaBusca([c.nome, c.matricula, CARGOS[c.cargo], ev(l.evento).nome, l.evento, l.obs].join(' '), filtro.busca); };
+const qtdTxt = l => { const f = ev(l.evento).forma; return f === 'horas' ? `${numero(l.qtd, 1)} h` : f === 'dias' ? `${numero(l.qtd)} d` : '—'; };
+
+function desenhar() {
+  $('compTxt').textContent = nomeComp(comp);
+  const fe = fechada();
+  $('avisoComp').innerHTML = fe ? `<div class="aviso">Competência ${nomeComp(comp)} <b>fechada</b> em ${dataBR(fe.fechadaEm + 'T12:00')}. Para lançar, reabra em <a href="#" data-abrir="holerites">Folha e holerites</a>.</div>` : '';
+  $('btnNovo').disabled = !!fe;
+  const v = LANCAMENTOS.filter(l => l.comp === comp && doFiltro(l)).sort((a, b) => colab(a.colab).nome.localeCompare(colab(b.colab).nome));
+  const val = l => FOLHA.valorLancamento(colab(l.colab), l);
+  const soma = f => v.filter(f).reduce((a, l) => a + val(l), 0);
+  $('kpis').innerHTML = [
+    ['Horas extras', reais(soma(l => ['010', '011'].includes(l.evento))), `${numero(v.filter(l => ['010', '011'].includes(l.evento)).reduce((a, l) => a + l.qtd, 0), 1)} h no mês`],
+    ['Faltas e atrasos', reais(soma(l => ['104', '105'].includes(l.evento))), `${v.filter(l => l.evento === '104').reduce((a, l) => a + l.qtd, 0)} falta(s)`],
+    ['Consumo na loja', reais(soma(l => l.evento === '110')), 'desconta no holerite'],
+    ['Outros proventos', reais(soma(l => ['030', '040', '020'].includes(l.evento))), 'gratificação, quebra de caixa, noturno']
+  ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  $('contagem').textContent = `${v.length} lançamento(s)`;
+  $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th>Evento</th><th class="num">Qtd.</th><th class="num">Valor</th><th>Observação</th><th></th></tr></thead><tbody>
+    ${v.map(l => { const c = colab(l.colab), e = ev(l.evento); return `<tr data-id="${l.id}" tabindex="0"><td><b>${esc(c.nome)}</b> <small class="sub">${esc(nomeUnidade(c.unidade))}</small> ${etqEmpresa(c.empresa)}</td>
+      <td><span class="mono sub">${l.evento}</span> ${esc(e.nome)}</td><td class="num">${qtdTxt(l)}</td>
+      <td class="num ${e.tipo === 'desconto' ? 'desce' : ''}">${e.tipo === 'desconto' ? '−' : ''}${reais(val(l))}</td><td class="sub">${esc(l.obs)}</td>
+      <td>${fe ? '' : `<button type="button" class="btn btn-ico" data-tirar aria-label="Excluir">${icone('fechar')}</button>`}</td></tr>`; }).join('')
+    || `<tr><td colspan="6" class="vazio">Nenhum lançamento em ${nomeComp(comp)} com esses filtros.</td></tr>`}</tbody>`;
+  $('porEmpresa').innerHTML = EMPRESAS.map(e => { const ls = v.filter(l => colab(l.colab).empresa === e.id);
+    const pro = ls.filter(l => ev(l.evento).tipo === 'provento').reduce((a, l) => a + val(l), 0), des = ls.filter(l => ev(l.evento).tipo === 'desconto').reduce((a, l) => a + val(l), 0);
+    return `<div class="lista-linha"><div>${etqEmpresa(e.id)}<small>${ls.length} lançamento(s)</small></div><span class="dir"><span class="sobe">+${reais(pro)}</span><small class="desce" style="font-weight:600">−${reais(des)}</small></span></div>`; }).join('');
+}
+
+function lancar(l) {
+  if (fechada()) return;
+  const novo = !l, foto = l ? { ...l } : null;
+  l = l || { comp, evento: '010', qtd: 0, valor: 0, obs: '', colab: '' };
+  const colabs = COLABORADORES.filter(c => c.ativo && noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade }));
+  const v = janela(novo ? `Lançar em ${nomeComp(comp)}` : 'Editar lançamento', `
+    <div class="form-grade">
+      <label class="c6">Colaborador<select name="colab" class="campo">${colabs.map(c => `<option value="${c.id}"${c.id === l.colab ? ' selected' : ''}>${esc(c.nome)} · ${esc(nomeUnidade(c.unidade))}</option>`).join('')}</select></label>
+      <label class="c6">Evento<select name="evento" class="campo">${MANUAIS().map(e => `<option value="${e.codigo}"${e.codigo === l.evento ? ' selected' : ''}>${e.codigo} · ${esc(e.nome)}</option>`).join('')}</select></label>
+      <label class="c4" id="rotQtd">Quantidade<input name="qtd" class="campo" inputmode="decimal" value="${l.qtd ? numero(l.qtd, 1) : ''}"></label>
+      <label class="c8">Observação<input name="obs" class="campo" maxlength="80" value="${esc(l.obs)}"></label>
+    </div><div class="form-nota" id="calc"></div>`, 'Salvar', f => {
+    if (fechada()) return 'A competência foi fechada em outra tela. Nada foi lançado.';
+    if (!novo) { const m = mudouDesde(foto, LANCAMENTOS.find(x => x.id === foto.id), ['colab', 'evento', 'qtd', 'valor'], 'Este lançamento'); if (m) return m; }
+    const n = Number(f.qtd.value.replace(/\./g, '').replace(',', '.')), forma = ev(f.evento.value).forma;
+    if (!f.colab.value) return 'Escolha o colaborador.';
+    if (!(n > 0)) return 'Informe a quantidade ou o valor.';
+    const d = { colab: f.colab.value, evento: f.evento.value, qtd: forma === 'valor' ? 0 : n, valor: forma === 'valor' ? n : 0, obs: f.obs.value.trim() };
+    if (novo) LANCAMENTOS.push({ id: 'l' + Date.now(), comp, criadoEm: hojeISO(), ...d }); else Object.assign(LANCAMENTOS.find(x => x.id === l.id), d);
+    desenhar(); avisarMudanca('lancamentos');
+  });
+  const f = v.querySelector('form');
+  const calc = () => { const e = ev(f.evento.value), n = Number(f.qtd.value.replace(/\./g, '').replace(',', '.')) || 0, c = colab(f.colab.value);
+    f.querySelector('#rotQtd').firstChild.textContent = e.forma === 'horas' ? 'Horas' : e.forma === 'dias' ? 'Dias' : 'Valor (R$)';
+    const valor = FOLHA.valorLancamento(c, { evento: e.codigo, qtd: n, valor: n });
+    $('calc').textContent = `${e.tipo === 'desconto' ? 'Desconta' : 'Soma'} ${reais(valor)} no holerite de ${c.nome || '—'}${e.forma === 'horas' ? ` (valor da hora ${reais(FOLHA.valorHora(c))})` : ''}.`; };
+  f.addEventListener('input', calc); f.addEventListener('change', calc); calc();
+}
+
+const mudaComp = d => { const [a, m] = comp.split('-').map(Number), x = new Date(a, m - 1 + d, 1); comp = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`; desenhar(); };
+$('compAnt').onclick = () => mudaComp(-1); $('compProx').onclick = () => mudaComp(1);
+$('btnNovo').onclick = () => lancar();
+$('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (!tr) return; const l = LANCAMENTOS.find(x => x.id === tr.dataset.id);
+  if (e.target.closest('[data-tirar]')) { if (fechada()) return; janela('Excluir lançamento', `<p>Excluir ${esc(ev(l.evento).nome)} de ${esc(colab(l.colab).nome)}?</p>`, 'Excluir', () => {
+    if (fechada()) return 'A competência foi fechada em outra tela.'; LANCAMENTOS.splice(LANCAMENTOS.indexOf(l), 1); desenhar(); avisarMudanca('lancamentos'); }); return; }
+  lancar(l); };
+$('btnExportar').onclick = () => exportarCSV(`lancamentos-${comp}`, ['Competência', 'Matrícula', 'Colaborador', 'Empresa', 'Unidade', 'Evento', 'Quantidade', 'Valor', 'Observação'],
+  LANCAMENTOS.filter(l => l.comp === comp && doFiltro(l)).map(l => { const c = colab(l.colab);
+    return [nomeComp(comp), c.matricula, c.nome, nomeEmpresa(c.empresa), nomeUnidade(c.unidade), `${l.evento} ${ev(l.evento).nome}`, numero(l.qtd, 1), numero(FOLHA.valorLancamento(c, l), 2), l.obs]; }));
+vigiarDados(['lancamentos', 'colaboradores', 'eventos', 'fechamentos_folha'], desenhar);
+desenhar();
+</script>
+</body>
+</html>
