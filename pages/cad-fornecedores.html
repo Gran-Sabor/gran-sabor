@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fornecedores</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=4">
+</head>
+<body>
+<script src="../assets/js/menu.js?v=3"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=3"></script>
+<script src="../assets/js/exemplo.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=1"></script>
+<script>
+const CATS = ['Carnes', 'Hortifrúti', 'Mercearia', 'Bebidas', 'Embalagens', 'Gás', 'Serviços', 'Manutenção', 'Outros'];
+montarCadastro({
+  titulo: 'Fornecedores', sub: 'Quem vende para a Gran Sabor · marque para quais empresas fornece',
+  novoRotulo: 'Novo fornecedor', tituloLista: 'Fornecedores', porUnidade: false,
+  buscaDica: 'Buscar por nome, CNPJ, categoria… (atalho: /)',
+  dados: FORNECEDORES,
+  escopo: l => ({ empresa: l.empresas }),
+  colunas: [
+    { campo: 'nome', titulo: 'Fornecedor', fmt: v => `<b>${esc(v)}</b>` },
+    { campo: 'cnpj', titulo: 'CNPJ', fmt: v => `<span class="mono">${fmtDoc(v)}</span>`, busca: l => l.cnpj + ' ' + fmtDoc(l.cnpj) },
+    { campo: 'categoria', titulo: 'Categoria' },
+    { campo: 'prazo', titulo: 'Condição' },
+    { campo: 'empresas', titulo: 'Fornece para', fmt: etqEmpresas, busca: l => (l.empresas || []).map(nomeEmpresa).join(' ') },
+    { campo: 'ativo', titulo: 'Ativo', fmt: sim }
+  ],
+  kpis: v => [
+    ['Fornecedores', v.length, 'no filtro atual'],
+    ['Carnes', v.filter(x => x.categoria === 'Carnes').length, 'compra centralizada'],
+    ['Atendem as 3 empresas', v.filter(x => (x.empresas || []).length === EMPRESAS.length).length, 'podem ter compra única']
+  ],
+  campos: [
+    { campo: 'nome', titulo: 'Razão social / nome', obrig: true, larg: 'c8', max: 120, secao: 'Identificação' },
+    { campo: 'cnpj', titulo: 'CNPJ ou CPF', tipo: 'doc', larg: 'c4', max: 18, secao: 'Identificação' },
+    { campo: 'categoria', titulo: 'Categoria', tipo: 'select', opcoes: CATS.map(c => [c, c]), larg: 'c4', secao: 'Identificação' },
+    { campo: 'prazo', titulo: 'Condição de pagamento', larg: 'c4', max: 40, dica: 'ex.: boleto 28 dias', secao: 'Identificação' },
+    { campo: 'uf', titulo: 'UF', larg: 'c2', max: 2, secao: 'Identificação' },
+    { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c2', secao: 'Identificação' },
+    { campo: 'empresas', titulo: 'Fornece para', tipo: 'multi', opcoes: () => EMPRESAS.map(e => [e.id, e.nome]), larg: 'c12', obrig: true, secao: 'Empresas' },
+    { campo: 'contato', titulo: 'Contato (nome, telefone, e-mail)', tipo: 'texto-longo', larg: 'c12', secao: 'Contato' }
+  ],
+  novo: f => ({ categoria: 'Outros', empresas: f.empresa ? [f.empresa] : EMPRESAS.map(e => e.id), ativo: true }),
+  validar: d => d.cnpj && ![11, 14].includes(d.cnpj.length) ? 'CNPJ (14) ou CPF (11) incompleto.' : ''
+});
+</script>
+</body>
+</html>

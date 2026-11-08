@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insumos</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=4">
+</head>
+<body>
+<script src="../assets/js/menu.js?v=3"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=3"></script>
+<script src="../assets/js/exemplo.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=1"></script>
+<script>
+/* Insumos = o que se compra (carnes, hortifrúti, mercearia...). O custo médio
+   alimenta a ficha técnica; o estoque mínimo gera alerta e sugestão de compra. */
+const CATS = ['Carnes', 'Hortifrúti', 'Mercearia', 'Bebidas', 'Embalagens', 'Gás', 'Limpeza'];
+const UNS = [['kg', 'kg'], ['un', 'unidade'], ['l', 'litro'], ['cx', 'caixa'], ['pct', 'pacote']];
+const nomeForn = id => (FORNECEDORES.find(f => f.id === id) || {}).nome || '—';
+montarCadastro({
+  titulo: 'Insumos', sub: 'Itens comprados · custo médio alimenta a ficha técnica e o CMV',
+  novoRotulo: 'Novo insumo', tituloLista: 'Insumos por categoria', porUnidade: false,
+  dados: INSUMOS,
+  escopo: l => ({ empresa: (FORNECEDORES.find(f => f.id === l.fornecedor) || {}).empresas }),
+  agrupar: l => l.categoria,
+  colunas: [
+    { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
+    { campo: 'nome', titulo: 'Insumo', fmt: v => `<b>${esc(v)}</b>` },
+    { campo: 'un', titulo: 'Un.' },
+    { campo: 'custo', titulo: 'Custo médio', num: true, fmt: v => reais(v) },
+    { campo: 'min', titulo: 'Estoque mínimo', num: true, fmt: (v, l) => `${numero(v)} ${l.un}` },
+    { campo: 'fornecedor', titulo: 'Fornecedor padrão', fmt: v => esc(nomeForn(v)) },
+    { campo: 'ativo', titulo: 'Ativo', fmt: sim }
+  ],
+  kpis: v => {
+    const carnes = v.filter(i => i.categoria === 'Carnes');
+    return [
+      ['Insumos', v.length, `${new Set(v.map(i => i.categoria)).size} categorias`],
+      ['Carnes', carnes.length, carnes.length ? `custo médio ${reais(carnes.reduce((a, i) => a + i.custo, 0) / carnes.length)}/kg` : ''],
+      ['Sem fornecedor padrão', v.filter(i => !i.fornecedor).length, 'complete para a sugestão de compra']
+    ];
+  },
+  campos: [
+    { campo: 'nome', titulo: 'Nome', obrig: true, larg: 'c8', max: 80 },
+    { campo: 'codigo', titulo: 'Código', larg: 'c4', max: 12 },
+    { campo: 'categoria', titulo: 'Categoria', tipo: 'select', opcoes: CATS.map(c => [c, c]), larg: 'c4' },
+    { campo: 'un', titulo: 'Unidade de estoque', tipo: 'select', opcoes: UNS, larg: 'c4' },
+    { campo: 'custo', titulo: 'Custo médio (R$)', tipo: 'dinheiro', larg: 'c4' },
+    { campo: 'min', titulo: 'Estoque mínimo', tipo: 'numero', larg: 'c4' },
+    { campo: 'fornecedor', titulo: 'Fornecedor padrão', tipo: 'select', vazio: '—', opcoes: () => FORNECEDORES.map(f => [f.id, f.nome]), larg: 'c5' },
+    { campo: 'ncm', titulo: 'NCM', larg: 'c3', max: 8, dica: 'vem do XML' },
+    { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c4' }
+  ],
+  novo: () => ({ categoria: 'Mercearia', un: 'kg', ativo: true }),
+  rodapeForm: () => 'O custo médio será atualizado sozinho a cada nota de entrada (XML).'
+});
+</script>
+</body>
+</html>
