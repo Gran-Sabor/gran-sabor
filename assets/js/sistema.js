@@ -179,7 +179,7 @@ function cliqueAbas(e) {
 /* ---------- Alertas (popup) ---------- */
 // Por enquanto, exemplos (com ou sem banco). Depois virão do banco (contas vencendo, notas pendentes, estoque baixo...).
 const ALERTAS_EXEMPLO = [
-  { nivel: 'perigo', titulo: '2 cupons fiscais em contingência', texto: 'Loja 2 · aguardando envio à SEFAZ há mais de 1 hora', tela: 'pendencias_fis' },
+  { nivel: 'perigo', titulo: '2 cupons fiscais em contingência', texto: 'Loja 2 · aguardando envio à SEFAZ há mais de 1 hora', tela: 'vendas_dia' },
   { nivel: 'alerta', titulo: '5 contas vencem hoje', texto: 'R$ 8.430,00 somando as unidades', tela: 'pagar' },
   { nivel: 'alerta', titulo: 'Estoque abaixo do mínimo', texto: 'Picanha, óleo de soja e 2 outros itens na Central de carnes', tela: 'posicao' },
   { nivel: 'info', titulo: 'Fechamento PJ em 2 dias', texto: '3 empresas conveniadas fecham a quinzena na sexta', tela: 'faturamento_pj' }

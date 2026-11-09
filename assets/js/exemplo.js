@@ -120,8 +120,10 @@ const EVENTOS = dadoComum('EVENTOS', () => [
 ].map(([codigo, nome, tipo, forma, [inss, fgts, irrf]]) => ({ id: codigo, codigo, nome, tipo, forma, inss: !!inss, fgts: !!fgts, irrf: !!irrf, ativo: true })));
 
 /* ---------- Datas relativas a hoje (para o exemplo parecer vivo) ---------- */
-const hojeISO = () => new Date().toISOString().slice(0, 10);
-const diasDaqui = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+// Datas no fuso de quem usa (no Brasil, depois das 21h o UTC já é o dia seguinte)
+const isoLocal = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const hojeISO = () => isoLocal(new Date());
+const diasDaqui = n => { const d = new Date(); d.setDate(d.getDate() + n); return isoLocal(d); };
 // Gerador simples e repetível (mesmos números a cada carga)
 let _semente = 7; const aleat = () => (_semente = (_semente * 9301 + 49297) % 233280) / 233280;
 
@@ -390,3 +392,64 @@ const TURNOS = { M: ['Manhã', '06:00–14:20'], T: ['Tarde', '14:00–22:20'], 
 const FERIADOS = dadoComum('FERIADOS', () => ({ '2026-11-15': 'Proclamação da República', '2026-11-20': 'Consciência Negra', '2026-12-25': 'Natal', '2027-01-01': 'Confraternização' }));
 // ESCALA[colab][data] = turno; dia sem registro = turno padrão do cadastro, com folga em rodízio
 const ESCALA = dadoComum('ESCALA', () => ({}));
+
+/* =====================================================================
+   BLOCO 5 · PDV (vendas, NFC-e e caixas)
+   As contas (total, NFC-e, saldo do caixa, indicadores) ficam em vendas.js.
+   ===================================================================== */
+// Quem opera o caixa de cada loja (o caixa da loja; se afastado, o primeiro ativo)
+const operadorPadrao = un => { const ls = COLABORADORES.filter(c => c.unidade === un && c.situacao !== 'afastado');
+  return (ls.find(c => c.cargo === 'caixa') || ls[0] || { nome: 'Operador' }).nome.split(' ')[0]; };
+const LOJAS_PDV = ['loja1', 'loja2', 'loja3'];
+
+// Caixas (um por PDV e por turno): fundo de troco, sangrias/suprimentos e a conferência do fechamento
+const CAIXAS = dadoComum('CAIXAS', () => []);
+// Vendas dos últimos 8 dias + o almoço de hoje. Cada venda saiu com NFC-e.
+const VENDAS = dadoComum('VENDAS', () => (() => {
+  const r = [], num = {}; let n = 1;
+  const formaSorteio = () => { const x = aleat(); return x < .35 ? 'cre' : x < .65 ? 'deb' : x < .87 ? 'pix' : x < .95 ? 'din' : 'vr'; };
+  for (let d = -8; d <= 0; d++) {
+    const data = diasDaqui(d), hoje = d === 0;
+    LOJAS_PDV.forEach((un, ui) => {
+      const empresa = UNIDADE_EMPRESA[un], cx = { id: `cx${un}${data}`, unidade: un, empresa, pdv: 1, operador: operadorPadrao(un),
+        abertoEm: `${data}T10:30`, fundo: 200, movimentos: [], fechadoEm: null, conferencia: null };
+      CAIXAS.push(cx);
+      const qtd = Math.round((150 - ui * 25) * (new Date(data + 'T12:00').getDay() === 0 ? 1.3 : 1) * (0.85 + aleat() * 0.3));
+      for (let k = 0; k < qtd; k++) {
+        // hoje: só até a hora atual (depois das 11h), para nenhuma venda ficar "no futuro"
+        const agoraMin = new Date().getHours() * 60 + new Date().getMinutes(), fim = hoje && agoraMin > 11 * 60 + 30 ? Math.min(240, agoraMin - 11 * 60 - 5) : 240;
+        const min = 11 * 60 + Math.floor(aleat() * fim), hora = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+        const itens = [], x = aleat(), prod = id => PRODUTOS_VENDA.find(p => p.id === id);
+        const add = (id, qtdItem) => { const p = prod(id); itens.push({ prod: id, nome: p.nome, un: p.un, qtd: qtdItem, preco: p.precos[empresa] }); };
+        if (x < .72) add('p01', +(0.32 + aleat() * 0.5).toFixed(3));
+        else if (x < .82) add('p02', +(0.28 + aleat() * 0.35).toFixed(3));
+        else add(aleat() < .55 ? 'p03' : 'p04', 1);
+        if (aleat() < .33) add(aleat() < .65 ? 'p05' : 'p06', 1);
+        const v = { id: 'v' + n++, unidade: un, empresa, pdv: 1, caixa: cx.id, operador: cx.operador, data, hora, itens, desconto: 0, cpf: aleat() < .2 ? 'informado' : '', pj: null,
+          pagamentos: [], troco: 0, nota: null, canceladaEm: null };
+        const tot = Math.round(itens.reduce((a, i) => a + i.qtd * i.preco, 0) * 100) / 100, f = formaSorteio();
+        v.pagamentos = [{ forma: f, valor: f === 'din' ? Math.ceil(tot / 10) * 10 : tot }]; v.troco = f === 'din' ? Math.round((Math.ceil(tot / 10) * 10 - tot) * 100) / 100 : 0;
+        const ch = empresa + '|1'; num[ch] = (num[ch] || 4800) + 1;
+        v.nota = { modelo: 65, serie: 1, numero: num[ch], chave: '', status: 'autorizada', protocolo: '135' + String(9e8 + n), emitidaEm: `${data}T${hora}`, transmitidaEm: `${data}T${hora}` };
+        r.push(v);
+      }
+      // Fechamento dos dias anteriores (conferido sem diferença, 1 com quebra)
+      if (!hoje) cx.fechadoEm = `${data}T16:10`;
+    });
+  }
+  r.sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora));
+  // Duas notas de hoje na Loja 2 ficaram em contingência (internet caiu) e ainda não subiram
+  r.filter(v => v.unidade === 'loja2' && v.data === hojeISO()).slice(-2).forEach(v => { v.nota.status = 'contingencia'; v.nota.transmitidaEm = null; v.nota.protocolo = ''; });
+  return r;
+})());
+// Chaves das notas de exemplo (depois de numerar)
+VENDAS.forEach(v => { if (v.nota && !v.nota.chave) v.nota.chave = '35' + v.data.slice(2, 4) + v.data.slice(5, 7) + (EMPRESAS.find(e => e.id === v.empresa) || {}).cnpj + '65001' + String(v.nota.numero).padStart(9, '0') + (v.nota.status === 'contingencia' ? 9 : 1) + String(v.nota.numero * 7919 % 1e8).padStart(8, '0') + '0'; });
+// Conferência dos caixas já fechados (contado = esperado; um com quebra de R$ 12,50)
+CAIXAS.filter(c => c.fechadoEm && !c.conferencia).forEach((c, i) => {
+  const vs = VENDAS.filter(v => v.caixa === c.id), por = {};
+  vs.forEach(v => v.pagamentos.forEach(p => { por[p.forma] = Math.round(((por[p.forma] || 0) + p.valor) * 100) / 100; }));
+  por.din = Math.round(((por.din || 0) - vs.reduce((a, v) => a + v.troco, 0)) * 100) / 100;
+  const gaveta = Math.round((c.fundo + por.din) * 100) / 100, quebra = i === 4 ? -12.5 : 0;
+  c.conferencia = { contado: { ...por, din: Math.round((gaveta + quebra) * 100) / 100 }, esperado: { ...por, din: gaveta }, diferenca: quebra, obs: quebra ? 'Troco dado a mais (operador avisado)' : '',
+    fundoFica: 200, deposito: Math.round((gaveta + quebra - 200) * 100) / 100, fechadoPor: c.operador };
+});

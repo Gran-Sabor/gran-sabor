@@ -12,6 +12,7 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
 - `assets/js/menu.js`: mapa do menu (`MENU`) e das unidades (`UNIDADES`). Tela nova = preencher `arquivo`.
 - `assets/js/config.js`: endereço e chave publishable do Supabase. Sem chave → modo demonstração.
 - `assets/js/tela.js`: ajudas das telas (formatos BR, unidade escolhida, abrir outra tela).
+- `assets/js/folha.js` (conta da folha) e `assets/js/vendas.js` (conta das vendas: total, NFC-e, caixa, indicadores): cada conta num lugar só.
 - Banco: Supabase (projeto `sayplpvhnoeytfnkbvpm`, São Paulo). Migrações em `supabase/migrations/`,
   aplicadas pelo GitHub Actions no merge (segredos SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_ID, SUPABASE_DB_PASSWORD).
 

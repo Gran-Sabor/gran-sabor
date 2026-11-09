@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Início</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=9">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=10">
 </head>
 <body>
 <div class="tela">
@@ -39,46 +39,46 @@
         <div id="pagar"></div>
       </section>
       <section class="cartao">
-        <div class="cartao-cab"><h2>Delivery e empresas (PJ)</h2><a class="dir" href="#" data-abrir="faturamento_pj">Faturamento PJ</a></div>
+        <div class="cartao-cab"><h2>Empresas conveniadas (PJ)</h2><a class="dir" href="#" data-abrir="faturamento_pj">Faturamento PJ</a></div>
         <div id="pj"></div>
       </section>
     </div>
   </div>
 </div>
 
-<script src="../assets/js/menu.js?v=6"></script>
+<script src="../assets/js/menu.js?v=7"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=5"></script>
+<script src="../assets/js/vendas.js?v=1"></script>
 <script>
-/* Números de EXEMPLO, só para aprovar o visual. Depois virão do banco. */
-const LOJAS = {
-  loja1: { nome: 'Loja 1', fat: 6840, kg: 98.4, cli: 112, cmvKg: 21.9, ant: 6410, bebidas: 1180 },
-  loja2: { nome: 'Loja 2', fat: 4920, kg: 71.2, cli: 81, cmvKg: 24.6, ant: 5230, bebidas: 760 },
-  loja3: { nome: 'Loja 3', fat: 3375, kg: 47.9, cli: 58, cmvKg: 22.8, ant: 3100, bebidas: 540 }
-};
-const SEMANA = [13450, 14980, 15210, 12870, 16120, 17890, 15135];
-const META_CMV_KG = 23;
-const ATENCAO = [
-  { nv: 'perigo', t: '2 cupons em contingência', s: 'Loja 2 · aguardando envio à SEFAZ', tela: 'pendencias_fis' },
-  { nv: 'alerta', t: 'CMV por kg acima da meta', s: 'Loja 2 · R$ 24,60 contra meta de R$ 23,00', tela: 'cmv' },
-  { nv: 'alerta', t: 'Estoque abaixo do mínimo', s: 'Picanha, óleo de soja e mais 2 itens', tela: 'posicao' },
-  { nv: 'info', t: 'Inventário semanal', s: 'Central de carnes · previsto para sábado', tela: 'inventario' }
-];
-const PAGAR = [
-  { d: 0, f: 'Distribuidora de carnes', u: 'Central de carnes', v: 5240 },
-  { d: 0, f: 'Energia elétrica', u: 'Loja 1', v: 1890 },
-  { d: 1, f: 'Hortifrúti', u: 'Loja 3', v: 640 },
-  { d: 3, f: 'Aluguel', u: 'Loja 2', v: 7800 },
-  { d: 5, f: 'Gás', u: 'Loja 1', v: 980 }
-];
-const PJ = [
-  { n: 'Delivery hoje', s: '43 pedidos · 3 lojas', v: 2310 },
-  { n: 'Empresas conveniadas', s: '3 fecham a quinzena na sexta', v: 9640 },
-  { n: 'Em aberto (PJ)', s: '1 boleto vencido há 4 dias', v: 2180 }
-];
+/* Tudo calculado na hora a partir das vendas do PDV, do estoque e das contas (dados de exemplo
+   até o banco ser ligado). Mudou em outra aba, o Início se redesenha sozinho. */
+const LOJAS_INI = ['loja1', 'loja2', 'loja3'];
+const metaCmv = () => META_CMV.Buffet;
+const vendasDe = (un, data) => VENDAS.filter(v => v.unidade === un && v.data === data);
+function lojas() {
+  const hoje = hojeISO(), semAnt = diasDaqui(-7), agoraHora = new Date().toTimeString().slice(0, 5);   // compara até o mesmo horário
+  return Object.fromEntries(LOJAS_INI.map(un => { const i = VENDA.indicadores(vendasDe(un, hoje));
+    return [un, { nome: nomeUnidade(un), fat: i.fat, kg: i.kg, cli: i.cupons, cmv: i.cmv, cmvKg: i.cmvKg, custo: i.custo, bebidas: i.bebidas, ant: VENDA.indicadores(vendasDe(un, semAnt).filter(v => v.hora <= agoraHora)).fat }]; }));
+}
+function atencao(LOJAS) {
+  const r = [], pend = VENDA.pendentes();
+  if (pend.length) { const vencidas = pend.filter(v => VENDA.horasContingencia(v) <= 0).length;
+    r.push({ nv: 'perigo', t: `${pend.length} cupom(ns) em contingência`, s: `${[...new Set(pend.map(v => nomeUnidade(v.unidade)))].join(', ')} · ${vencidas ? vencidas + ' com prazo vencido' : 'aguardando envio à SEFAZ'}`, tela: 'vendas_dia' }); }
+  Object.values(LOJAS).filter(l => l.fat && l.cmv > metaCmv()).forEach(l => r.push({ nv: 'alerta', t: 'CMV acima da meta', s: `${l.nome} · ${pct(l.cmv)} contra meta de ${pct(metaCmv())}`, tela: 'produtos' }));
+  const baixos = ESTOQUE.filter(e => e.saldo < e.min);
+  if (baixos.length) r.push({ nv: 'alerta', t: 'Estoque abaixo do mínimo', s: (n => `${n.slice(0, 3).join(', ')}${n.length > 3 ? ` e mais ${n.length - 3}` : ''} · ${baixos.length} item(ns) × local`)([...new Set(baixos.map(e => insumo(e.insumo).nome.split(' (')[0]))]), tela: 'posicao' });
+  const abertosOntem = CAIXAS.filter(c => !c.fechadoEm && c.abertoEm.slice(0, 10) < hojeISO());
+  if (abertosOntem.length) r.push({ nv: 'alerta', t: 'Caixa de dia anterior aberto', s: abertosOntem.map(c => `${nomeUnidade(c.unidade)} PDV ${c.pdv}`).join(', '), tela: 'fechamento_cx' });
+  const quebras = CAIXAS.filter(c => c.conferencia && c.conferencia.diferenca && c.fechadoEm >= diasDaqui(-1));
+  if (quebras.length) r.push({ nv: 'info', t: 'Caixa fechado com diferença', s: quebras.map(c => `${nomeUnidade(c.unidade)} ${reais(c.conferencia.diferenca)}`).join(' · '), tela: 'fechamento_cx' });
+  return r.length ? r : [{ nv: 'info', t: 'Nada pendente', s: 'Notas, caixas e estoque em dia', tela: 'vendas_dia' }];
+}
+const pagar7 = () => CONTAS_PAGAR.filter(c => !c.pagoEm && c.vencimento <= diasDaqui(7)).sort((a, b) => a.vencimento.localeCompare(b.vencimento));
 
 const somar = (lst, k) => lst.reduce((a, x) => a + x[k], 0);
-const variacao = (atual, ant) => { const v = ant ? (atual - ant) / ant * 100 : 0;
+const variacao = (atual, ant) => { if (!ant) return '<span class="sub">sem venda para comparar</span>'; const v = (atual - ant) / ant * 100;
   return `<span class="${v >= 0 ? 'sobe' : 'desce'}">${v >= 0 ? '▲' : '▼'} ${pct(Math.abs(v))}</span>`; };
 
 function desenhar(un) {
@@ -86,35 +86,36 @@ function desenhar(un) {
   $('etqUnidade').textContent = u.nome;
   $('hoje').textContent = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
 
-  const lojas = un === 'todas' ? Object.values(LOJAS) : LOJAS[un] ? [LOJAS[un]] : [];
-  const fat = somar(lojas, 'fat'), kg = somar(lojas, 'kg'), cli = somar(lojas, 'cli'), ant = somar(lojas, 'ant');
-  const cmv = kg ? lojas.reduce((a, l) => a + l.cmvKg * l.kg, 0) / kg : 0;
-  const pagarHoje = somar(PAGAR.filter(p => p.d === 0), 'v');
+  const LOJAS = lojas(), hoje = hojeISO();
+  const lojasSel = un === 'todas' ? Object.values(LOJAS) : LOJAS[un] ? [LOJAS[un]] : [];
+  const fat = somar(lojasSel, 'fat'), kg = somar(lojasSel, 'kg'), cli = somar(lojasSel, 'cli'), ant = somar(lojasSel, 'ant');
+  const cmv = fat ? somar(lojasSel, 'custo') / fat * 100 : 0;
+  const PAGAR = pagar7().filter(c => un === 'todas' || c.unidade === un), pagarHoje = somar(PAGAR.filter(p => p.vencimento <= hoje), 'valor');
 
-  $('kpis').innerHTML = lojas.length ? [
-    ['Faturamento hoje', reais(fat), `${variacao(fat, ant)} vs. mesmo dia da semana passada`],
-    ['Kg vendidos', numero(kg, 1) + ' kg', `preço médio ${reais(kg ? (fat - somar(lojas, 'bebidas')) / kg : 0)}/kg`],
+  $('kpis').innerHTML = lojasSel.length ? [
+    ['Faturamento hoje', reais(fat), `${variacao(fat, ant)}${ant ? ' vs. semana passada até esta hora' : ''}`],
+    ['Kg vendidos', numero(kg, 1) + ' kg', `CMV do kg servido ${reais(kg ? lojasSel.reduce((a, l) => a + l.cmvKg * l.kg, 0) / kg : 0)}`],
     ['Clientes atendidos', numero(cli), `ticket médio ${reais(cli ? fat / cli : 0)}`],
-    ['CMV por kg', reais(cmv), `meta ${reais(META_CMV_KG)} · ${cmv <= META_CMV_KG ? '<span class="sobe">dentro</span>' : '<span class="desce">acima</span>'}`],
-    ['A pagar hoje', reais(pagarHoje), `${PAGAR.filter(p => p.d === 0).length} contas · todas as unidades`]
+    ['CMV', pct(cmv), `meta ${pct(metaCmv())} · ${cmv <= metaCmv() ? '<span class="sobe">dentro</span>' : '<span class="desce">acima</span>'}`],
+    ['A pagar até hoje', reais(pagarHoje), `${PAGAR.filter(p => p.vencimento <= hoje).length} conta(s) · ${un === 'todas' ? 'todas as unidades' : nomeUnidade(un)}`]
   ].map(([t, v, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${v}</div><div class="kpi-ctx">${c}</div></div>`).join('')
   : `<div class="kpi"><div class="kpi-tit">${esc(u.nome)}</div><div class="kpi-valor">Sem vendas ao público</div>
      <div class="kpi-ctx">Aqui entram estoque, transferências para as lojas e despesas da unidade.</div></div>
-     <div class="kpi"><div class="kpi-tit">A pagar hoje</div><div class="kpi-valor">${reais(pagarHoje)}</div><div class="kpi-ctx">todas as unidades</div></div>`;
+     <div class="kpi"><div class="kpi-tit">A pagar até hoje</div><div class="kpi-valor">${reais(pagarHoje)}</div><div class="kpi-ctx">${esc(u.nome)}</div></div>`;
 
   const todas = Object.entries(LOJAS), total = somar(Object.values(LOJAS), 'fat');
   $('tabUnidades').innerHTML = `<thead><tr><th>Unidade</th><th class="num">Faturamento</th><th class="num">Kg</th><th class="num">Clientes</th>
-    <th class="num">Ticket médio</th><th class="num">CMV/kg</th><th>Participação</th></tr></thead><tbody>${todas.map(([id, l]) =>
+    <th class="num">Ticket médio</th><th class="num">CMV</th><th>Participação</th></tr></thead><tbody>${todas.map(([id, l]) =>
     `<tr${un !== 'todas' && un !== id ? ' style="opacity:.45"' : ''}><td>${esc(l.nome)}</td><td class="num">${reais(l.fat)}</td><td class="num">${numero(l.kg, 1)}</td>
-     <td class="num">${l.cli}</td><td class="num">${reais(l.fat / l.cli)}</td>
-     <td class="num ${l.cmvKg > META_CMV_KG ? 'desce' : ''}">${reais(l.cmvKg)}</td>
-     <td><div class="barra"><i style="width:${(l.fat / total * 100).toFixed(1)}%"></i></div></td></tr>`).join('')}</tbody>
+     <td class="num">${l.cli}</td><td class="num">${reais(l.cli ? l.fat / l.cli : 0)}</td>
+     <td class="num ${l.cmv > metaCmv() ? 'desce' : ''}">${pct(l.cmv)}</td>
+     <td><div class="barra"><i style="width:${(total ? l.fat / total * 100 : 0).toFixed(1)}%"></i></div></td></tr>`).join('')}</tbody>
     <tfoot><tr><td>Total</td><td class="num">${reais(total)}</td><td class="num">${numero(somar(Object.values(LOJAS), 'kg'), 1)}</td>
-    <td class="num">${somar(Object.values(LOJAS), 'cli')}</td><td class="num">${reais(total / somar(Object.values(LOJAS), 'cli'))}</td><td></td><td></td></tr></tfoot>`;
+    <td class="num">${somar(Object.values(LOJAS), 'cli')}</td><td class="num">${reais(somar(Object.values(LOJAS), 'cli') ? total / somar(Object.values(LOJAS), 'cli') : 0)}</td><td></td><td></td></tr></tfoot>`;
 
   // Gráfico simples de barras (7 dias)
-  const fator = un === 'todas' ? 1 : lojas.length ? fat / total : 0;
-  const dias = SEMANA.map((v, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return { v: v * fator, d }; });
+  const doDia = d => VENDA.indicadores(VENDAS.filter(v => v.data === d && (un === 'todas' ? LOJAS_INI.includes(v.unidade) : v.unidade === un))).fat;
+  const dias = [6, 5, 4, 3, 2, 1, 0].map(n => ({ v: doDia(diasDaqui(-n)), d: new Date(diasDaqui(-n) + 'T12:00') }));
   const max = Math.max(...dias.map(x => x.v), 1);
   $('leg7').textContent = 'total ' + reais(dias.reduce((a, x) => a + x.v, 0));
   $('grafico7').innerHTML = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:end;height:120px">${dias.map(x =>
@@ -124,18 +125,26 @@ function desenhar(un) {
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:4px;font-size:11px;color:var(--texto-3);text-align:center">${dias.map(x =>
     `<span>${x.d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')}</span>`).join('')}</div>`;
 
-  $('atencao').innerHTML = ATENCAO.map(a => `<a href="#" class="lista-linha" data-abrir="${a.tela}" style="color:inherit;text-decoration:none">
+  $('atencao').innerHTML = atencao(LOJAS).map(a => `<a href="#" class="lista-linha" data-abrir="${a.tela}" style="color:inherit;text-decoration:none">
     <span class="marcador nv-${a.nv}" style="width:8px;height:8px;border-radius:50%;flex:none"></span>
     <div><b style="font-weight:600">${esc(a.t)}</b><small>${esc(a.s)}</small></div></a>`).join('');
 
-  $('pagar').innerHTML = PAGAR.map(p => { const d = new Date(); d.setDate(d.getDate() + p.d);
-    return `<div class="lista-linha"><div>${esc(p.f)}<small>${esc(p.u)} · ${p.d === 0 ? '<b class="desce">vence hoje</b>' : d.toLocaleDateString('pt-BR')}</small></div><span class="dir">${reais(p.v)}</span></div>`; }).join('');
+  $('pagar').innerHTML = PAGAR.slice(0, 6).map(p => `<div class="lista-linha"><div>${esc(p.favorecido)}<small>${esc(nomeUnidade(p.unidade))} · ${p.vencimento < hoje ? '<b class="desce">vencida ' + dataBR(p.vencimento + 'T12:00') + '</b>' : p.vencimento === hoje ? '<b class="desce">vence hoje</b>' : dataBR(p.vencimento + 'T12:00')}</small></div><span class="dir">${reais(p.valor)}</span></div>`).join('')
+    + (PAGAR.length > 6 ? `<div class="lista-linha"><small>e mais ${PAGAR.length - 6} conta(s) · ${reais(somar(PAGAR.slice(6), 'valor'))}</small></div>` : '') || '<div class="vazio">Nada a pagar nos próximos 7 dias.</div>';
 
+  const consPJ = CONSUMOS_PJ.filter(k => un === 'todas' || k.unidade === un), fechPJ = FECHAMENTOS_PJ.filter(f => (un === 'todas' || f.unidade === un) && f.etapa === 'boleto');
+  const PJ = [
+    { n: 'Convênios hoje', s: `${consPJ.filter(k => k.data === hoje).reduce((a, k) => a + k.refeicoes, 0)} refeição(ões) no PDV`, v: somar(consPJ.filter(k => k.data === hoje), 'valor') },
+    { n: 'Consumo em aberto (a faturar)', s: `${new Set(consPJ.map(k => k.cliente)).size} empresa(s)`, v: somar(consPJ, 'valor') },
+    { n: 'Boletos em aberto (PJ)', s: `${fechPJ.filter(f => f.vencimento < hoje).length} vencido(s)`, v: somar(fechPJ, 'valor') }
+  ];
   $('pj').innerHTML = PJ.map(p => `<div class="lista-linha"><div>${esc(p.n)}<small>${esc(p.s)}</small></div><span class="dir">${reais(p.v)}</span></div>`).join('');
 }
 
-desenhar(unidadeAtual());
-aoTrocarUnidade(desenhar);
+let unAtual = unidadeAtual();
+desenhar(unAtual);
+aoTrocarUnidade(un => { unAtual = un; desenhar(un); });
+vigiarDados(['vendas', 'caixas', 'estoque', 'contas_pagar', 'consumos_pj', 'fechamentos_pj', 'produtos', 'fichas', 'insumos'], () => desenhar(unAtual));
 </script>
 </body>
 </html>
