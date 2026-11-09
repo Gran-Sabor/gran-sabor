@@ -173,7 +173,7 @@ const CLIENTES_PJ = dadoComum('CLIENTES_PJ', () => [
   ['c5', 'Indústria de Peças Modelo',     '50555666000174', 'loja2', 'quinzenal', 7,  40]
 ].map(([id, nome, cnpj, unidade, fechamento, prazo, pessoas]) => ({ id, nome, cnpj, unidade, empresa: UNIDADE_EMPRESA[unidade], fechamento, prazo, pessoas, limite: pessoas * 30 * 25, email: '', ativo: true })));
 
-// Consumo do período aberto (cada refeição já saiu com NFC-e em nome do cliente)
+// Consumo do período aberto (sem NFC-e na comanda: a NF-e do período sai no fechamento, com o boleto)
 const CONSUMOS_PJ = dadoComum('CONSUMOS_PJ', () => (() => {
   const lista = []; let n = 1;
   CLIENTES_PJ.forEach(c => {
@@ -182,7 +182,7 @@ const CONSUMOS_PJ = dadoComum('CONSUMOS_PJ', () => (() => {
       const qtd = Math.round(c.pessoas * (0.55 + aleat() * 0.35));
       for (let k = 0; k < Math.min(qtd, 4); k++) {
         const valor = +(qtd / Math.min(qtd, 4) * (24 + aleat() * 14)).toFixed(2);
-        lista.push({ id: 'k' + n, cliente: c.id, unidade: c.unidade, empresa: c.empresa, data: diasDaqui(-d), refeicoes: Math.round(qtd / Math.min(qtd, 4)), valor, nfce: String(100000 + n++) });
+        lista.push({ id: 'k' + n, cliente: c.id, unidade: c.unidade, empresa: c.empresa, data: diasDaqui(-d), refeicoes: Math.round(qtd / Math.min(qtd, 4)), valor, comanda: String(100 + (n++ * 37) % 200) });
       }
     }
   });
@@ -405,7 +405,8 @@ const BANDEIRAS_EX = { deb: ['Visa', 'Mastercard', 'Elo'], cre: ['Visa', 'Master
 
 // Caixas (um por PDV e por turno): fundo de troco, sangrias/suprimentos e a conferência do fechamento
 const CAIXAS = dadoComum('CAIXAS', () => []);
-// Vendas dos últimos 8 dias + o almoço de hoje. Cada venda saiu com NFC-e.
+// Vendas dos últimos 8 dias + o almoço de hoje. Venda ao consumidor sai com NFC-e; ontem, na Loja 1,
+// um consumo de funcionário (folha) e uma degustação (cortesia) para mostrar os outros tipos.
 const VENDAS = dadoComum('VENDAS', () => (() => {
   const r = [], num = {}; let n = 1;
   const formaSorteio = () => { const x = aleat(); return x < .35 ? 'cre' : x < .65 ? 'deb' : x < .87 ? 'pix' : x < .95 ? 'din' : 'vr'; };
@@ -443,6 +444,13 @@ const VENDAS = dadoComum('VENDAS', () => (() => {
   r.sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora));
   // Duas notas de hoje na Loja 2 ficaram em contingência (internet caiu) e ainda não subiram
   r.filter(v => v.unidade === 'loja2' && v.data === hojeISO()).slice(-2).forEach(v => { v.nota.status = 'contingencia'; v.nota.transmitidaEm = null; v.nota.protocolo = ''; });
+  const ontem = r.filter(v => v.unidade === 'loja1' && v.data === diasDaqui(-1));
+  const semNota = (v, extra) => Object.assign(v, { pagamentos: [], troco: 0, nota: null, cpf: '' }, extra);
+  if (ontem.length > 20) {
+    const f = semNota(ontem[10], { tipo: 'funcionario', colab: 'c0102' }), tot = Math.round(f.itens.reduce((a, i) => a + i.qtd * i.preco, 0) * 100) / 100;
+    if (!LANCAMENTOS.some(l => l.venda === f.id)) LANCAMENTOS.push({ id: 'l' + f.id, comp: f.data.slice(0, 7), colab: f.colab, evento: '110', qtd: 0, valor: tot, obs: `Consumo na loja · Loja 1 ${f.data.split('-').reverse().join('/')} ${f.hora}`, venda: f.id, criadoEm: f.data });
+    semNota(ontem[20], { tipo: 'cortesia', motivoCortesia: 'Degustação: cliente provou o prato novo antes de pesar', autorizadoPor: ontem[20].operador });
+  }
   return r;
 })());
 // Chaves das notas de exemplo (depois de numerar)
@@ -455,6 +463,8 @@ CAIXAS.filter(c => c.fechadoEm && !c.conferencia).forEach((c, i) => {
   const gaveta = Math.round((c.fundo + por.din) * 100) / 100, quebra = i === 4 ? -12.5 : 0;
   c.conferencia = { contado: { ...por, din: Math.round((gaveta + quebra) * 100) / 100 }, esperado: { ...por, din: gaveta }, diferenca: quebra, obs: quebra ? 'Troco dado a mais (operador avisado)' : '',
     fundoFica: 200, deposito: Math.round((gaveta + quebra - 200) * 100) / 100, fechadoPor: c.operador };
+  const cts = vs.filter(v => v.tipo === 'cortesia' && !v.canceladaEm);
+  c.conferencia.cortesias = { qtd: cts.length, valor: Math.round(cts.reduce((a, v) => a + v.itens.reduce((b, i) => b + i.qtd * i.preco, 0) - (v.desconto || 0), 0) * 100) / 100, vistoPor: null };
 });
 
 /* ---------- Taxas do contrato com a maquininha (por forma e bandeira) ----------

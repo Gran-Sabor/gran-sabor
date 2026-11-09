@@ -23,8 +23,8 @@
 <script src="../assets/js/menu.js?v=8"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=6"></script>
-<script src="../assets/js/vendas.js?v=2"></script>
+<script src="../assets/js/exemplo.js?v=7"></script>
+<script src="../assets/js/vendas.js?v=3"></script>
 <script src="../assets/js/cadastro.js?v=3"></script>
 <script>
 /* Regras (exemplo, a Gran Sabor confirma):
@@ -33,7 +33,9 @@
    - Não fecha com NFC-e em contingência: toda venda precisa de nota autorizada.
    - Ao fechar: débito, crédito e vale viram contas a receber (líquido da taxa, no prazo da operadora),
      o Pix entra como recebido e o dinheiro (menos o fundo que fica) vira depósito a fazer.
-   - Diferença fica registrada com justificativa (quebra de caixa). */
+   - Diferença fica registrada com justificativa (quebra de caixa).
+   - Cortesias e degustações do caixa aparecem no fechamento e geram alerta para a Fernanda (Início).
+   - Consumo de funcionário (folha) e convênio (Faturamento PJ) não passam pela gaveta. */
 const num = s => Number(String(s || '').replace(/\./g, '').replace(',', '.'));
 const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, periodo: true, placeholder: 'Operador, PDV, unidade… (atalho: /)' });
 filtro.de = diasDaqui(-7); $('filtros').querySelector('[data-f=de]').value = filtro.de;
@@ -62,7 +64,7 @@ function desenhar() {
       return `<tr data-id="${c.id}" tabindex="0"><td>${dataBR(dataCx(c) + 'T12:00')}</td><td>${esc(nomeUnidade(c.unidade))} · PDV ${c.pdv} ${etqEmpresa(c.empresa)}</td><td class="so-largo">${esc(c.operador)}</td>
         <td class="so-largo">${c.abertoEm.slice(11, 16)}${c.fechadoEm ? ' – ' + c.fechadoEm.slice(11, 16) : ''}</td><td class="num">${reais(r.total)} <small class="sub">${r.vendas}</small></td>
         <td class="num so-largo">${reais(cf ? cf.contado.din : r.dinheiroGaveta)}</td><td class="num ${cf && cf.diferenca ? 'desce' : ''}">${cf ? reais(cf.diferenca) : '—'}</td>
-        <td>${!c.fechadoEm ? (r.pendentes ? '<span class="etiqueta perigo">aberto · nota pendente</span>' : '<span class="etiqueta pendente">aberto</span>') : cf.diferenca ? '<span class="etiqueta perigo">fechado com diferença</span>' : '<span class="etiqueta completa">conferido</span>'}</td></tr>`; }).join('')
+        <td>${!c.fechadoEm ? (r.pendentes ? '<span class="etiqueta perigo">aberto · nota pendente</span>' : '<span class="etiqueta pendente">aberto</span>') : cf.diferenca ? '<span class="etiqueta perigo">fechado com diferença</span>' : '<span class="etiqueta completa">conferido</span>'}${r.cortesias.qtd ? ` <span class="etiqueta pendente" title="Cortesias e degustações">${r.cortesias.qtd} cortesia(s)</span>` : ''}</td></tr>`; }).join('')
     || '<tr><td colspan="8" class="vazio">Nenhum caixa com esses filtros.</td></tr>'}</tbody>`;
 }
 
@@ -74,30 +76,40 @@ function tabRecebiveis(c) {
     : '<div class="vazio">Sem cartão neste caixa.</div>';
 }
 // Cada venda do caixa: comandas, forma de recebimento bem definida (bandeira e NSU) e nota
-const linhasRecebimento = c => VENDAS.filter(v => v.caixa === c.id).flatMap(v => v.pagamentos.map(p => ({ v, p })));
+// Funcionário e cortesia não têm pagamento: viram uma linha com o tipo no lugar da forma
+const linhasRecebimento = c => VENDAS.filter(v => v.caixa === c.id).flatMap(v => v.pagamentos.length ? v.pagamentos.map(p => ({ v, p })) : [{ v, p: { forma: VENDA.tipo(v), valor: VENDA.total(v) } }]);
+const docDe = v => v.nota ? String(v.nota.numero) : { convenio: 'convênio', funcionario: 'folha', cortesia: 'cortesia' }[VENDA.tipo(v)] || '—';
+const formaNome = p => VENDA.TIPOS[p.forma] ? VENDA.TIPOS[p.forma].nome : VENDA.forma(p.forma).nome;
 function tabRecebimentos(c) {
   const ls = linhasRecebimento(c);
   return `<div class="rolagem" style="max-height:260px"><table class="tabela"><thead><tr><th>Hora</th><th>NFC-e</th><th>Comanda(s)</th><th>Recebimento</th><th class="num">Valor</th></tr></thead><tbody>${ls.map(({ v, p }) =>
-    `<tr${VENDA.valida(v) ? '' : ' style="opacity:.5"'}><td>${v.hora}</td><td class="mono">${v.nota.numero}${VENDA.valida(v) ? '' : ' <span class="etiqueta">cancelada</span>'}</td><td>${(v.comandas || []).join(', ') || '—'}</td>
-      <td>${VENDA.forma(p.forma).nome}${p.bandeira ? ` · ${esc(p.bandeira)}` : ''}${p.nsu ? ` <small class="sub">NSU ${esc(p.nsu)}</small>` : VENDA.eCartao(p.forma) ? ' <small class="desce">sem NSU</small>' : ''}</td><td class="num">${reais(p.valor)}</td></tr>`).join('')
+    `<tr${VENDA.valida(v) ? '' : ' style="opacity:.5"'}><td>${v.hora}</td><td class="mono">${docDe(v)}${VENDA.valida(v) ? '' : ' <span class="etiqueta">cancelada</span>'}</td><td>${(v.comandas || []).join(', ') || '—'}</td>
+      <td>${formaNome(p)}${p.bandeira ? ` · ${esc(p.bandeira)}` : ''}${p.nsu ? ` <small class="sub">NSU ${esc(p.nsu)}</small>` : VENDA.eCartao(p.forma) ? ' <small class="desce">sem NSU</small>' : ''}</td><td class="num">${reais(p.valor)}</td></tr>`).join('')
     || '<tr><td colspan="5" class="vazio">Sem vendas.</td></tr>'}</tbody></table></div>`;
 }
 function exportarRecebimentos(c) {
-  exportarCSV(`recebimentos-${c.unidade}-pdv${c.pdv}-${dataCx(c)}`, ['Data', 'Hora', 'Empresa', 'Unidade', 'PDV', 'NFC-e', 'Situação', 'Comandas', 'Forma', 'Bandeira', 'NSU', 'Autorização', 'Valor'],
-    linhasRecebimento(c).map(({ v, p }) => [dataBR(v.data + 'T12:00'), v.hora, nomeEmpresa(v.empresa), nomeUnidade(v.unidade), v.pdv, v.nota.numero, VENDA.valida(v) ? v.nota.status : 'cancelada',
-      (v.comandas || []).join(' '), VENDA.forma(p.forma).nome, p.bandeira || '', p.nsu || '', p.aut || '', numero(p.valor, 2)]));
+  exportarCSV(`recebimentos-${c.unidade}-pdv${c.pdv}-${dataCx(c)}`, ['Data', 'Hora', 'Empresa', 'Unidade', 'PDV', 'Tipo', 'NFC-e', 'Situação', 'Comandas', 'Forma', 'Bandeira', 'NSU', 'Autorização', 'Valor'],
+    linhasRecebimento(c).map(({ v, p }) => [dataBR(v.data + 'T12:00'), v.hora, nomeEmpresa(v.empresa), nomeUnidade(v.unidade), v.pdv, VENDA.TIPOS[VENDA.tipo(v)].nome, v.nota ? v.nota.numero : '', !VENDA.valida(v) ? 'cancelada' : v.nota ? v.nota.status : 'sem NFC-e',
+      (v.comandas || []).join(' '), formaNome(p), p.bandeira || '', p.nsu || '', p.aut || '', numero(p.valor, 2)]));
 }
 document.addEventListener('click', e => { const a = e.target.closest('[data-csv]'); if (!a) return; e.preventDefault(); exportarRecebimentos(CAIXAS.find(c => c.id === a.dataset.csv)); });
 
+// Cortesias e degustações do caixa (decisão do operador; a Fernanda acompanha)
+function tabCortesias(r) {
+  return r.cortesias.qtd ? `<h3 class="sub-tit">Cortesias e degustações <span class="etiqueta pendente">${r.cortesias.qtd} · ${reais(r.cortesias.valor)}</span></h3><div class="rolagem"><table class="tabela"><tbody>${r.cortesias.lista.map(v =>
+    `<tr><td>${v.hora}</td><td>${esc(v.motivoCortesia || '—')} <small class="sub">${esc(v.autorizadoPor || v.operador)}</small></td><td>${esc(v.itens.map(i => i.nome.split(' ')[0]).join(', '))}</td><td class="num">${reais(VENDA.total(v))}</td></tr>`).join('')}</tbody></table></div>` : '';
+}
 function detalhe(c) {
   const r = VENDA.resumoCaixa(c), cf = c.conferencia, esp = cf ? cf.esperado : esperadoDe(r);
   const linhas = CONTA.map(k => `<tr><td>${VENDA.forma(k).nome}${k === 'din' ? ' <small class="sub">(fundo + vendas + suprimentos − sangrias)</small>' : ''}</td><td class="num">${reais(esp[k])}</td>
     <td class="num">${cf ? reais(cf.contado[k]) : '—'}</td><td class="num ${cf && VENDA.r2(cf.contado[k] - esp[k]) ? 'desce' : ''}">${cf ? reais(VENDA.r2(cf.contado[k] - esp[k])) : '—'}</td></tr>`).join('');
   const corpo = `<div class="sub">${esc(nomeUnidade(c.unidade))} · PDV ${c.pdv} · ${esc(c.operador)} · aberto ${dataBR(dataCx(c) + 'T12:00')} ${c.abertoEm.slice(11, 16)}${c.fechadoEm ? ' · fechado ' + c.fechadoEm.slice(11, 16) : ''} · fundo ${reais(c.fundo)}</div>
     <table class="tabela"><thead><tr><th>Forma</th><th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferença</th></tr></thead><tbody>${linhas}</tbody>
-    <tfoot><tr><td>Convênio (vai para o Faturamento PJ)</td><td class="num">${reais(r.porForma.pj)}</td><td></td><td></td></tr>
-    <tr><td><b>Total vendido</b> <small class="sub">${r.vendas} cupons${r.canceladas ? ` · ${r.canceladas} cancelado(s)` : ''}</small></td><td class="num"><b>${reais(r.total)}</b></td><td></td><td class="num ${cf && cf.diferenca ? 'desce' : ''}">${cf ? `<b>${reais(cf.diferenca)}</b>` : ''}</td></tr></tfoot></table>
+    <tfoot><tr><td>Convênio (vai para o Faturamento PJ, sem NFC-e)</td><td class="num">${reais(r.convenio.valor)}</td><td></td><td></td></tr>
+    <tr><td>Consumo de funcionário (vai para a folha)</td><td class="num">${reais(r.funcionario.valor)}</td><td></td><td></td></tr>
+    <tr><td><b>Total cobrado</b> <small class="sub">${r.cupons.qtd} NFC-e · ${r.convenio.qtd} convênio · ${r.funcionario.qtd} funcionário${r.canceladas ? ` · ${r.canceladas} cancelado(s)` : ''}</small></td><td class="num"><b>${reais(r.total)}</b></td><td></td><td class="num ${cf && cf.diferenca ? 'desce' : ''}">${cf ? `<b>${reais(cf.diferenca)}</b>` : ''}</td></tr></tfoot></table>
     ${(c.movimentos || []).length ? `<h3 class="sub-tit">Sangrias e suprimentos</h3><table class="tabela"><tbody>${c.movimentos.map(m => `<tr><td>${m.hora}</td><td>${m.tipo === 'sangria' ? 'Sangria' : 'Suprimento'}</td><td>${esc(m.motivo)} <small class="sub">${esc(m.por)}</small></td><td class="num">${reais(m.valor)}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${tabCortesias(r)}
     <h3 class="sub-tit">Recebíveis de cartão pelo contrato</h3>${tabRecebiveis(c)}
     <h3 class="sub-tit">Recebimentos e comandas <a href="#" data-csv="${c.id}" style="font-weight:400;font-size:12px;margin-left:6px">exportar</a></h3>${tabRecebimentos(c)}
     ${cf ? `<div class="form-nota">Fundo que ficou na gaveta: ${reais(cf.fundoFica)} · depósito: <b>${reais(cf.deposito)}</b>${cf.obs ? ` · ${esc(cf.obs)}` : ''} · conferido por ${esc(cf.fechadoPor)}</div>` : ''}`;
@@ -116,6 +128,7 @@ function fechar(c) {
     <div class="form-grade">${CONTA.map(k => `<label class="c4">${VENDA.forma(k).nome}<input name="${k}" class="campo" inputmode="decimal" placeholder="0,00"></label>`).join('')}
       <label class="c4">Fundo que fica na gaveta<input name="fundo" class="campo" inputmode="decimal" value="${numero(c.fundo, 2)}"></label>
       <label class="c12">Observação (obrigatória se houver diferença)<input name="obs" class="campo"></label></div>
+    ${r0.cortesias.qtd ? `<div class="aviso">${r0.cortesias.qtd} cortesia(s)/degustação(ões) neste caixa, ${reais(r0.cortesias.valor)} sem cobrança: ${r0.cortesias.lista.map(v => esc(v.motivoCortesia || '')).join(' · ')}. Ao fechar, a Fernanda recebe o alerta.</div>` : ''}
     ${cmdAbertas.length ? `<div class="aviso perigo">${cmdAbertas.length} comanda(s) ainda aberta(s) na loja: ${cmdAbertas.map(x => x.numero).join(', ')}. Cliente saiu sem pagar ou comanda perdida? Explique na observação.</div>` : ''}
     <div id="fConf"></div>`, 'Conferir', f => {
     if (c.fechadoEm) { desenhar(); return 'Este caixa acabou de ser fechado em outra tela.'; }
@@ -140,6 +153,9 @@ function fechar(c) {
     c.fechadoEm = `${hoje}T${hora}`;
     c.conferencia = { contado, esperado: agora, diferenca: dif, obs: f.obs.value.trim(), fundoFica, deposito: VENDA.r2(contado.din - fundoFica), fechadoPor: c.operador };
     c.conferencia.comandasAbertas = cmdAbertas.map(x => x.numero);
+    const rf = VENDA.resumoCaixa(c);
+    c.conferencia.cortesias = { qtd: rf.cortesias.qtd, valor: rf.cortesias.valor, vistoPor: null };
+    c.conferencia.funcionario = { qtd: rf.funcionario.qtd, valor: rf.funcionario.valor };
     // Um título por forma + bandeira, líquido pela taxa do CONTRATO (a conciliação confere depois com o extrato)
     VENDA.recebiveisCaixa(c).forEach(r => RECEBER_OUTROS.push({ id: `r${c.id}${r.forma}${r.bandeira}`, origem: `${VENDA.forma(r.forma).nome} ${r.bandeira} (PDV)`, pagador: VENDA.contrato(r.forma, r.bandeira).operadora,
       unidade: c.unidade, empresa: c.empresa, vencimento: r.previsao, valor: r.liquido, recebidoEm: null, caixa: c.id, forma: r.forma, bandeira: r.bandeira, bruto: r.bruto, taxa: r.taxa }));
@@ -156,7 +172,7 @@ $('btnExportar').onclick = () => exportarCSV('caixas', ['Data', 'Empresa', 'Unid
   CAIXAS.filter(naTela).map(c => { const r = VENDA.resumoCaixa(c), cf = c.conferencia, esp = cf ? cf.esperado : esperadoDe(r);
     return [dataBR(dataCx(c) + 'T12:00'), nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.pdv, c.operador, c.abertoEm.slice(11, 16), c.fechadoEm ? c.fechadoEm.slice(11, 16) : '', r.vendas, numero(r.total, 2),
       ...CONTA.map(k => numero(esp[k], 2)), ...CONTA.map(k => cf ? numero(cf.contado[k], 2) : ''), cf ? numero(cf.diferenca, 2) : '', cf ? cf.obs : '']; }));
-vigiarDados(['caixas', 'vendas', 'comandas', 'taxas_contrato'], desenhar);
+vigiarDados(['caixas', 'vendas', 'comandas', 'taxas_contrato', 'lancamentos', 'consumos_pj'], desenhar);
 desenhar();
 </script>
 </body>

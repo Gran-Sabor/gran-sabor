@@ -49,8 +49,8 @@
 <script src="../assets/js/menu.js?v=8"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=6"></script>
-<script src="../assets/js/vendas.js?v=2"></script>
+<script src="../assets/js/exemplo.js?v=7"></script>
+<script src="../assets/js/vendas.js?v=3"></script>
 <script>
 /* Tudo calculado na hora a partir das vendas do PDV, do estoque e das contas (dados de exemplo
    até o banco ser ligado). Mudou em outra aba, o Início se redesenha sozinho. */
@@ -73,6 +73,9 @@ function atencao(LOJAS) {
   if (abertosOntem.length) r.push({ nv: 'alerta', t: 'Caixa de dia anterior aberto', s: abertosOntem.map(c => `${nomeUnidade(c.unidade)} PDV ${c.pdv}`).join(', '), tela: 'fechamento_cx' });
   const quebras = CAIXAS.filter(c => c.conferencia && c.conferencia.diferenca && c.fechadoEm >= diasDaqui(-1));
   if (quebras.length) r.push({ nv: 'info', t: 'Caixa fechado com diferença', s: quebras.map(c => `${nomeUnidade(c.unidade)} ${reais(c.conferencia.diferenca)}`).join(' · '), tela: 'fechamento_cx' });
+  // Cortesias e degustações (decisão do caixa): a Fernanda vê no fechamento de cada caixa
+  const cort = CAIXAS.filter(c => c.conferencia && c.conferencia.cortesias && c.conferencia.cortesias.qtd && c.fechadoEm >= diasDaqui(-1));
+  if (cort.length) r.push({ nv: 'alerta', t: `${cort.reduce((a, c) => a + c.conferencia.cortesias.qtd, 0)} cortesia(s) nos caixas fechados`, s: cort.map(c => `${nomeUnidade(c.unidade)} ${dataBR(c.fechadoEm.slice(0, 10) + 'T12:00').slice(0, 5)} ${reais(c.conferencia.cortesias.valor)}`).join(' · '), tela: 'fechamento_cx' });
   return r.length ? r : [{ nv: 'info', t: 'Nada pendente', s: 'Notas, caixas e estoque em dia', tela: 'vendas_dia' }];
 }
 const pagar7 = () => CONTAS_PAGAR.filter(c => !c.pagoEm && c.vencimento <= diasDaqui(7)).sort((a, b) => a.vencimento.localeCompare(b.vencimento));

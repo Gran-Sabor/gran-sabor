@@ -19,7 +19,9 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
 ## Regras que não se quebram
 - Nunca chave secreta (service_role / sb_secret) no repositório: o repositório é público.
 - Nenhum dado pessoal ou real no repositório.
-- Toda venda gera NFC-e no fechamento. Não existe fechamento sem nota.
+- Toda venda ao consumidor gera NFC-e no fechamento, pelo botão "Emitir NFC-e" do operador. Não existe venda ao consumidor sem nota.
+  Não são venda ao consumidor (sem NFC-e, com documento próprio): convênio PJ (NF-e + boleto no fechamento do período),
+  consumo de funcionário (desconto na folha, evento 110) e cortesia/degustação (alerta para a Fernanda no fechamento do caixa).
 - Toda tabela nova: RLS ligado e políticas na mesma migração.
 - Nunca push direto na `main`: ramo próprio + pacote; o Alexandre faz o merge.
 

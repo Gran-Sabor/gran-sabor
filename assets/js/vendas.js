@@ -21,6 +21,17 @@ const VENDA = (() => {
   ];
   const forma = id => FORMAS.find(f => f.id === id) || { id, nome: id, prazo: 0, taxa: 0 };
 
+  // Tipos de lançamento no caixa. Só a VENDA ao consumidor leva NFC-e; os outros três têm documento próprio
+  // ou não são venda (o contador da Gran Sabor confirma o tratamento fiscal de cada um).
+  const TIPOS = {
+    venda:       { nome: 'Venda',                  nota: true },
+    convenio:    { nome: 'Convênio PJ',            nota: false, porque: 'a NF-e e o boleto saem no fechamento do período (Contas a receber › Faturamento PJ). NFC-e aqui faturaria em dobro.' },
+    funcionario: { nome: 'Consumo de funcionário', nota: false, porque: 'consumo interno: vai para a folha como desconto (evento 110).' },
+    cortesia:    { nome: 'Cortesia / degustação',  nota: false, porque: 'sem cobrança: baixa o estoque e entra no CMV. A Fernanda recebe o alerta no fechamento do caixa.' }
+  };
+  const tipo = v => v.tipo || 'venda';
+  const cobrada = v => tipo(v) !== 'cortesia';    // entra no faturamento (cortesia não)
+
   // NFC-e (exemplo; cada UF pode reduzir os prazos)
   const REGRA_NFCE = {
     cancelarMinutos: 30,     // cancelamento só dentro deste prazo depois da autorização
@@ -31,6 +42,7 @@ const VENDA = (() => {
   const total = v => r2(totalItens(v) - (v.desconto || 0));
   const pago = v => r2((v.pagamentos || []).reduce((a, p) => a + p.valor, 0));
   const valida = v => !v.canceladaEm;
+  const folhaFechada = comp => FECHAMENTOS_FOLHA.some(f => f.comp === comp && !f.reabertaEm);
   const quando = v => new Date(`${v.data}T${v.hora}`);
 
   // Numeração por empresa e série (série = número do PDV)
@@ -65,6 +77,20 @@ const VENDA = (() => {
   }
   function horasContingencia(v, agora = new Date()) { return REGRA_NFCE.contingenciaHoras - (agora - quando(v)) / 3600000; }
 
+  /* Grava o lançamento do caixa e alimenta a cadeia inteira de uma vez:
+     venda → NFC-e (o operador clicou em "Emitir NFC-e") · convênio → consumo do cliente (Faturamento PJ)
+     funcionário → lançamento na folha · todos → estoque e comandas. Devolve as tabelas que mudaram. */
+  function registrar(v, online) {
+    const t = tipo(v), tabelas = ['vendas', 'estoque', 'caixas', 'comandas'];
+    if (TIPOS[t].nota) emitirNota(v, online); else v.nota = null;
+    VENDAS.push(v);
+    mexerEstoque(v, 1);
+    COMANDAS.filter(c => c.unidade === v.unidade && c.status === 'aberta' && (v.comandas || []).includes(c.numero)).forEach(c => { c.status = 'paga'; c.venda = v.id; });
+    if (t === 'convenio') { CONSUMOS_PJ.push({ id: 'k' + v.id, cliente: v.pj, unidade: v.unidade, empresa: v.empresa, data: v.data, refeicoes: 1, valor: total(v), comanda: (v.comandas || []).join(', ') || '—', venda: v.id }); tabelas.push('consumos_pj'); }
+    if (t === 'funcionario') { LANCAMENTOS.push({ id: 'l' + v.id, comp: v.data.slice(0, 7), colab: v.colab, evento: '110', qtd: 0, valor: total(v), obs: `Consumo na loja · ${nomeUnidade(v.unidade)} ${dataBR(v.data + 'T12:00')} ${v.hora}`, venda: v.id, criadoEm: v.data }); tabelas.push('lancamentos'); }
+    return tabelas;
+  }
+
   // Baixa (sinal 1) ou devolução (sinal −1) do estoque da loja: só o que sai pronto da prateleira
   // (bebidas, embalagens). O buffet consome insumos na produção, pela ficha técnica.
   function mexerEstoque(v, sinal) {
@@ -85,8 +111,11 @@ const VENDA = (() => {
     porForma.din = r2(porForma.din - vs.reduce((a, v) => a + (v.troco || 0), 0));
     const mov = t => r2((cx.movimentos || []).filter(m => m.tipo === t).reduce((a, m) => a + m.valor, 0));
     const sangrias = mov('sangria'), suprimentos = mov('suprimento');
-    return { vendas: vs.length, canceladas: VENDAS.filter(v => v.caixa === cx.id && !valida(v)).length, total: r2(vs.reduce((a, v) => a + total(v), 0)),
+    const doTipo = t => { const l = vs.filter(v => tipo(v) === t); return { qtd: l.length, valor: r2(l.reduce((a, v) => a + total(v), 0)), lista: l }; };
+    const cob = vs.filter(cobrada);
+    return { vendas: cob.length, canceladas: VENDAS.filter(v => v.caixa === cx.id && !valida(v)).length, total: r2(cob.reduce((a, v) => a + total(v), 0)),
       porForma, sangrias, suprimentos, dinheiroGaveta: r2(cx.fundo + porForma.din + suprimentos - sangrias),
+      cupons: doTipo('venda'), convenio: doTipo('convenio'), funcionario: doTipo('funcionario'), cortesias: doTipo('cortesia'),
       pendentes: vs.filter(v => v.nota && v.nota.status === 'contingencia').length };
   }
   const caixaAberto = (un, pdv) => CAIXAS.find(c => c.unidade === un && c.pdv === pdv && !c.fechadoEm);
@@ -94,6 +123,10 @@ const VENDA = (() => {
   // Indicadores das vendas de um dia (Início e Vendas do dia)
   function indicadores(vs) {
     vs = vs.filter(valida);
+    const cort = vs.filter(v => !cobrada(v));
+    const cortesia = r2(cort.reduce((a, v) => a + total(v), 0));
+    const custoTotal = r2(vs.reduce((a, v) => a + v.itens.reduce((b, i) => { const p = PRODUTOS_VENDA.find(x => x.id === i.prod); return b + (p ? custoProduto(p) * i.qtd : 0); }, 0), 0));
+    vs = vs.filter(cobrada);
     const fat = r2(vs.reduce((a, v) => a + total(v), 0));
     let kg = 0, fatKg = 0, custo = 0, bebidas = 0;
     vs.forEach(v => v.itens.forEach(i => { const p = PRODUTOS_VENDA.find(x => x.id === i.prod);
@@ -101,7 +134,7 @@ const VENDA = (() => {
       if (p && p.grupo === 'Bebidas') bebidas += i.qtd * i.preco;
       if (p) custo += custoProduto(p) * i.qtd; }));
     return { fat, cupons: vs.length, ticket: vs.length ? fat / vs.length : 0, kg: r2(kg), precoKg: kg ? fatKg / kg : 0, bebidas: r2(bebidas),
-      custo: r2(custo), cmv: fat ? custo / fat * 100 : 0, cmvKg: kg ? custoKg(vs) : 0 };
+      custo: custoTotal, cmv: fat ? custoTotal / fat * 100 : 0, cmvKg: kg ? custoKg(vs) : 0, cortesia, cortesias: cort.length, custoCortesia: r2(custoTotal - custo) };
   }
   // Custo médio do kg servido (só itens por kg)
   function custoKg(vs) {
@@ -112,6 +145,7 @@ const VENDA = (() => {
   // Cupom (DANFE da NFC-e) para tela e impressão
   function cupomHTML(v) {
   const e = EMPRESAS.find(x => x.id === v.empresa), c = v.pj && CLIENTES_PJ.find(x => x.id === v.pj), n = v.nota;
+  if (!n) return comprovanteHTML(v, e, c);
   return `<div class="cupom"><div class="c"><b>${esc(e.razao)}</b><br>CNPJ ${fmtDoc(e.cnpj)} · ${esc(nomeUnidade(v.unidade))}<br>Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica</div><hr>
     ${n.status === 'contingencia' ? '<div class="aviso-cont">EMITIDA EM CONTINGÊNCIA<br>Pendente de autorização</div>' : ''}${!valida(v) ? '<div class="aviso-cont">NFC-e CANCELADA</div>' : ''}
     ${v.itens.map((i, k) => `<div>${String(k + 1).padStart(3, '0')} ${esc(i.nome)}</div><div class="l"><span>${i.un === 'kg' ? numero(i.qtd, 3) + ' kg' : numero(i.qtd) + ' un'} × ${numero(i.preco, 2)}</span><span>${numero(i.qtd * i.preco, 2)}</span></div>`).join('')}<hr>
@@ -124,19 +158,37 @@ const VENDA = (() => {
     <div class="c">Operador: ${esc(v.operador)} · PDV ${v.pdv}</div></div>`;
 }
 
+  // Comprovante interno de convênio, consumo de funcionário e cortesia (não é documento fiscal)
+  function comprovanteHTML(v, e, c) {
+    const t = tipo(v), col = v.colab && COLABORADORES.find(x => x.id === v.colab);
+    return `<div class="cupom"><div class="c"><b>${esc(e.razao)}</b><br>${esc(nomeUnidade(v.unidade))}<br><b>${TIPOS[t].nome.toUpperCase()}</b><br>Comprovante interno · não é documento fiscal</div><hr>
+    ${!valida(v) ? '<div class="aviso-cont">CANCELADO</div>' : ''}
+    ${v.itens.map((i, k) => `<div>${String(k + 1).padStart(3, '0')} ${esc(i.nome)}</div><div class="l"><span>${i.un === 'kg' ? numero(i.qtd, 3) + ' kg' : numero(i.qtd) + ' un'} × ${numero(i.preco, 2)}</span><span>${numero(i.qtd * i.preco, 2)}</span></div>`).join('')}<hr>
+    ${v.desconto ? `<div class="l"><span>Desconto</span><span>-${numero(v.desconto, 2)}</span></div>` : ''}<div class="l"><b>${t === 'cortesia' ? 'VALOR (sem cobrança) R$' : 'VALOR R$'}</b><b>${numero(total(v), 2)}</b></div><hr>
+    <div class="c">${t === 'convenio' && c ? `Convênio ${esc(c.nome)}<br>CNPJ ${fmtDoc(c.cnpj)}<br>Entra no consumo do período: NF-e e boleto no fechamento.`
+      : t === 'funcionario' ? `Funcionário(a): ${esc(col ? col.nome : '—')}<br>Desconto na folha de ${v.data.slice(5, 7)}/${v.data.slice(0, 4)} (consumo interno)<br><br>Assinatura: ________________________`
+      : `Motivo: ${esc(v.motivoCortesia || '—')}`}</div><hr>
+    <div class="c">${dataBR(v.data + 'T12:00')} ${v.hora} · Comanda(s) ${(v.comandas || []).join(', ') || '—'}<br>Operador: ${esc(v.operador)} · PDV ${v.pdv}</div></div>`;
+  }
+
   // Cancela a venda e desfaz a cadeia (estoque, convênio, caixa). Devolve a mensagem de erro, ou '' se cancelou.
   function cancelar(v, motivo) {
     motivo = String(motivo || '').trim();
     if (motivo.length < 15) return 'A justificativa precisa ter pelo menos 15 letras.';
     if (!valida(v)) return 'Esta venda já foi cancelada em outra tela.';
-    if (v.nota.status !== 'autorizada') return 'Transmita a nota antes de cancelar.';
-    if (!minutosParaCancelar(v)) return `Passou o prazo de ${REGRA_NFCE.cancelarMinutos} min para cancelar. Fale com o contador.`;
+    if (v.nota && v.nota.status !== 'autorizada') return 'Transmita a nota antes de cancelar.';
+    if (v.nota && !minutosParaCancelar(v)) return `Passou o prazo de ${REGRA_NFCE.cancelarMinutos} min para cancelar. Fale com o contador.`;
     const cx = CAIXAS.find(c => c.id === v.caixa); if (cx && cx.fechadoEm) return 'O caixa desta venda já foi fechado.';
-    v.canceladaEm = agoraLocal(); v.motivoCancel = motivo; v.nota.status = 'cancelada';
+    const kPj = CONSUMOS_PJ.findIndex(x => x.venda === v.id);
+    if (tipo(v) === 'convenio' && kPj < 0) return 'Este consumo já entrou no fechamento do convênio. Ajuste pelo Faturamento PJ.';
+    const kL = LANCAMENTOS.findIndex(x => x.venda === v.id);
+    if (kL >= 0 && folhaFechada(LANCAMENTOS[kL].comp)) return 'A folha deste mês já foi fechada. Peça para reabrir no RH antes de cancelar.';
+    v.canceladaEm = agoraLocal(); v.motivoCancel = motivo; if (v.nota) v.nota.status = 'cancelada';
     mexerEstoque(v, -1);
-    const k = CONSUMOS_PJ.findIndex(x => x.venda === v.id); if (k >= 0) CONSUMOS_PJ.splice(k, 1);
+    if (kPj >= 0) CONSUMOS_PJ.splice(kPj, 1);
+    if (kL >= 0) LANCAMENTOS.splice(kL, 1);
     COMANDAS.filter(c => c.venda === v.id).forEach(c => { c.status = 'cancelada'; });
-    avisarMudanca('vendas', 'estoque', 'caixas', 'consumos_pj', 'comandas');
+    avisarMudanca('vendas', 'estoque', 'caixas', 'consumos_pj', 'comandas', 'lancamentos');
     return '';
   }
 
@@ -186,6 +238,6 @@ const VENDA = (() => {
     return linhas;
   }
 
-  return { BANDEIRAS, eCartao, contrato, transacoesCartao, recebiveisCaixa, conciliar, FORMAS, cupomHTML, cancelar, forma, REGRA_NFCE, total, totalItens, pago, valida, emitirNota, transmitir, pendentes, minutosParaCancelar, horasContingencia,
+  return { TIPOS, tipo, cobrada, folhaFechada, registrar, BANDEIRAS, eCartao, contrato, transacoesCartao, recebiveisCaixa, conciliar, FORMAS, cupomHTML, cancelar, forma, REGRA_NFCE, total, totalItens, pago, valida, emitirNota, transmitir, pendentes, minutosParaCancelar, horasContingencia,
     mexerEstoque, resumoCaixa, caixaAberto, indicadores, r2 };
 })();
