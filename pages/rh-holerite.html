@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Folha e holerites</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=10">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
 </head>
 <body>
 <div class="tela">
@@ -24,10 +24,10 @@
   </div>
 </div>
 
-<script src="../assets/js/menu.js?v=7"></script>
+<script src="../assets/js/menu.js?v=8"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=6"></script>
 <script src="../assets/js/folha.js?v=1"></script>
 <script src="../assets/js/cadastro.js?v=3"></script>
 <script>
@@ -94,7 +94,7 @@ function holerite(c) {
     <div class="form-nota">Base INSS ${reais(h.baseInss)} · FGTS do mês ${reais(h.fgts)} · Tabelas de INSS e IRRF de exemplo (o contador confirma). Férias saem em recibo à parte.</div>`;
   janela(`Holerite ${nomeComp(comp)} · ${c.nome}`, corpo, 'Imprimir', () => {
     const w = window.open('', '_blank'); if (!w) return 'O navegador bloqueou a janela de impressão.';
-    w.document.write(`<!doctype html><meta charset="utf-8"><title>Holerite ${nomeComp(comp)} · ${esc(c.nome)}</title><link rel="stylesheet" href="../assets/css/estilo.css?v=10"><body style="padding:20px;background:#fff"><h2>Holerite ${nomeComp(comp)} · ${esc(c.nome)}</h2>${corpo}<script>setTimeout(()=>print(),300)<\/script>`);
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Holerite ${nomeComp(comp)} · ${esc(c.nome)}</title><link rel="stylesheet" href="../assets/css/estilo.css?v=11"><body style="padding:20px;background:#fff"><h2>Holerite ${nomeComp(comp)} · ${esc(c.nome)}</h2>${corpo}<script>setTimeout(()=>print(),300)<\/script>`);
     w.document.close();
   });
 }

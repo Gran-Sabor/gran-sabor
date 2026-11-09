@@ -401,6 +401,7 @@ const ESCALA = dadoComum('ESCALA', () => ({}));
 const operadorPadrao = un => { const ls = COLABORADORES.filter(c => c.unidade === un && c.situacao !== 'afastado');
   return (ls.find(c => c.cargo === 'caixa') || ls[0] || { nome: 'Operador' }).nome.split(' ')[0]; };
 const LOJAS_PDV = ['loja1', 'loja2', 'loja3'];
+const BANDEIRAS_EX = { deb: ['Visa', 'Mastercard', 'Elo'], cre: ['Visa', 'Mastercard', 'Elo', 'Amex'], vr: ['Alelo', 'Pluxee', 'Ticket', 'VR'] };
 
 // Caixas (um por PDV e por turno): fundo de troco, sangrias/suprimentos e a conferência do fechamento
 const CAIXAS = dadoComum('CAIXAS', () => []);
@@ -428,7 +429,9 @@ const VENDAS = dadoComum('VENDAS', () => (() => {
         const v = { id: 'v' + n++, unidade: un, empresa, pdv: 1, caixa: cx.id, operador: cx.operador, data, hora, itens, desconto: 0, cpf: aleat() < .2 ? 'informado' : '', pj: null,
           pagamentos: [], troco: 0, nota: null, canceladaEm: null };
         const tot = Math.round(itens.reduce((a, i) => a + i.qtd * i.preco, 0) * 100) / 100, f = formaSorteio();
-        v.pagamentos = [{ forma: f, valor: f === 'din' ? Math.ceil(tot / 10) * 10 : tot }]; v.troco = f === 'din' ? Math.round((Math.ceil(tot / 10) * 10 - tot) * 100) / 100 : 0;
+        v.pagamentos = [{ forma: f, valor: f === 'din' ? Math.ceil(tot / 10) * 10 : tot }];
+        if (BANDEIRAS_EX[f]) { const bs = BANDEIRAS_EX[f], y = aleat(); Object.assign(v.pagamentos[0], { bandeira: bs[y < .45 ? 0 : y < .8 ? 1 : y < .95 || bs.length < 4 ? 2 % bs.length : 3], nsu: String(100000 + (n * 7919) % 900000), aut: (n * 104729 % 999999).toString(36).toUpperCase().padStart(6, '0') }); }
+        v.comandas = [k % 300 + 1]; if (itens.length > 1 && aleat() < .08) v.comandas.push((k + 150) % 300 + 1); v.troco = f === 'din' ? Math.round((Math.ceil(tot / 10) * 10 - tot) * 100) / 100 : 0;
         const ch = empresa + '|1'; num[ch] = (num[ch] || 4800) + 1;
         v.nota = { modelo: 65, serie: 1, numero: num[ch], chave: '', status: 'autorizada', protocolo: '135' + String(9e8 + n), emitidaEm: `${data}T${hora}`, transmitidaEm: `${data}T${hora}` };
         r.push(v);
@@ -453,3 +456,36 @@ CAIXAS.filter(c => c.fechadoEm && !c.conferencia).forEach((c, i) => {
   c.conferencia = { contado: { ...por, din: Math.round((gaveta + quebra) * 100) / 100 }, esperado: { ...por, din: gaveta }, diferenca: quebra, obs: quebra ? 'Troco dado a mais (operador avisado)' : '',
     fundoFica: 200, deposito: Math.round((gaveta + quebra - 200) * 100) / 100, fechadoPor: c.operador };
 });
+
+/* ---------- Taxas do contrato com a maquininha (por forma e bandeira) ----------
+   Exemplo: a Gran Sabor confirma qual é a maquininha e as taxas do contrato. prazo = dias para cair. */
+const TAXAS_CONTRATO = dadoComum('TAXAS_CONTRATO', () => [
+  ['deb', 'Visa', 1.19, 1], ['deb', 'Mastercard', 1.19, 1], ['deb', 'Elo', 1.49, 1],
+  ['cre', 'Visa', 2.89, 30], ['cre', 'Mastercard', 2.89, 30], ['cre', 'Elo', 3.19, 30], ['cre', 'Amex', 3.49, 30],
+  ['vr', 'Alelo', 3.6, 15], ['vr', 'Pluxee', 3.6, 15], ['vr', 'Ticket', 3.6, 15], ['vr', 'VR', 3.6, 15]
+].map(([forma, bandeira, taxa, prazo]) => ({ id: forma + '-' + bandeira, forma, bandeira, taxa, prazo, operadora: forma === 'vr' ? bandeira : 'Maquininha (exemplo)' })));
+
+/* ---------- Comandas da balança ----------
+   O cliente pesa o prato na balança e recebe uma comanda (cartão numerado). No caixa, uma ou várias
+   comandas viram uma venda. As de hoje ficam aqui; as pagas apontam para a venda. */
+const COMANDAS = dadoComum('COMANDAS', () => {
+  const r = [], hoje = hojeISO();
+  VENDAS.filter(v => v.data === hoje).forEach(v => (v.comandas || []).forEach((num, i) => {
+    const [h, m] = v.hora.split(':').map(Number), ab = Math.max(0, h * 60 + m - 18);
+    r.push({ id: `cm${v.unidade}${num}${v.id}`, numero: num, unidade: v.unidade, data: hoje, abertaEm: `${String(Math.floor(ab / 60)).padStart(2, '0')}:${String(ab % 60).padStart(2, '0')}`,
+      itens: i === 0 ? v.itens.map(x => ({ ...x })) : [], status: 'paga', venda: v.id });
+  }));
+  // Clientes ainda comendo (comandas abertas)
+  LOJAS_PDV.forEach((un, ui) => [301, 302, 303, 304, 305].slice(0, 5 - ui).forEach((num, k) => {
+    const emp = UNIDADE_EMPRESA[un], p01 = PRODUTOS_VENDA.find(p => p.id === 'p01'), p05 = PRODUTOS_VENDA.find(p => p.id === 'p05');
+    const itens = [{ prod: 'p01', nome: p01.nome, un: 'kg', qtd: +(0.35 + ((k * 37 + ui * 11) % 40) / 100).toFixed(3), preco: p01.precos[emp] }];
+    if (k % 2 === 0) itens.push({ prod: 'p05', nome: p05.nome, un: 'un', qtd: 1, preco: p05.precos[emp] });
+    const d = new Date(Date.now() - (10 + k * 7) * 60000);
+    r.push({ id: `cm${un}${num}aberta`, numero: num, unidade: un, data: hoje, abertaEm: d.toTimeString().slice(0, 5), itens, status: 'aberta', venda: null });
+  }));
+  return r;
+});
+
+/* ---------- Extrato da operadora (importado na Conciliação de cartões) ---------- */
+// { id, data, unidade, empresa, forma, bandeira, nsu, bruto, taxa, liquido, previsao, situacao: ''|'contestada'|'aceita', obs }
+const EXTRATO_CARTOES = dadoComum('EXTRATO_CARTOES', () => []);

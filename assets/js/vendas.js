@@ -135,10 +135,57 @@ const VENDA = (() => {
     v.canceladaEm = agoraLocal(); v.motivoCancel = motivo; v.nota.status = 'cancelada';
     mexerEstoque(v, -1);
     const k = CONSUMOS_PJ.findIndex(x => x.venda === v.id); if (k >= 0) CONSUMOS_PJ.splice(k, 1);
-    avisarMudanca('vendas', 'estoque', 'caixas', 'consumos_pj');
+    COMANDAS.filter(c => c.venda === v.id).forEach(c => { c.status = 'cancelada'; });
+    avisarMudanca('vendas', 'estoque', 'caixas', 'consumos_pj', 'comandas');
     return '';
   }
 
-  return { FORMAS, cupomHTML, cancelar, forma, REGRA_NFCE, total, totalItens, pago, valida, emitirNota, transmitir, pendentes, minutosParaCancelar, horasContingencia,
+
+  /* ---------- Cartões: bandeiras, taxa do contrato e conciliação ----------
+     A taxa e o prazo de cada bandeira vêm de TAXAS_CONTRATO (tela Conciliação de cartões).
+     A previsão do caixa e a conferência do extrato usam esta MESMA função. */
+  const BANDEIRAS = { deb: ['Visa', 'Mastercard', 'Elo'], cre: ['Visa', 'Mastercard', 'Elo', 'Amex'], vr: ['Alelo', 'Pluxee', 'Ticket', 'VR'] };
+  const eCartao = f => !!BANDEIRAS[f];
+  function contrato(formaId, bandeira) {
+    const c = TAXAS_CONTRATO.find(t => t.forma === formaId && t.bandeira === bandeira) || TAXAS_CONTRATO.find(t => t.forma === formaId && t.bandeira === '*');
+    return c || { forma: formaId, bandeira, taxa: forma(formaId).taxa, prazo: forma(formaId).prazo, operadora: '—' };
+  }
+  const somaDiasISO = (iso, n) => { const d = new Date(iso + 'T12:00'); d.setDate(d.getDate() + n); return isoLocal(d); };
+  // Cada pagamento em cartão de uma lista de vendas, com o que o contrato diz que deve cair
+  function transacoesCartao(vs) {
+    const r = [];
+    vs.filter(valida).forEach(v => v.pagamentos.forEach((p, k) => { if (!eCartao(p.forma)) return;
+      const c = contrato(p.forma, p.bandeira);
+      r.push({ chave: v.id + '#' + k, venda: v.id, caixa: v.caixa, unidade: v.unidade, empresa: v.empresa, data: v.data, hora: v.hora, forma: p.forma, bandeira: p.bandeira || '—', nsu: p.nsu || '', aut: p.aut || '',
+        bruto: p.valor, taxaPct: c.taxa, taxa: r2(p.valor * c.taxa / 100), liquido: r2(p.valor * (1 - c.taxa / 100)), previsao: somaDiasISO(v.data, c.prazo), comandas: v.comandas || [] }); }));
+    return r;
+  }
+  // Agrupa as transações do caixa por forma + bandeira (vira um título no contas a receber)
+  function recebiveisCaixa(cx) {
+    const g = {};
+    transacoesCartao(VENDAS.filter(v => v.caixa === cx.id)).forEach(t => { const k = t.forma + '|' + t.bandeira;
+      const x = g[k] ||= { forma: t.forma, bandeira: t.bandeira, bruto: 0, taxa: 0, liquido: 0, previsao: t.previsao, qtd: 0 };
+      x.bruto = r2(x.bruto + t.bruto); x.taxa = r2(x.taxa + t.taxa); x.liquido = r2(x.liquido + t.liquido); x.qtd++; });
+    return Object.values(g);
+  }
+  // Confere o extrato da operadora com as vendas: por NSU; sem NSU, por data + bandeira + valor
+  function conciliar(vs, extrato) {
+    const trans = transacoesCartao(vs), usadas = new Set(), linhas = [];
+    const tol = 0.01;
+    extrato.forEach(e => {
+      let t = e.nsu && trans.find(x => !usadas.has(x.chave) && x.nsu && x.nsu === e.nsu);
+      if (!t) t = trans.find(x => !usadas.has(x.chave) && x.data === e.data && x.bandeira === e.bandeira && Math.abs(x.bruto - e.bruto) < tol);
+      if (!t) { linhas.push({ e, t: null, status: 'so_extrato' }); return; }
+      usadas.add(t.chave);
+      const taxaCobradaPct = e.bruto ? r2(e.taxa / e.bruto * 100) : 0, difTaxa = r2(e.taxa - e.bruto * t.taxaPct / 100);
+      // 1 centavo de tolerância (arredondamento da operadora)
+      const status = Math.abs(t.bruto - e.bruto) >= tol ? 'valor' : difTaxa > 0.015 ? 'taxa' : e.previsao > t.previsao ? 'prazo' : 'ok';
+      linhas.push({ e, t, status, taxaCobradaPct, difTaxa: status === 'taxa' || status === 'valor' ? difTaxa : 0 });
+    });
+    trans.filter(t => !usadas.has(t.chave)).forEach(t => linhas.push({ e: null, t, status: 'so_venda' }));
+    return linhas;
+  }
+
+  return { BANDEIRAS, eCartao, contrato, transacoesCartao, recebiveisCaixa, conciliar, FORMAS, cupomHTML, cancelar, forma, REGRA_NFCE, total, totalItens, pago, valida, emitirNota, transmitir, pendentes, minutosParaCancelar, horasContingencia,
     mexerEstoque, resumoCaixa, caixaAberto, indicadores, r2 };
 })();

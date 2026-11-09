@@ -34,6 +34,7 @@ const MENU = [
     { id: 'receber',        nome: 'Contas a receber', arquivo: 'pages/fin-receber.html' },
     { id: 'fluxo',          nome: 'Fluxo de caixa' },
     { id: 'conciliacao',    nome: 'Extratos e conciliação' },
+    { id: 'conciliacao_cartoes', nome: 'Conciliação de cartões', arquivo: 'pages/fin-cartoes.html' },
     { id: 'dividas',        nome: 'Dívidas e empréstimos' }
   ]},
   { grupo: 'Fiscal', icone: 'fiscal', itens: [

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Contas a receber</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=10">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
 </head>
 <body>
 <div class="tela">
@@ -27,10 +27,10 @@
     <div class="rolagem"><table class="tabela" id="tabTit"></table></div></section>
 </div>
 
-<script src="../assets/js/menu.js?v=7"></script>
+<script src="../assets/js/menu.js?v=8"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=6"></script>
 <script src="../assets/js/cadastro.js?v=3"></script>
 <script>
 const hoje = hojeISO();
@@ -97,7 +97,7 @@ function desenhar() {
   $('contagem').textContent = `${tit.length} título(s) · ${reais(soma(tit))}`;
   $('tabTit').innerHTML = `<thead><tr><th>Vencimento</th><th>Pagador</th><th>Origem</th><th>Empresa · unidade</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead><tbody>${
     tit.map(t => `<tr data-t="${t.id}"><td class="mono">${dataBR(t.vencimento + 'T12:00')}</td><td><b>${esc(t.pagador)}</b>${t.ref ? `<small class="sub"> ${esc(t.ref)}</small>` : ''}</td><td>${esc(t.origem)}</td>
-      <td>${etqEmpresa(t.empresa)} <small class="sub">${esc(nomeUnidade(t.unidade))}</small></td><td class="num">${reais(t.valor)}</td>
+      <td>${etqEmpresa(t.empresa)} <small class="sub">${esc(nomeUnidade(t.unidade))}</small></td><td class="num">${reais(t.valor)}${t.acerto ? `<br><small class="desce" title="${esc(t.acerto.motivo)}">acerto: era ${reais(t.acerto.de)}</small>` : ''}</td>
       <td>${t.recebidoEm ? '<span class="etiqueta completa">recebido</span>' : t.vencimento < hoje ? '<span class="etiqueta perigo">vencido</span>' : t.vencimento === hoje ? '<span class="etiqueta pendente">hoje</span>' : '<span class="etiqueta">a receber</span>'}</td>
       <td>${t.recebidoEm ? `<small class="sub">${dataBR(t.recebidoEm + 'T12:00')}</small>` : '<button type="button" class="btn btn-mini" data-receber>Receber</button>'}</td></tr>`).join('')
     || '<tr><td colspan="7" class="vazio">Nenhum título com esses filtros.</td></tr>'}</tbody>`;
@@ -154,7 +154,7 @@ $('tabTit').addEventListener('click', e => { if (!e.target.closest('[data-recebe
 $('btnExportar').onclick = () => aba === 'titulos'
   ? exportarCSV('titulos-a-receber', ['Vencimento', 'Pagador', 'Origem', 'Empresa', 'Unidade', 'Valor', 'Recebido em'], titulos().map(t => [dataBR(t.vencimento + 'T12:00'), t.pagador, t.origem, nomeEmpresa(t.empresa), nomeUnidade(t.unidade), numero(t.valor, 2), t.recebidoEm ? dataBR(t.recebidoEm + 'T12:00') : '']))
   : exportarCSV('fechamentos-pj', ['Cliente', 'CNPJ', 'Empresa', 'Período', 'Refeições', 'Valor', 'Etapa', 'Nota', 'Vencimento'], fechamentos.filter(f => noFiltro(filtro, f)).map(f => [cli(f.cliente).nome, fmtDoc(cli(f.cliente).cnpj), nomeEmpresa(f.empresa), f.periodo, f.refeicoes, numero(f.valor, 2), NOME_ETAPA[f.etapa], f.nota, f.vencimento ? dataBR(f.vencimento + 'T12:00') : '']));
-vigiarDados(['consumos_pj', 'fechamentos_pj', 'receber_outros', 'clientes_pj'], desenhar);
+vigiarDados(['consumos_pj', 'fechamentos_pj', 'receber_outros', 'clientes_pj', 'vendas'], desenhar);
 desenhar();
 </script>
 </body>

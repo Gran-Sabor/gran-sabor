@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Frente de caixa (PDV)</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=10">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
 </head>
 <body>
 <div class="tela">
@@ -39,8 +39,9 @@
     <div>
       <section class="cartao">
         <div class="pdv-entrada">
-          <label><span>Produto ou código <kbd>F2</kbd></span><input type="search" class="campo" id="inProd" list="listaProd" autocomplete="off" placeholder="Ex.: P01 ou buffet"></label>
-          <label><span>Peso (kg) ou qtd. <kbd>F3</kbd></span><input type="search" class="campo" id="inQtd" inputmode="decimal" placeholder="0,000"></label>
+          <label><span>Comanda <kbd>F2</kbd></span><input type="search" class="campo" id="inComanda" inputmode="numeric" autocomplete="off" placeholder="nº"></label>
+          <label><span>Produto ou código <kbd>F3</kbd></span><input type="search" class="campo" id="inProd" list="listaProd" autocomplete="off" placeholder="Ex.: P01 ou buffet"></label>
+          <label><span>Peso (kg) ou qtd.</span><input type="search" class="campo" id="inQtd" inputmode="decimal" placeholder="0,000"></label>
           <button type="button" class="btn" id="btnBalanca" title="Lê o peso do prato na balança"><kbd>F4</kbd> Balança</button>
           <button type="button" class="btn btn-pri" id="btnAdd">Lançar <kbd style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.4)">Enter</kbd></button>
         </div>
@@ -63,17 +64,18 @@
           <button type="button" class="btn btn-pri" id="btnReceber">Receber <kbd>F10</kbd></button>
         </div>
       </section>
+      <section class="cartao"><div class="cartao-cab"><h2>Comandas abertas</h2><span class="dir sub" id="contComandas"></span></div><div id="comandas"></div></section>
       <section class="cartao"><div class="cartao-cab"><h2>Caixa</h2><span class="dir sub" id="cxAberto"></span></div><div id="cxResumo"></div></section>
       <section class="cartao"><div class="cartao-cab"><h2>Últimas vendas</h2><a class="dir" href="#" id="lnkVendas">Vendas do dia</a></div><div id="ultimas"></div></section>
     </div>
   </div>
 </div>
 
-<script src="../assets/js/menu.js?v=7"></script>
+<script src="../assets/js/menu.js?v=8"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=5"></script>
-<script src="../assets/js/vendas.js?v=1"></script>
+<script src="../assets/js/exemplo.js?v=6"></script>
+<script src="../assets/js/vendas.js?v=2"></script>
 <script src="../assets/js/cadastro.js?v=3"></script>
 <script>
 /* Frente de caixa. Regras (exemplo, a Gran Sabor e o contador confirmam):
@@ -86,7 +88,7 @@ const num = s => Number(String(s || '').replace(/\./g, '').replace(',', '.'));
 const peso = v => numero(v, 3);
 let loja = LOJAS_PDV.includes(unidadeAtual()) ? unidadeAtual() : 'loja1', pdv = 1, semInternet = false, selItem = -1;
 let venda = novaVenda(), avisoPreco = '';
-function novaVenda() { return { itens: [], desconto: 0, cpf: '', pj: null }; }
+function novaVenda() { return { itens: [], desconto: 0, cpf: '', pj: null, comandas: [] }; }
 const empresa = () => UNIDADE_EMPRESA[loja];
 const caixa = () => VENDA.caixaAberto(loja, pdv);
 const online = () => navigator.onLine && !semInternet;
@@ -114,10 +116,15 @@ function desenhar() {
 
   // Itens
   $('tabItens').innerHTML = `<thead><tr><th class="so-largo">#</th><th>Produto</th><th class="num">Qtd.</th><th class="num so-largo">Preço</th><th class="num">Total</th><th></th></tr></thead><tbody>${
-    venda.itens.map((i, k) => `<tr class="${k === selItem ? 'sel' : ''}" data-k="${k}"><td class="so-largo">${k + 1}</td><td>${esc(i.nome)}</td><td class="num">${i.un === 'kg' ? peso(i.qtd) + ' kg' : numero(i.qtd)}</td>
+    venda.itens.map((i, k) => `<tr class="${k === selItem ? 'sel' : ''}" data-k="${k}"><td class="so-largo">${k + 1}</td><td>${esc(i.nome)}${i.comanda ? ` <span class="etiqueta">cmd ${i.comanda}</span>` : ''}</td><td class="num">${i.un === 'kg' ? peso(i.qtd) + ' kg' : numero(i.qtd)}</td>
       <td class="num so-largo">${reais(i.preco)}</td><td class="num"><b>${reais(i.qtd * i.preco)}</b></td><td><button type="button" class="btn btn-ico" data-tira="${k}" aria-label="Tirar item">${icone('fechar')}</button></td></tr>`).join('')
     || '<tr><td colspan="6" class="vazio">Coloque o prato na balança (F4) ou escolha um produto.</td></tr>'}</tbody>`;
-  $('contItens').textContent = `${venda.itens.length} item(ns)`;
+  $('contItens').textContent = `${venda.itens.length} item(ns)${venda.comandas.length ? ' · comanda ' + venda.comandas.join(', ') : ''}`;
+  const abertas = COMANDAS.filter(c => c.unidade === loja && c.status === 'aberta' && !venda.comandas.includes(c.numero)).sort((a, b) => a.numero - b.numero);
+  $('contComandas').textContent = `${abertas.length} na loja`;
+  $('comandas').innerHTML = abertas.map(c => `<a href="#" class="lista-linha" data-comanda="${c.numero}" style="color:inherit;text-decoration:none"><div><b>Comanda ${c.numero}</b>
+    <small>desde ${c.abertaEm} · ${esc(c.itens.map(i => i.un === 'kg' ? `${i.nome.split(' ')[0]} ${peso(i.qtd)} kg` : i.nome.split(' ')[0]).join(', '))}</small></div><span class="dir">${reais(c.itens.reduce((a, i) => a + i.qtd * i.preco, 0))}</span></a>`).join('')
+    || '<div class="vazio">Nenhuma comanda aberta.</div>';
   $('vTotal').textContent = reais(totalVenda());
   $('vSub').textContent = venda.desconto ? `subtotal ${reais(VENDA.totalItens(venda))} · desconto ${reais(venda.desconto)}` : '';
   const c = venda.pj && CLIENTES_PJ.find(x => x.id === venda.pj);
@@ -149,7 +156,7 @@ $('formAbrir').onsubmit = e => { e.preventDefault();
   if (caixa()) { desenhar(); return; }   // aberto em outra aba
   const agora = new Date(), data = hojeISO();
   CAIXAS.push({ id: `cx${loja}p${pdv}${Date.now()}`, unidade: loja, empresa: empresa(), pdv, operador: $('selOp').value, abertoEm: `${data}T${agora.toTimeString().slice(0, 5)}`, fundo, movimentos: [], fechadoEm: null, conferencia: null });
-  $('inFundo').value = ''; $('msgAbrir').textContent = ''; desenhar(); avisarMudanca('caixas'); $('inProd').focus();
+  $('inFundo').value = ''; $('msgAbrir').textContent = ''; desenhar(); avisarMudanca('caixas'); $('inComanda').focus();
 };
 
 /* ---------- Lançar itens ---------- */
@@ -172,6 +179,19 @@ function lancar(p, qtd) {
   desenhar(); $('inProd').focus();
 }
 function erroEntrada(msg) { janela('Atenção', `<p>${msg}</p>`, 'Entendi', () => {}); }
+// Comanda da balança → itens da venda (pode juntar várias comandas numa venda só)
+function lancarComanda(numTxt) {
+  const n = parseInt(String(numTxt).replace(/\D/g, ''), 10); if (!n) return;
+  if (venda.comandas.includes(n)) return erroEntrada(`A comanda ${n} já está nesta venda.`);
+  const c = COMANDAS.find(x => x.unidade === loja && x.numero === n && x.status === 'aberta');
+  if (!c) { const paga = COMANDAS.filter(x => x.unidade === loja && x.numero === n && x.status === 'paga').pop(), v = paga && VENDAS.find(x => x.id === paga.venda);
+    return erroEntrada(v ? `A comanda ${n} já foi paga às ${v.hora} (NFC-e ${v.nota.numero}).` : `A comanda ${n} não está aberta nesta loja.`); }
+  if (!c.itens.length) return erroEntrada(`A comanda ${n} está vazia.`);
+  c.itens.forEach(i => venda.itens.push({ ...i, comanda: n }));
+  venda.comandas.push(n); selItem = venda.itens.length - 1; $('inComanda').value = ''; avisoPreco = ''; desenhar(); $('inComanda').focus();
+}
+$('inComanda').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); if ($('inComanda').value.trim()) lancarComanda($('inComanda').value); else $('inProd').focus(); } };
+$('comandas').onclick = e => { const a = e.target.closest('[data-comanda]'); if (!a) return; e.preventDefault(); lancarComanda(a.dataset.comanda); };
 $('btnAdd').onclick = () => lancar(acharProduto($('inProd').value), num($('inQtd').value));
 $('inProd').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const p = acharProduto($('inProd').value);
   if (p && !$('inQtd').value && p.un === 'kg') { $('inQtd').focus(); return; } lancar(p, num($('inQtd').value)); } };
@@ -185,7 +205,7 @@ function tirarItem(k = selItem) {
   if (k < 0 || k >= venda.itens.length) k = venda.itens.length - 1;
   const i = venda.itens[k];
   janela('Cancelar item', `<p>Tirar <b>${esc(i.nome)}</b> (${i.un === 'kg' ? peso(i.qtd) + ' kg' : numero(i.qtd)} · ${reais(i.qtd * i.preco)}) da venda?</p>`, 'Tirar item', () => {
-    venda.itens.splice(k, 1); selItem = venda.itens.length - 1; if (venda.desconto > VENDA.totalItens(venda)) venda.desconto = 0; desenhar(); });
+    venda.itens.splice(k, 1); venda.comandas = venda.comandas.filter(n => venda.itens.some(x => x.comanda === n)); selItem = venda.itens.length - 1; if (venda.desconto > VENDA.totalItens(venda)) venda.desconto = 0; desenhar(); });
 }
 function limparVenda() {
   if (!venda.itens.length) return;
@@ -226,14 +246,18 @@ function receber() {
   const total = totalVenda(), pags = [], foto = JSON.stringify(venda.itens.map(i => [i.prod, i.preco]));
   let forma = venda.pj ? 'pj' : 'cre';
   const v = janela(`Receber · ${reais(total)}`, `<div class="pdv-pag" id="pFormas">${VENDA.FORMAS.map(f => `<button type="button" class="btn" data-forma="${f.id}">${f.nome}<kbd>${f.tecla}</kbd></button>`).join('')}</div>
-    <div class="form-grade"><label class="c8">Valor recebido<input class="campo" id="pValor" inputmode="decimal"></label>
-      <div class="c4" style="align-self:end"><button type="button" class="btn" id="pAdd" style="width:100%;justify-content:center">Adicionar</button></div></div>
+    <div class="form-grade"><label class="c4">Valor recebido<input class="campo" id="pValor" inputmode="decimal"></label>
+      <label class="c3 pCartao">Bandeira<select class="campo" id="pBandeira"></select></label>
+      <label class="c3 pCartao">NSU / Doc. <input class="campo" id="pNsu" inputmode="numeric" placeholder="do comprovante"></label>
+      <div class="c2" style="align-self:end"><button type="button" class="btn" id="pAdd" style="width:100%;justify-content:center">Adicionar</button></div></div>
     <div id="pLista" style="margin:10px 0"></div><div class="pdv-restante"><span id="pRotulo">Falta</span><b id="pFalta"></b></div>
     <div class="form-nota" id="pNota"></div>`, 'Finalizar e emitir NFC-e', () => finalizar(total, pags, foto), w => {
     const restante = () => VENDA.r2(total - pags.reduce((a, p) => a + p.valor, 0));
-    const marcar = id => { forma = id; w.querySelectorAll('[data-forma]').forEach(b => b.classList.toggle('ativa', b.dataset.forma === id)); w.querySelector('#pValor').value = numero(Math.max(0, restante()), 2); w.querySelector('#pValor').select(); };
+    const marcar = id => { forma = id; w.querySelectorAll('[data-forma]').forEach(b => b.classList.toggle('ativa', b.dataset.forma === id));
+      const cart = VENDA.eCartao(id); w.querySelectorAll('.pCartao').forEach(x => x.classList.toggle('oculto', !cart));
+      if (cart) { w.querySelector('#pBandeira').innerHTML = VENDA.BANDEIRAS[id].map(b => `<option>${b}</option>`).join(''); w.querySelector('#pNsu').value = ''; } w.querySelector('#pValor').value = numero(Math.max(0, restante()), 2); w.querySelector('#pValor').select(); };
     const atual = () => { const r = restante();
-      w.querySelector('#pLista').innerHTML = pags.map((p, k) => `<div class="pdv-linha"><span>${VENDA.forma(p.forma).nome}</span><span><b>${reais(p.valor)}</b> <button type="button" class="btn btn-ico" data-tirapag="${k}" aria-label="Tirar">${icone('fechar')}</button></span></div>`).join('');
+      w.querySelector('#pLista').innerHTML = pags.map((p, k) => `<div class="pdv-linha"><span>${VENDA.forma(p.forma).nome}${p.bandeira ? ` · ${p.bandeira}${p.nsu ? ' · NSU ' + esc(p.nsu) : ''}` : ''}</span><span><b>${reais(p.valor)}</b> <button type="button" class="btn btn-ico" data-tirapag="${k}" aria-label="Tirar">${icone('fechar')}</button></span></div>`).join('');
       w.querySelector('#pRotulo').textContent = r < 0 ? 'Troco' : 'Falta'; w.querySelector('#pFalta').textContent = reais(Math.abs(r));
       w.querySelector('#pNota').innerHTML = venda.pj ? `NFC-e no CNPJ de <b>${esc(CLIENTES_PJ.find(c => c.id === venda.pj).nome)}</b>.` : venda.cpf ? `NFC-e com CPF ${esc(venda.cpf)}.` : 'NFC-e sem identificação do consumidor.'
         + (online() ? '' : ' <b class="desce">Sem internet: a nota sai em contingência.</b>');
@@ -241,13 +265,17 @@ function receber() {
     const add = () => { const val = num(w.querySelector('#pValor').value); const r = restante();
       if (!(val > 0)) return; if (val > r && forma !== 'din') { w.querySelector('#fMsg').textContent = 'Só dinheiro pode passar do total (troco).'; return; }
       if (forma === 'pj' && !venda.pj) { w.querySelector('#fMsg').textContent = 'Escolha o convênio (F7) antes.'; return; }
-      w.querySelector('#fMsg').textContent = ''; pags.push({ forma, valor: VENDA.r2(val) }); atual(); marcar(forma); };
+      const pg = { forma, valor: VENDA.r2(val) };
+      if (VENDA.eCartao(forma)) { pg.bandeira = w.querySelector('#pBandeira').value; pg.nsu = w.querySelector('#pNsu').value.replace(/\D/g, ''); }
+      w.querySelector('#fMsg').textContent = ''; pags.push(pg); atual(); marcar(forma); };
     w.querySelector('#pFormas').onclick = e => { const b = e.target.closest('[data-forma]'); if (b) marcar(b.dataset.forma); };
     w.querySelector('#pAdd').onclick = add;
     w.querySelector('#pLista').onclick = e => { const b = e.target.closest('[data-tirapag]'); if (b) { pags.splice(+b.dataset.tirapag, 1); atual(); marcar(forma); } };
+    w.querySelector('#pNsu').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); w.querySelector('#pValor').onkeydown({ key: 'Enter', preventDefault() {} }); } };
     w.querySelector('#pValor').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); if (restante() > 0 || !pags.length) add(); if (restante() <= 0) w.querySelector('form').requestSubmit(); } };
-    w.addEventListener('keydown', e => { const f = VENDA.FORMAS.find(x => x.tecla === e.key); if (f && e.target.id !== 'pValor') { e.preventDefault(); marcar(f.id); }
-      if (f && e.target.id === 'pValor' && e.altKey) { e.preventDefault(); marcar(f.id); } });
+    w.addEventListener('keydown', e => { const f = VENDA.FORMAS.find(x => x.tecla === e.key), digitando = ['pValor', 'pNsu'].includes(e.target.id);
+      if (f && !digitando) { e.preventDefault(); marcar(f.id); }
+      if (f && digitando && e.altKey) { e.preventDefault(); marcar(f.id); } });
     marcar(forma); atual();
     setTimeout(() => w.querySelector(`[data-forma="${forma}"]`).focus(), 0);   // 1 a 6 escolhem a forma; Enter confirma o valor
   });
@@ -264,13 +292,17 @@ function finalizar(total, pags, foto) {
   const pjVal = pags.filter(p => p.forma === 'pj').reduce((a, p) => a + p.valor, 0), c = venda.pj && CLIENTES_PJ.find(x => x.id === venda.pj);
   if (pjVal && c && abertoPJ(c.id) + pjVal > c.limite) return `Limite do convênio estourado: disponível ${reais(c.limite - abertoPJ(c.id))}. Receba a diferença em outra forma.`;
   const pagoTot = pags.reduce((a, p) => a + p.valor, 0); if (pagoTot + 0.001 < total) return 'Falta receber.';
+  // Comanda paga em outro caixa enquanto esta venda estava aberta?
+  const jaPagas = venda.comandas.filter(n => !COMANDAS.some(c => c.unidade === loja && c.numero === n && c.status === 'aberta'));
+  if (jaPagas.length) { return `A comanda ${jaPagas.join(', ')} foi paga ou fechada em outro caixa. Nada foi emitido: tire os itens dela e confira com o cliente.`; }
   const agora = new Date(), troco = VENDA.r2(pagoTot - total);
   const v = { id: 'v' + Date.now(), unidade: loja, empresa: empresa(), pdv, caixa: cx.id, operador: cx.operador, data: hojeISO(), hora: agora.toTimeString().slice(0, 5),
-    itens: venda.itens.map(i => ({ ...i })), desconto: venda.desconto, motivoDesc: venda.motivoDesc || '', cpf: venda.cpf ? 'informado' : '', pj: venda.pj, pagamentos: pags.map(p => ({ ...p })), troco, nota: null, canceladaEm: null };
+    itens: venda.itens.map(i => ({ ...i })), desconto: venda.desconto, motivoDesc: venda.motivoDesc || '', cpf: venda.cpf ? 'informado' : '', pj: venda.pj, pagamentos: pags.map(p => ({ ...p })), troco, nota: null, canceladaEm: null, comandas: [...venda.comandas] };
   VENDA.emitirNota(v, online());
   VENDAS.push(v);
   VENDA.mexerEstoque(v, 1);
-  const tabelas = ['vendas', 'estoque', 'caixas'];
+  const tabelas = ['vendas', 'estoque', 'caixas', 'comandas'];
+  COMANDAS.filter(c => c.unidade === loja && c.status === 'aberta' && v.comandas.includes(c.numero)).forEach(c => { c.status = 'paga'; c.venda = v.id; });
   if (pjVal) { CONSUMOS_PJ.push({ id: 'k' + v.id, cliente: v.pj, unidade: v.unidade, empresa: v.empresa, data: v.data, refeicoes: 1, valor: VENDA.r2(pjVal), nfce: String(v.nota.numero), venda: v.id }); tabelas.push('consumos_pj'); }
   venda = novaVenda(); selItem = -1; desenhar(); avisarMudanca(...tabelas);
   setTimeout(() => mostrarCupom(v, troco), 0);
@@ -283,7 +315,7 @@ function mostrarCupom(v, troco) {
     : v.nota.status === 'contingencia' ? 'A nota sobe para a SEFAZ quando a internet voltar. Só depois dá para cancelar.'
     : min ? `Ainda dá para cancelar por ${min} min. <a href="#" id="lnkCancelar">Cancelar esta venda</a>` : 'Prazo de cancelamento encerrado.'}</div>`, 'Imprimir', () => {
     const w = window.open('', '_blank', 'width=420,height=700'); if (!w) return 'O navegador bloqueou a janela de impressão.';
-    w.document.write(`<!doctype html><meta charset="utf-8"><title>NFC-e ${v.nota.numero}</title><link rel="stylesheet" href="../assets/css/estilo.css?v=10"><body style="background:#fff;padding:8px">${VENDA.cupomHTML(v)}<script>setTimeout(()=>print(),300)<\/script>`); w.document.close();
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>NFC-e ${v.nota.numero}</title><link rel="stylesheet" href="../assets/css/estilo.css?v=11"><body style="background:#fff;padding:8px">${VENDA.cupomHTML(v)}<script>setTimeout(()=>print(),300)<\/script>`); w.document.close();
   }, w => { w.querySelector('.janela-rodape .btn[data-fechar]').textContent = 'Fechar'; const l = w.querySelector('#lnkCancelar'); if (l) l.onclick = e => { e.preventDefault(); w.remove(); cancelarVenda(v); }; });
 }
 function cancelarVenda(v) {
@@ -321,7 +353,7 @@ $('aviso').onclick = e => { if (e.target.id === 'btnTransmitir') transmitirPende
 
 /* ---------- Atalhos ---------- */
 function atalhos() {
-  janela('Atalhos do caixa', `<table class="tabela"><tbody>${[['F2', 'Buscar produto'], ['F3', 'Peso ou quantidade'], ['F4', 'Ler a balança'], ['Enter', 'Lançar o item'],
+  janela('Atalhos do caixa', `<table class="tabela"><tbody>${[['F2', 'Comanda (número do cartão da balança)'], ['F3', 'Buscar produto'], ['F4', 'Ler a balança'], ['Enter', 'Lançar a comanda ou o item'],
     ['F6', 'CPF na nota'], ['F7', 'Convênio (empresa)'], ['F8', 'Desconto'], ['F9', 'Cancelar item (o selecionado ou o último)'], ['F10', 'Receber'], ['F12', 'Cancelar a venda em andamento'],
     ['1 a 6', 'Na tela de receber: Dinheiro, Pix, Débito, Crédito, Vale-refeição, Convênio (com o cursor no valor: Alt + número)'], ['Esc', 'Fechar a janela']].map(([k, t]) => `<tr><td><kbd>${k}</kbd></td><td>${t}</td></tr>`).join('')}</tbody></table>`, 'Entendi', () => {});
 }
@@ -331,7 +363,7 @@ $('btnLimpar').onclick = limparVenda; $('btnReceber').onclick = receber;
 document.addEventListener('keydown', e => {
   if (!/^F\d+$/.test(e.key)) return;
   if (document.querySelector('.veu')) { if (e.key !== 'F5') e.preventDefault(); return; }
-  const acoes = { F1: atalhos, F2: () => $('inProd').focus(), F3: () => $('inQtd').focus(), F4: () => $('btnBalanca').click(), F6: pedirCpf, F7: pedirPj, F8: pedirDesconto, F9: () => tirarItem(), F10: receber, F12: limparVenda };
+  const acoes = { F1: atalhos, F2: () => $('inComanda').focus(), F3: () => $('inProd').focus(), F4: () => $('btnBalanca').click(), F6: pedirCpf, F7: pedirPj, F8: pedirDesconto, F9: () => tirarItem(), F10: receber, F12: limparVenda };
   if (!acoes[e.key] || !caixa() && e.key !== 'F1') return;
   e.preventDefault(); acoes[e.key]();
 });
@@ -341,13 +373,13 @@ $('selPdv').onchange = () => { if (venda.itens.length) { $('selPdv').value = pdv
 aoTrocarUnidade(un => { if (LOJAS_PDV.includes(un) && !venda.itens.length) { loja = un; desenhar(); } });
 
 // Preço mudou no Cardápio com a venda aberta: atualiza e avisa (e confere de novo ao receber)
-vigiarDados(['vendas', 'caixas', 'produtos', 'clientes_pj', 'consumos_pj', 'colaboradores'], () => {
+vigiarDados(['vendas', 'caixas', 'comandas', 'taxas_contrato', 'produtos', 'clientes_pj', 'consumos_pj', 'colaboradores'], () => {
   const mud = venda.itens.filter(i => precoAgora(i.prod) !== undefined && precoAgora(i.prod) !== i.preco);
   if (mud.length) { avisoPreco = `Preço atualizado pelo Cardápio: ${mud.map(i => `${esc(i.nome)} ${reais(i.preco)} → ${reais(precoAgora(i.prod))}`).join(' · ')}.`; mud.forEach(i => i.preco = precoAgora(i.prod)); }
   desenhar();
 });
 desenhar();
-if (caixa()) $('inProd').focus();
+if (caixa()) $('inComanda').focus();
 </script>
 </body>
 </html>
