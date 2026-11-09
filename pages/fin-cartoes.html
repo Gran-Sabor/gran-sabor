@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conciliação de cartões</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Conciliação de cartões</h1><span class="sub">Extrato da maquininha × vendas do PDV × taxa do contrato</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn" id="btnExemplo" title="Gera um extrato de exemplo com algumas diferenças">Extrato de exemplo</button>
+      <label class="btn btn-pri" style="cursor:pointer">Importar extrato (CSV)<input type="file" id="arq" accept=".csv,.txt" class="oculto"></label></div></div>
+  <div id="filtros"></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="trans" class="ativa">Transações</button><button type="button" data-aba="bandeiras">Por bandeira</button><button type="button" data-aba="contrato">Taxas do contrato</button></div>
+  <div id="aviso"></div>
+  <section class="kpis" id="kpis"></section>
+  <section class="cartao" id="painelTrans"><div class="cartao-cab"><h2>Transações</h2>
+      <select class="campo campo-mini" id="selSit" aria-label="Situação" style="min-width:0;width:auto;margin-left:8px"><option value="div">Só diferenças</option><option value="">Todas</option><option value="ok">Conferidas</option></select>
+      <span class="dir sub" id="contagem"></span></div>
+    <div class="rolagem"><table class="tabela" id="tab"></table></div></section>
+  <section class="cartao oculto" id="painelBand"><div class="cartao-cab"><h2>Taxa cobrada por bandeira</h2></div><div class="rolagem"><table class="tabela" id="tabBand"></table></div></section>
+  <section class="cartao oculto" id="painelContrato"><div class="cartao-cab"><h2>Taxas do contrato</h2><span class="dir sub">vale para as próximas previsões e para a conferência</span></div>
+    <div class="rolagem"><table class="tabela" id="tabContrato"></table></div>
+    <div class="form-nota" style="padding:8px 12px">Exemplo: a Gran Sabor informa a maquininha e as taxas do contrato (débito, crédito à vista e vale-refeição por bandeira).</div></section>
+</div>
+
+<script src="../assets/js/menu.js?v=8"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=7"></script>
+<script src="../assets/js/vendas.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Como funciona (regras de exemplo):
+   - Cada venda em cartão guarda bandeira e NSU (digitados no PDV a partir do comprovante).
+   - O extrato da operadora (arquivo CSV) é conferido venda a venda: pelo NSU; sem NSU, por data + bandeira + valor.
+   - A taxa cobrada é comparada com a taxa do contrato. Cobrou a mais = diferença para contestar.
+   - "Ajustar contas a receber" troca o valor previsto pelo do extrato e deixa o acerto visível no título. */
+const num = s => Number(String(s || '').replace(/\./g, '').replace(',', '.'));
+let aba = 'trans';
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, periodo: true, placeholder: 'NSU, bandeira, valor, comanda… (atalho: /)' });
+filtro.de = diasDaqui(-7); filtro.ate = hojeISO();
+$('filtros').querySelector('[data-f=de]').value = filtro.de; $('filtros').querySelector('[data-f=ate]').value = filtro.ate;
+const noPeriodo = x => noFiltro(filtro, x) && (!filtro.de || x.data >= filtro.de) && (!filtro.ate || x.data <= filtro.ate);
+const SIT = { ok: ['completa', 'confere'], taxa: ['perigo', 'taxa acima do contrato'], valor: ['perigo', 'valor diferente'], prazo: ['pendente', 'prazo maior'],
+  so_venda: ['pendente', 'não veio no extrato'], so_extrato: ['perigo', 'não está nas vendas'] };
+
+function linhas() {
+  const vs = VENDAS.filter(noPeriodo), ex = EXTRATO_CARTOES.filter(noPeriodo);
+  return { vs, ex, ls: ex.length ? VENDA.conciliar(vs, ex) : [] };
+}
+const textoLinha = l => { const t = l.t || {}, e = l.e || {}; return [t.nsu, e.nsu, t.bandeira, e.bandeira, numero(t.bruto || e.bruto, 2), (t.comandas || []).join(' '), nomeUnidade(t.unidade || e.unidade), SIT[l.status][1]].join(' '); };
+
+function desenhar() {
+  ['trans', 'bandeiras', 'contrato'].forEach((a, i) => $(['painelTrans', 'painelBand', 'painelContrato'][i]).classList.toggle('oculto', aba !== a));
+  const { vs, ex, ls } = linhas(), trans = VENDA.transacoesCartao(vs);
+  const div = ls.filter(l => l.status !== 'ok'), aMais = ls.reduce((a, l) => a + Math.max(0, l.difTaxa || 0), 0);
+  $('aviso').innerHTML = !ex.length ? `<div class="aviso">Nenhum extrato importado para este período. Baixe o extrato de vendas no site da maquininha (CSV) e use <b>Importar extrato</b>, ou clique em <b>Extrato de exemplo</b> para ver como fica.</div>`
+    : div.length ? `<div class="aviso perigo">${div.length} diferença(s) no período. Taxa cobrada a mais: <b>${reais(aMais)}</b>. ${ajustaveis().length ? `<button type="button" class="btn btn-mini" id="btnAjustar">Ajustar ${ajustaveis().length} título(s) do contas a receber pelo extrato</button>` : ''}</div>`
+    : '<div class="aviso">Tudo confere com o contrato neste período.</div>';
+  const taxaContrato = trans.reduce((a, t) => a + t.taxa, 0), taxaCobrada = ex.reduce((a, e) => a + e.taxa, 0);
+  $('kpis').innerHTML = [
+    ['Vendas em cartão', reais(trans.reduce((a, t) => a + t.bruto, 0)), `${trans.length} transação(ões)`],
+    ['Taxa pelo contrato', reais(taxaContrato), 'o que deveria ser cobrado'],
+    ['Taxa cobrada', ex.length ? reais(taxaCobrada) : '—', ex.length ? `extrato · ${ex.length} linha(s)` : 'importe o extrato'],
+    ['Cobrado a mais', `<span class="${aMais > 0 ? 'desce' : ''}">${reais(aMais)}</span>`, 'contestar com a operadora'],
+    ['Diferenças', div.length, `${ls.filter(l => l.status === 'so_venda').length} sem extrato · ${ls.filter(l => l.status === 'so_extrato').length} fora das vendas`]
+  ].map(([t, v, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${v}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+
+  // Transações
+  const sel = $('selSit').value;
+  const vis = ls.filter(l => (sel === 'div' ? l.status !== 'ok' : !sel || l.status === sel) && casaBusca(textoLinha(l), filtro.busca));
+  $('contagem').textContent = `${vis.length} linha(s)${vis.length > 400 ? ' · mostrando 400' : ''}`;
+  $('tab').innerHTML = `<thead><tr><th>Data</th><th>Loja</th><th>Forma · bandeira</th><th class="so-largo">NSU</th><th class="so-largo">Cmd.</th><th class="num">Bruto</th><th class="num">Taxa contrato → cobrada</th><th class="num">Diferença</th><th>Situação</th><th></th></tr></thead><tbody>${
+    vis.slice(0, 400).map((l, i) => { const t = l.t, e = l.e, base = t || e;
+      return `<tr><td>${dataBR(base.data + 'T12:00').slice(0, 5)}${t ? ' ' + t.hora : ''}</td><td>${esc(nomeUnidade(base.unidade))}</td><td>${VENDA.forma(base.forma).nome} · ${esc(base.bandeira)}</td>
+        <td class="so-largo mono">${esc((t && t.nsu) || (e && e.nsu) || '—')}</td><td class="so-largo">${t ? t.comandas.join(', ') : '—'}</td>
+        <td class="num">${reais(e ? e.bruto : t.bruto)}${t && e && l.status === 'valor' ? ` <small class="sub">PDV ${reais(t.bruto)}</small>` : ''}</td>
+        <td class="num">${t ? `${numero(t.taxaPct, 2)}%` : '—'} → ${e ? `<b class="${l.status === 'taxa' ? 'desce' : ''}">${numero(e.bruto ? e.taxa / e.bruto * 100 : 0, 2)}%</b>` : '—'}</td>
+        <td class="num ${l.difTaxa > 0 ? 'desce' : ''}">${l.difTaxa ? reais(l.difTaxa) : l.status === 'prazo' ? `cai ${dataBR(e.previsao + 'T12:00')}` : '—'}</td>
+        <td><span class="etiqueta ${SIT[l.status][0]}">${SIT[l.status][1]}</span>${e && e.situacao ? ` <span class="etiqueta">${e.situacao}</span>` : ''}</td>
+        <td>${e && l.status !== 'ok' && !e.situacao ? `<button type="button" class="btn btn-mini" data-tratar="${e.id}">Tratar</button>` : ''}</td></tr>`; }).join('')
+    || `<tr><td colspan="10" class="vazio">${ex.length ? 'Nada com esses filtros.' : 'Importe o extrato para conferir.'}</td></tr>`}</tbody>`;
+
+  // Por bandeira
+  const g = {};
+  ls.filter(l => l.t && l.e).forEach(l => { const k = l.t.forma + '|' + l.t.bandeira, x = g[k] ||= { forma: l.t.forma, bandeira: l.t.bandeira, bruto: 0, contrato: 0, cobrado: 0, n: 0 };
+    x.bruto += l.e.bruto; x.contrato += l.t.bruto * l.t.taxaPct / 100; x.cobrado += l.e.taxa; x.n++; });
+  $('tabBand').innerHTML = `<thead><tr><th>Forma · bandeira</th><th class="num">Transações</th><th class="num">Bruto</th><th class="num">Taxa contrato</th><th class="num">Taxa cobrada</th><th class="num">Diferença</th></tr></thead><tbody>${
+    Object.values(g).sort((a, b) => (b.cobrado - b.contrato) - (a.cobrado - a.contrato)).map(x => `<tr><td>${VENDA.forma(x.forma).nome} · ${esc(x.bandeira)}</td><td class="num">${x.n}</td><td class="num">${reais(x.bruto)}</td>
+      <td class="num">${numero(VENDA.contrato(x.forma, x.bandeira).taxa, 2)}%</td><td class="num ${x.cobrado - x.contrato > 0.01 ? 'desce' : ''}">${numero(x.bruto ? x.cobrado / x.bruto * 100 : 0, 2)}%</td>
+      <td class="num ${x.cobrado - x.contrato > 0.01 ? 'desce' : ''}">${reais(x.cobrado - x.contrato)}</td></tr>`).join('') || '<tr><td colspan="6" class="vazio">Importe o extrato para ver.</td></tr>'}</tbody>`;
+
+  // Contrato (editável)
+  $('tabContrato').innerHTML = `<thead><tr><th>Forma</th><th>Bandeira</th><th>Operadora</th><th class="num">Taxa (%)</th><th class="num">Prazo (dias)</th></tr></thead><tbody>${TAXAS_CONTRATO.map(t =>
+    `<tr><td>${VENDA.forma(t.forma).nome}</td><td>${esc(t.bandeira)}</td><td>${esc(t.operadora)}</td>
+      <td class="num"><input class="campo campo-mini" style="width:80px;min-width:0;text-align:right" data-taxa="${t.id}" value="${numero(t.taxa, 2)}" inputmode="decimal"></td>
+      <td class="num"><input class="campo campo-mini" style="width:64px;min-width:0;text-align:right" data-prazo="${t.id}" value="${t.prazo}" inputmode="numeric"></td></tr>`).join('')}</tbody>`;
+}
+
+/* ---------- Extrato: exemplo e importação ---------- */
+function extratoExemplo() {
+  const hoje = hojeISO(), fechado = id => (CAIXAS.find(c => c.id === id) || {}).fechadoEm, trans = VENDA.transacoesCartao(VENDAS.filter(v => noPeriodo(v) && (v.data < hoje || fechado(v.caixa))));   // só caixas já fechados
+  const ja = new Set(EXTRATO_CARTOES.map(e => e.ref)); let n = 0, k = EXTRATO_CARTOES.length;
+  trans.forEach((t, i) => { if (ja.has(t.chave)) return; const h = parseInt(t.nsu || i, 10) || i;
+    if (h % 97 === 3) return;   // não veio no extrato
+    let taxa = t.taxaPct, prazoExtra = 0;
+    if (t.forma === 'cre' && t.bandeira === 'Elo' && h % 2 === 0) taxa = 3.49;          // cobrou acima do contrato
+    if (t.forma === 'deb' && t.bandeira === 'Mastercard' && h % 4 === 0) taxa = 1.39;
+    if (t.forma === 'vr' && h % 3 === 0) prazoExtra = 15;                                   // caiu depois do combinado
+    const bruto = h % 89 === 5 ? VENDA.r2(t.bruto + 1) : t.bruto, tx = VENDA.r2(bruto * taxa / 100);
+    const prev = new Date(t.previsao + 'T12:00'); prev.setDate(prev.getDate() + prazoExtra);
+    EXTRATO_CARTOES.push({ id: 'ex' + (++k), ref: t.chave, data: t.data, unidade: t.unidade, empresa: t.empresa, forma: t.forma, bandeira: t.bandeira, nsu: t.nsu, bruto, taxa: tx, liquido: VENDA.r2(bruto - tx), previsao: isoLocal(prev), situacao: '', obs: '' }); n++;
+  });
+  // Uma venda no extrato que não está no PDV (passada na maquininha sem registrar a venda)
+  const u = filtro.unidade || 'loja2', d = filtro.ate || diasDaqui(-1);
+  if (n) EXTRATO_CARTOES.push({ id: 'ex' + (++k), ref: '', data: d, unidade: u, empresa: UNIDADE_EMPRESA[u], forma: 'cre', bandeira: 'Visa', nsu: '999001', bruto: 58.4, taxa: VENDA.r2(58.4 * 0.0289), liquido: VENDA.r2(58.4 * 0.9711), previsao: d, situacao: '', obs: '' });
+  return n;
+}
+function importarCSV(txt) {
+  const lin = txt.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim()); if (lin.length < 2) return 'Arquivo vazio.';
+  const sep = lin[0].includes(';') ? ';' : ',', cab = lin[0].split(sep).map(c => normalizar(c));
+  const col = (...nomes) => cab.findIndex(c => nomes.some(n => c.includes(n)));
+  const ci = { data: col('data'), nsu: col('nsu', 'doc'), band: col('bandeira'), mod: col('modalidade', 'produto', 'tipo'), bruto: col('bruto', 'valor da venda', 'valor'), taxa: col('taxa', 'mdr', 'desconto'), prev: col('previsao', 'pagamento', 'credito') };
+  if (ci.data < 0 || ci.bruto < 0 || ci.taxa < 0) return 'Não achei as colunas data, valor bruto e taxa no cabeçalho.';
+  const dt = s => /^\d{2}\/\d{2}\/\d{4}/.test(s) ? s.slice(6, 10) + '-' + s.slice(3, 5) + '-' + s.slice(0, 2) : s.slice(0, 10);
+  const mod = s => { s = normalizar(s || ''); return s.includes('deb') ? 'deb' : s.includes('ref') || s.includes('vouch') || s.includes('alim') ? 'vr' : 'cre'; };
+  let k = EXTRATO_CARTOES.length, n = 0;
+  lin.slice(1).forEach(l => { const c = l.split(sep).map(x => x.replace(/^"|"$/g, '').trim()); const bruto = num(c[ci.bruto]); if (!(bruto > 0)) return;
+    let taxa = num(c[ci.taxa]); if (taxa > 0 && taxa < 20 && String(c[ci.taxa]).includes('%')) taxa = VENDA.r2(bruto * taxa / 100);
+    const u = filtro.unidade || 'loja1';
+    EXTRATO_CARTOES.push({ id: 'ex' + (++k), ref: '', data: dt(c[ci.data]), unidade: u, empresa: UNIDADE_EMPRESA[u], forma: ci.mod >= 0 ? mod(c[ci.mod]) : 'cre', bandeira: ci.band >= 0 ? c[ci.band] : '—', nsu: ci.nsu >= 0 ? c[ci.nsu].replace(/\D/g, '') : '',
+      bruto, taxa, liquido: VENDA.r2(bruto - taxa), previsao: ci.prev >= 0 && c[ci.prev] ? dt(c[ci.prev]) : dt(c[ci.data]), situacao: '', obs: '' }); n++; });
+  return n ? '' : 'Nenhuma linha com valor no arquivo.';
+}
+
+/* ---------- Ajuste do contas a receber pelo extrato (acerto visível) ---------- */
+function ajustaveis() {
+  const { ls } = linhas();
+  return RECEBER_OUTROS.filter(r => r.caixa && r.forma && !r.recebidoEm && !r.acerto).map(r => {
+    const doGrupo = ls.filter(l => l.t && l.t.caixa === r.caixa && l.t.forma === r.forma && l.t.bandeira === r.bandeira);
+    const total = VENDA.transacoesCartao(VENDAS.filter(v => v.caixa === r.caixa)).filter(t => t.forma === r.forma && t.bandeira === r.bandeira).length;
+    if (!doGrupo.length || doGrupo.some(l => !l.e) || doGrupo.length < total) return null;
+    const liq = VENDA.r2(doGrupo.reduce((a, l) => a + l.e.liquido, 0));
+    return Math.abs(liq - r.valor) >= 0.01 ? { r, liq } : null;
+  }).filter(Boolean);
+}
+function ajustar() {
+  const lista = ajustaveis(); if (!lista.length) return;
+  janela('Ajustar contas a receber pelo extrato', `<table class="tabela"><thead><tr><th>Título</th><th class="num">Previsto (contrato)</th><th class="num">Extrato</th><th class="num">Diferença</th></tr></thead><tbody>${lista.map(({ r, liq }) =>
+    `<tr><td>${esc(r.origem)} <small class="sub">${esc(nomeUnidade(r.unidade))} · ${dataBR(r.vencimento + 'T12:00')}</small></td><td class="num">${reais(r.valor)}</td><td class="num">${reais(liq)}</td><td class="num desce">${reais(liq - r.valor)}</td></tr>`).join('')}</tbody></table>
+    <div class="form-nota">O valor a receber passa a ser o do extrato e o título mostra o acerto (de → para). A diferença continua listada aqui para contestar com a operadora.</div>`, 'Ajustar', () => {
+    const agora = ajustaveis(); if (JSON.stringify(agora.map(x => [x.r.id, x.liq])) !== JSON.stringify(lista.map(x => [x.r.id, x.liq]))) { desenhar(); return 'Os títulos mudaram enquanto a janela estava aberta. Nada foi feito: confira de novo.'; }
+    agora.forEach(({ r, liq }) => { r.acerto = { de: r.valor, para: liq, em: hojeISO(), motivo: 'Conciliação com o extrato da operadora' }; r.valor = liq; });
+    desenhar(); avisarMudanca('receber_outros'); });
+}
+
+/* ---------- Eventos ---------- */
+$('btnExemplo').onclick = () => { const n = extratoExemplo(); desenhar(); avisarMudanca('extrato_cartoes'); if (!n) janela('Extrato de exemplo', '<p>Não há vendas em cartão de caixas fechados neste período (ou o extrato já foi carregado).</p>', 'Entendi', () => {}); };
+$('arq').onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader();
+  rd.onload = () => { const erro = importarCSV(rd.result); e.target.value = ''; if (erro) return janela('Importar extrato', `<p>${esc(erro)}</p><p class="sub">Colunas esperadas: data; NSU; bandeira; modalidade; valor bruto; taxa; previsão de pagamento.</p>`, 'Entendi', () => {}); desenhar(); avisarMudanca('extrato_cartoes'); };
+  rd.readAsText(f, 'utf-8'); };
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba; $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
+$('selSit').onchange = desenhar;
+$('aviso').onclick = e => { if (e.target.id === 'btnAjustar') ajustar(); };
+$('tab').onclick = e => {
+  const b = e.target.closest('[data-tratar]'); if (!b) return;
+  const ex = EXTRATO_CARTOES.find(x => x.id === b.dataset.tratar);
+  janela('Tratar diferença', `<p>${VENDA.forma(ex.forma).nome} · ${esc(ex.bandeira)} · ${reais(ex.bruto)} em ${dataBR(ex.data + 'T12:00')}${ex.nsu ? ' · NSU ' + esc(ex.nsu) : ''}</p>
+    <div class="form-grade"><label class="c6">O que fazer<select name="s" class="campo"><option value="contestada">Contestar com a operadora</option><option value="aceita">Aceitar a diferença</option></select></label>
+    <label class="c6">Observação<input name="o" class="campo" value="Taxa acima do contrato"></label></div>`, 'Salvar', f => {
+    if (ex.situacao) { desenhar(); return 'Esta linha já foi tratada em outra tela.'; }
+    ex.situacao = f.s.value; ex.obs = f.o.value.trim(); desenhar(); avisarMudanca('extrato_cartoes'); });
+};
+$('tabContrato').addEventListener('change', e => {
+  const id = e.target.dataset.taxa || e.target.dataset.prazo; if (!id) return; const t = TAXAS_CONTRATO.find(x => x.id === id);
+  if (e.target.dataset.taxa) { const v = num(e.target.value); if (v >= 0 && v < 20) t.taxa = v; } else { const v = parseInt(e.target.value, 10); if (v >= 0 && v <= 120) t.prazo = v; }
+  desenhar(); avisarMudanca('taxas_contrato');
+});
+$('btnExportar').onclick = () => exportarCSV(`conciliacao-cartoes-${filtro.de}-a-${filtro.ate}`, ['Data', 'Hora', 'Empresa', 'Loja', 'Forma', 'Bandeira', 'NSU', 'Comandas', 'Bruto PDV', 'Bruto extrato', 'Taxa contrato %', 'Taxa cobrada %', 'Taxa contrato R$', 'Taxa cobrada R$', 'Diferença R$', 'Previsão contrato', 'Previsão extrato', 'Situação', 'Tratamento', 'Observação'],
+  linhas().ls.map(l => { const t = l.t || {}, e = l.e || {}, b = l.t || l.e;
+    return [dataBR(b.data + 'T12:00'), t.hora || '', nomeEmpresa(b.empresa), nomeUnidade(b.unidade), VENDA.forma(b.forma).nome, b.bandeira, t.nsu || e.nsu || '', (t.comandas || []).join(' '),
+      t.bruto != null ? numero(t.bruto, 2) : '', e.bruto != null ? numero(e.bruto, 2) : '', t.taxaPct != null ? numero(t.taxaPct, 2) : '', e.bruto ? numero(e.taxa / e.bruto * 100, 2) : '',
+      t.taxa != null ? numero(t.taxa, 2) : '', e.taxa != null ? numero(e.taxa, 2) : '', l.difTaxa ? numero(l.difTaxa, 2) : '', t.previsao ? dataBR(t.previsao + 'T12:00') : '', e.previsao ? dataBR(e.previsao + 'T12:00') : '', SIT[l.status][1], e.situacao || '', e.obs || '']; }));
+// Ao trocar a aba, o campo editado do contrato não segura o redesenho
+vigiarDados(['vendas', 'extrato_cartoes', 'taxas_contrato', 'receber_outros', 'caixas'], desenhar);
+desenhar();
+</script>
+</body>
+</html>

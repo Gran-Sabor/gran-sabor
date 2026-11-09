@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frente de caixa (PDV)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Frente de caixa</h1><span class="sub" id="subCab">Venda por quilo e itens · NFC-e emitida pelo operador ao receber</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <select class="campo campo-mini" id="selLoja" aria-label="Loja"></select>
+      <select class="campo campo-mini" id="selPdv" aria-label="PDV"><option value="1">PDV 1</option><option value="2">PDV 2</option></select>
+      <button type="button" class="btn" id="btnRede" title="Clique para simular a internet caindo (só no exemplo)"></button>
+      <button type="button" class="btn" id="btnSangria">Sangria</button>
+      <button type="button" class="btn" id="btnSuprimento">Suprimento</button>
+      <button type="button" class="btn" id="btnFechar">Fechar caixa</button>
+      <button type="button" class="btn" id="btnAtalhos"><kbd>F1</kbd> Atalhos</button></div></div>
+  <div id="aviso"></div>
+
+  <!-- Caixa fechado: abrir -->
+  <section class="cartao oculto" id="painelAbrir" style="max-width:520px">
+    <div class="cartao-cab"><h2>Caixa fechado</h2><span class="dir sub" id="abrirOnde"></span></div>
+    <form class="form" id="formAbrir" novalidate>
+      <div class="form-grade">
+        <label class="c6">Operador(a)<select name="op" class="campo" id="selOp"></select></label>
+        <label class="c6">Fundo de troco (R$)<input name="fundo" class="campo" inputmode="decimal" id="inFundo"></label>
+      </div>
+      <div class="form-nota">Conte o dinheiro da gaveta antes de abrir. O fundo de troco entra no saldo esperado do fechamento.</div>
+      <div class="login-msg" id="msgAbrir" role="alert"></div>
+      <div style="margin-top:10px"><button type="submit" class="btn btn-pri">Abrir caixa</button></div>
+    </form>
+  </section>
+
+  <!-- Caixa aberto: vender -->
+  <div class="pdv oculto" id="painelVenda">
+    <div>
+      <section class="cartao">
+        <div class="pdv-entrada">
+          <label><span>Comanda <kbd>F2</kbd></span><input type="search" class="campo" id="inComanda" inputmode="numeric" autocomplete="off" placeholder="nº"></label>
+          <label><span>Produto ou código <kbd>F3</kbd></span><input type="search" class="campo" id="inProd" list="listaProd" autocomplete="off" placeholder="Ex.: P01 ou buffet"></label>
+          <label><span>Peso (kg) ou qtd.</span><input type="search" class="campo" id="inQtd" inputmode="decimal" placeholder="0,000"></label>
+          <button type="button" class="btn" id="btnBalanca" title="Lê o peso do prato na balança"><kbd>F4</kbd> Balança</button>
+          <button type="button" class="btn btn-pri" id="btnAdd">Lançar <kbd style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.4)">Enter</kbd></button>
+        </div>
+        <datalist id="listaProd"></datalist>
+        <div class="pdv-prods" id="prods"></div>
+      </section>
+      <section class="cartao"><div class="cartao-cab"><h2>Itens da venda</h2><span class="dir sub" id="contItens"></span></div>
+        <div class="rolagem"><table class="tabela pdv-itens" id="tabItens"></table></div></section>
+    </div>
+    <div class="pdv-lado">
+      <section class="cartao">
+        <div class="pdv-total"><div class="rot">Total a pagar</div><div class="valor" id="vTotal">R$ 0,00</div><div class="sub" id="vSub"></div></div>
+        <div class="pdv-linha"><span>Consumidor</span><b id="vCliente">não identificado</b></div>
+        <div class="pdv-botoes">
+          <button type="button" class="btn" id="btnCpf">CPF na nota <kbd>F6</kbd></button>
+          <button type="button" class="btn" id="btnPj">Convênio <kbd>F7</kbd></button>
+          <button type="button" class="btn" id="btnDesc">Desconto <kbd>F8</kbd></button>
+          <button type="button" class="btn" id="btnTiraItem">Cancelar item <kbd>F9</kbd></button>
+          <button type="button" class="btn" id="btnFunc" title="Consumo interno: desconta na folha, sem NFC-e">Funcionário <kbd>F11</kbd></button>
+          <button type="button" class="btn" id="btnCortesia" title="Sem cobrança: alerta para a Fernanda no fechamento">Cortesia</button>
+          <button type="button" class="btn" id="btnLimpar" style="grid-column:span 2">Cancelar venda <kbd>F12</kbd></button>
+          <button type="button" class="btn btn-pri" id="btnReceber">Receber <kbd>F10</kbd></button>
+        </div>
+      </section>
+      <section class="cartao"><div class="cartao-cab"><h2>Comandas abertas</h2><span class="dir sub" id="contComandas"></span></div><div id="comandas"></div></section>
+      <section class="cartao"><div class="cartao-cab"><h2>Caixa</h2><span class="dir sub" id="cxAberto"></span></div><div id="cxResumo"></div></section>
+      <section class="cartao"><div class="cartao-cab"><h2>Últimas vendas</h2><a class="dir" href="#" id="lnkVendas">Vendas do dia</a></div><div id="ultimas"></div></section>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/menu.js?v=8"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=7"></script>
+<script src="../assets/js/vendas.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Frente de caixa. Regras (exemplo, a Gran Sabor e o contador confirmam):
+   - Só vende com caixa aberto (operador + fundo de troco).
+   - Venda ao consumidor: o operador recebe e clica em "Emitir NFC-e" (botão manual, na hora da venda). Sem internet,
+     a nota sai em contingência e sobe sozinha quando a internet volta.
+   - Sem NFC-e, com documento próprio: convênio PJ (NF-e + boleto no fechamento do período), consumo de funcionário
+     (desconto na folha) e cortesia/degustação (sem cobrança, alerta no fechamento do caixa). A cadeia está em VENDA.registrar.
+   - Preço vem do Cardápio e produtos (preço da empresa da loja). Mudou lá, muda aqui; ao receber, o preço é conferido de novo.
+   - Convênio: entra no consumo do cliente (Contas a receber › Faturamento PJ) e respeita o limite.
+   - Bebidas e embalagens baixam o estoque da loja na hora; o buffet baixa pela produção (ficha técnica). */
+const num = s => Number(String(s || '').replace(/\./g, '').replace(',', '.'));
+const peso = v => numero(v, 3);
+let loja = LOJAS_PDV.includes(unidadeAtual()) ? unidadeAtual() : 'loja1', pdv = 1, semInternet = false, selItem = -1;
+let venda = novaVenda(), avisoPreco = '';
+function novaVenda() { return { itens: [], desconto: 0, cpf: '', pj: null, comandas: [] }; }
+const empresa = () => UNIDADE_EMPRESA[loja];
+const caixa = () => VENDA.caixaAberto(loja, pdv);
+const online = () => navigator.onLine && !semInternet;
+const precoAgora = id => (PRODUTOS_VENDA.find(p => p.id === id) || { precos: {} }).precos[empresa()];
+const totalVenda = () => VENDA.total(venda);
+
+$('selLoja').innerHTML = LOJAS_PDV.map(u => `<option value="${u}">${esc(nomeUnidade(u))}</option>`).join('');
+
+function desenhar() {
+  $('selLoja').value = loja; $('selPdv').value = String(pdv);
+  $('subCab').textContent = `${nomeUnidade(loja)} · ${nomeEmpresa(empresa())} · NFC-e série ${pdv}`;
+  $('btnRede').innerHTML = online() ? '<span class="etiqueta completa">● online</span>' : '<span class="etiqueta perigo">● sem internet · contingência</span>';
+  const cx = caixa();
+  $('painelAbrir').classList.toggle('oculto', !!cx); $('painelVenda').classList.toggle('oculto', !cx);
+  ['btnSangria', 'btnSuprimento', 'btnFechar'].forEach(b => $(b).disabled = !cx);
+  const pend = VENDA.pendentes(v => v.unidade === loja);
+  $('aviso').innerHTML = (avisoPreco ? `<div class="aviso">${avisoPreco}</div>` : '') + (pend.length ? `<div class="aviso perigo">${pend.length} NFC-e em contingência nesta loja ainda não subiram para a SEFAZ.
+    ${online() ? '<button type="button" class="btn btn-mini" id="btnTransmitir">Transmitir agora</button>' : 'Sobem sozinhas quando a internet voltar.'} Prazo: ${VENDA.REGRA_NFCE.contingenciaHoras} h depois da venda.</div>` : '');
+  if (!cx) return desenharAbrir();
+
+  // Produtos (atalhos) e lista para busca
+  const ativos = PRODUTOS_VENDA.filter(p => p.ativo && p.precos[empresa()] > 0);
+  $('prods').innerHTML = ativos.map(p => `<button type="button" class="pdv-prod" data-prod="${p.id}"><b>${esc(p.nome)}</b><span>${p.codigo} · ${reais(p.precos[empresa()])}${p.un === 'kg' ? '/kg' : ''}</span></button>`).join('');
+  $('listaProd').innerHTML = ativos.map(p => `<option value="${p.codigo} · ${esc(p.nome)}">`).join('');
+
+  // Itens
+  $('tabItens').innerHTML = `<thead><tr><th class="so-largo">#</th><th>Produto</th><th class="num">Qtd.</th><th class="num so-largo">Preço</th><th class="num">Total</th><th></th></tr></thead><tbody>${
+    venda.itens.map((i, k) => `<tr class="${k === selItem ? 'sel' : ''}" data-k="${k}"><td class="so-largo">${k + 1}</td><td>${esc(i.nome)}${i.comanda ? ` <span class="etiqueta">cmd ${i.comanda}</span>` : ''}</td><td class="num">${i.un === 'kg' ? peso(i.qtd) + ' kg' : numero(i.qtd)}</td>
+      <td class="num so-largo">${reais(i.preco)}</td><td class="num"><b>${reais(i.qtd * i.preco)}</b></td><td><button type="button" class="btn btn-ico" data-tira="${k}" aria-label="Tirar item">${icone('fechar')}</button></td></tr>`).join('')
+    || '<tr><td colspan="6" class="vazio">Coloque o prato na balança (F4) ou escolha um produto.</td></tr>'}</tbody>`;
+  $('contItens').textContent = `${venda.itens.length} item(ns)${venda.comandas.length ? ' · comanda ' + venda.comandas.join(', ') : ''}`;
+  const abertas = COMANDAS.filter(c => c.unidade === loja && c.status === 'aberta' && !venda.comandas.includes(c.numero)).sort((a, b) => a.numero - b.numero);
+  $('contComandas').textContent = `${abertas.length} na loja`;
+  $('comandas').innerHTML = abertas.map(c => `<a href="#" class="lista-linha" data-comanda="${c.numero}" style="color:inherit;text-decoration:none"><div><b>Comanda ${c.numero}</b>
+    <small>desde ${c.abertaEm} · ${esc(c.itens.map(i => i.un === 'kg' ? `${i.nome.split(' ')[0]} ${peso(i.qtd)} kg` : i.nome.split(' ')[0]).join(', '))}</small></div><span class="dir">${reais(c.itens.reduce((a, i) => a + i.qtd * i.preco, 0))}</span></a>`).join('')
+    || '<div class="vazio">Nenhuma comanda aberta.</div>';
+  $('vTotal').textContent = reais(totalVenda());
+  $('vSub').textContent = venda.desconto ? `subtotal ${reais(VENDA.totalItens(venda))} · desconto ${reais(venda.desconto)}` : '';
+  const c = venda.pj && CLIENTES_PJ.find(x => x.id === venda.pj);
+  $('vCliente').innerHTML = c ? `${esc(c.nome)} <small class="sub">convênio</small>` : venda.cpf ? `CPF ${esc(venda.cpf)}` : 'não identificado';
+  $('btnReceber').innerHTML = c ? 'Lançar no convênio <kbd>F10</kbd>' : 'Receber <kbd>F10</kbd>';
+
+  // Caixa
+  const r = VENDA.resumoCaixa(cx);
+  $('cxAberto').textContent = `${esc(cx.operador)} · desde ${cx.abertoEm.slice(11, 16)}`;
+  $('cxResumo').innerHTML = [['Vendas', `${r.vendas} · ${reais(r.total)}`], ['Dinheiro na gaveta', reais(r.dinheiroGaveta)],
+    ['Cartões e Pix', reais(r.porForma.deb + r.porForma.cre + r.porForma.pix + r.porForma.vr)], ['Convênio (faturar)', reais(r.convenio.valor)],
+    ['Funcionários (folha)', `${r.funcionario.qtd} · ${reais(r.funcionario.valor)}`], ['Cortesias', `${r.cortesias.qtd} · ${reais(r.cortesias.valor)}`],
+    ['Sangrias / suprimentos', `${reais(r.sangrias)} / ${reais(r.suprimentos)}`]]
+    .map(([a, b]) => `<div class="pdv-linha"><span>${a}</span><b>${b}</b></div>`).join('');
+  const ult = VENDAS.filter(v => v.caixa === cx.id).slice(-6).reverse();
+  $('ultimas').innerHTML = ult.map(v => `<a href="#" class="lista-linha" data-venda="${v.id}" style="color:inherit;text-decoration:none"><div>${rotulo(v)} · ${v.hora}
+    <small>${esc(v.itens.map(i => i.nome.split(' ')[0]).join(', '))}</small></div><span class="dir">${reais(VENDA.total(v))} ${seloNota(v)}</span></a>`).join('') || '<div class="vazio">Nenhuma venda neste caixa.</div>';
+}
+const seloNota = v => !VENDA.valida(v) ? '<span class="etiqueta">cancelada</span>' : v.nota && v.nota.status === 'contingencia' ? '<span class="etiqueta perigo">contingência</span>' : '';
+// "NFC-e 4821", "Convênio", "Funcionário", "Cortesia"
+const rotulo = v => v.nota ? `NFC-e ${v.nota.numero}` : VENDA.TIPOS[VENDA.tipo(v)].nome.split(' ')[0].replace('Consumo', 'Funcionário');
+
+function desenharAbrir() {
+  $('abrirOnde').textContent = `${nomeUnidade(loja)} · PDV ${pdv}`;
+  const pessoas = COLABORADORES.filter(c => c.unidade === loja && c.ativo && c.situacao !== 'afastado');
+  const op = $('selOp').value; $('selOp').innerHTML = pessoas.map(c => `<option>${esc(c.nome.split(' ')[0])}</option>`).join('');
+  if (op) $('selOp').value = op; else $('selOp').value = operadorPadrao(loja);
+  const ult = CAIXAS.filter(c => c.unidade === loja && c.pdv === pdv && c.conferencia).pop();
+  if (!$('inFundo').value) $('inFundo').value = numero(ult ? ult.conferencia.fundoFica : 200, 2);
+}
+$('formAbrir').onsubmit = e => { e.preventDefault();
+  const fundo = num($('inFundo').value); if (!(fundo >= 0)) return $('msgAbrir').textContent = 'Informe o fundo de troco.';
+  if (caixa()) { desenhar(); return; }   // aberto em outra aba
+  const agora = new Date(), data = hojeISO();
+  CAIXAS.push({ id: `cx${loja}p${pdv}${Date.now()}`, unidade: loja, empresa: empresa(), pdv, operador: $('selOp').value, abertoEm: `${data}T${agora.toTimeString().slice(0, 5)}`, fundo, movimentos: [], fechadoEm: null, conferencia: null });
+  $('inFundo').value = ''; $('msgAbrir').textContent = ''; desenhar(); avisarMudanca('caixas'); $('inComanda').focus();
+};
+
+/* ---------- Lançar itens ---------- */
+function acharProduto(txt) {
+  const t = String(txt || '').trim().toLowerCase(); if (!t) return null;
+  const cod = t.split(' ')[0];
+  return PRODUTOS_VENDA.find(p => p.ativo && p.codigo.toLowerCase() === cod) || PRODUTOS_VENDA.find(p => p.ativo && casaBusca(p.nome + ' ' + p.codigo, t));
+}
+function lerBalanca() {   // exemplo: peso de um prato; na loja vem da balança pela USB/serial
+  const kg = +(0.28 + Math.random() * 0.6).toFixed(3);
+  $('inQtd').value = numero(kg, 3); $('inQtd').dataset.balanca = '1'; return kg;
+}
+function lancar(p, qtd) {
+  if (!p) return erroEntrada('Produto não encontrado. Digite o código (ex.: P01) ou parte do nome.');
+  if (!(qtd > 0)) { if (p.un === 'kg') qtd = lerBalanca(); else qtd = 1; }
+  if (p.un === 'un' && qtd % 1) return erroEntrada('Este produto é vendido por unidade.');
+  if (p.un === 'kg' && qtd > 3) return erroEntrada('Peso acima de 3 kg: confira a balança.');
+  venda.itens.push({ prod: p.id, nome: p.nome, un: p.un, qtd: p.un === 'kg' ? +qtd.toFixed(3) : qtd, preco: p.precos[empresa()] });
+  selItem = venda.itens.length - 1; $('inProd').value = ''; $('inQtd').value = ''; delete $('inQtd').dataset.balanca; avisoPreco = '';
+  desenhar(); $('inProd').focus();
+}
+function erroEntrada(msg) { janela('Atenção', `<p>${msg}</p>`, 'Entendi', () => {}); }
+// Comanda da balança → itens da venda (pode juntar várias comandas numa venda só)
+function lancarComanda(numTxt) {
+  const n = parseInt(String(numTxt).replace(/\D/g, ''), 10); if (!n) return;
+  if (venda.comandas.includes(n)) return erroEntrada(`A comanda ${n} já está nesta venda.`);
+  const c = COMANDAS.find(x => x.unidade === loja && x.numero === n && x.status === 'aberta');
+  if (!c) { const paga = COMANDAS.filter(x => x.unidade === loja && x.numero === n && x.status === 'paga').pop(), v = paga && VENDAS.find(x => x.id === paga.venda);
+    return erroEntrada(v ? `A comanda ${n} já foi fechada às ${v.hora} (${rotulo(v)}).` : `A comanda ${n} não está aberta nesta loja.`); }
+  if (!c.itens.length) return erroEntrada(`A comanda ${n} está vazia.`);
+  c.itens.forEach(i => venda.itens.push({ ...i, comanda: n }));
+  venda.comandas.push(n); selItem = venda.itens.length - 1; $('inComanda').value = ''; avisoPreco = ''; desenhar(); $('inComanda').focus();
+}
+$('inComanda').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); if ($('inComanda').value.trim()) lancarComanda($('inComanda').value); else $('inProd').focus(); } };
+$('comandas').onclick = e => { const a = e.target.closest('[data-comanda]'); if (!a) return; e.preventDefault(); lancarComanda(a.dataset.comanda); };
+$('btnAdd').onclick = () => lancar(acharProduto($('inProd').value), num($('inQtd').value));
+$('inProd').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const p = acharProduto($('inProd').value);
+  if (p && !$('inQtd').value && p.un === 'kg') { $('inQtd').focus(); return; } lancar(p, num($('inQtd').value)); } };
+$('inQtd').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); lancar(acharProduto($('inProd').value) || PRODUTOS_VENDA[0], num($('inQtd').value)); } };
+$('btnBalanca').onclick = () => { lerBalanca(); if (!$('inProd').value) $('inProd').value = 'P01 · ' + PRODUTOS_VENDA[0].nome; $('inQtd').focus(); };
+$('prods').onclick = e => { const b = e.target.closest('[data-prod]'); if (!b) return; lancar(PRODUTOS_VENDA.find(p => p.id === b.dataset.prod), num($('inQtd').value)); };
+$('tabItens').onclick = e => { const t = e.target.closest('[data-tira]'); if (t) return tirarItem(+t.dataset.tira);
+  const tr = e.target.closest('tr[data-k]'); if (tr) { selItem = +tr.dataset.k; desenhar(); } };
+function tirarItem(k = selItem) {
+  if (!venda.itens.length) return;
+  if (k < 0 || k >= venda.itens.length) k = venda.itens.length - 1;
+  const i = venda.itens[k];
+  janela('Cancelar item', `<p>Tirar <b>${esc(i.nome)}</b> (${i.un === 'kg' ? peso(i.qtd) + ' kg' : numero(i.qtd)} · ${reais(i.qtd * i.preco)}) da venda?</p>`, 'Tirar item', () => {
+    venda.itens.splice(k, 1); venda.comandas = venda.comandas.filter(n => venda.itens.some(x => x.comanda === n)); selItem = venda.itens.length - 1; if (venda.desconto > VENDA.totalItens(venda)) venda.desconto = 0; desenhar(); });
+}
+function limparVenda() {
+  if (!venda.itens.length) return;
+  janela('Cancelar venda', `<p>Descartar a venda em andamento (${venda.itens.length} item(ns), ${reais(totalVenda())})? Nenhuma nota foi emitida ainda.</p>`, 'Descartar', () => { venda = novaVenda(); selItem = -1; desenhar(); });
+}
+function pedirCpf() {
+  janela('CPF na nota', `<div class="form-grade"><label class="c12">CPF do consumidor<input name="cpf" class="campo" inputmode="numeric" value="${esc(venda.cpf)}" placeholder="000.000.000-00"></label></div>
+    <div class="form-nota">Opcional. Deixe vazio para tirar. Não é guardado fora da nota.</div>`, 'Usar', f => {
+    const d = f.cpf.value.replace(/\D/g, ''); if (d && !cpfValido(d)) return 'CPF inválido.';
+    venda.cpf = d ? d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : ''; if (d) venda.pj = null; desenhar(); });
+}
+function cpfValido(c) {
+  if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
+  const dv = n => { let s = 0; for (let i = 0; i < n; i++) s += +c[i] * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+  return dv(9) === +c[9] && dv(10) === +c[10];
+}
+const abertoPJ = id => CONSUMOS_PJ.filter(k => k.cliente === id).reduce((a, k) => a + k.valor, 0);
+function pedirPj() {
+  const cs = CLIENTES_PJ.filter(c => c.ativo && c.empresa === empresa());
+  janela('Convênio (empresa cliente)', `<div class="form-grade"><label class="c12">Empresa<select name="pj" class="campo"><option value="">— nenhum —</option>${cs.map(c =>
+    `<option value="${c.id}" ${venda.pj === c.id ? 'selected' : ''}>${esc(c.nome)} · disponível ${reais(c.limite - abertoPJ(c.id))}</option>`).join('')}</select></label></div>
+    <div class="form-nota">Convênio não emite NFC-e na comanda: o valor entra no consumo da empresa e a NF-e sai com o boleto no fechamento do período (Faturamento PJ). Assim a refeição não é faturada duas vezes. Só aparecem convênios de ${esc(nomeEmpresa(empresa()))}.</div>`, 'Usar', f => {
+    venda.pj = f.pj.value || null; if (venda.pj) venda.cpf = ''; desenhar(); });
+}
+function pedirDesconto() {
+  if (!venda.itens.length) return;
+  janela('Desconto', `<div class="form-grade"><label class="c6">Valor (R$)<input name="v" class="campo" inputmode="decimal" value="${venda.desconto ? numero(venda.desconto, 2) : ''}"></label>
+    <label class="c6">ou % <input name="p" class="campo" inputmode="decimal"></label><label class="c12">Motivo<input name="m" class="campo" value="${esc(venda.motivoDesc || '')}"></label></div>
+    <div class="form-nota">Desconto acima de 10% precisa de motivo (fica no relatório de vendas).</div>`, 'Aplicar', f => {
+    const sub = VENDA.totalItens(venda); let d = f.p.value ? sub * num(f.p.value) / 100 : num(f.v.value); d = Math.round((d || 0) * 100) / 100;
+    if (d < 0 || d >= sub) return 'Desconto inválido.'; if (d > sub * 0.1 && !f.m.value.trim()) return 'Informe o motivo (desconto acima de 10%).';
+    venda.desconto = d; venda.motivoDesc = f.m.value.trim(); desenhar(); });
+}
+
+/* ---------- Receber (formas de pagamento) e emitir a NFC-e ---------- */
+const foto = () => JSON.stringify(venda.itens.map(i => [i.prod, i.preco]));
+function receber() {
+  if (!venda.itens.length) return erroEntrada('Nenhum item na venda.');
+  if (venda.pj) return lancarConvenio();
+  const total = totalVenda(), pags = [], f0 = foto();
+  let forma = 'cre';
+  const FORMAS = VENDA.FORMAS.filter(f => f.id !== 'pj');   // convênio é outro tipo de lançamento (F7)
+  const v = janela(`Receber · ${reais(total)}`, `<div class="pdv-pag" id="pFormas">${FORMAS.map(f => `<button type="button" class="btn" data-forma="${f.id}">${f.nome}<kbd>${f.tecla}</kbd></button>`).join('')}</div>
+    <div class="form-grade"><label class="c4">Valor recebido<input class="campo" id="pValor" inputmode="decimal"></label>
+      <label class="c3 pCartao">Bandeira<select class="campo" id="pBandeira"></select></label>
+      <label class="c3 pCartao">NSU / Doc. <input class="campo" id="pNsu" inputmode="numeric" placeholder="do comprovante"></label>
+      <div class="c2" style="align-self:end"><button type="button" class="btn" id="pAdd" style="width:100%;justify-content:center">Adicionar</button></div></div>
+    <div id="pLista" style="margin:10px 0"></div><div class="pdv-restante"><span id="pRotulo">Falta</span><b id="pFalta"></b></div>
+    <div class="form-nota" id="pNota"></div>`, 'Emitir NFC-e', () => finalizar({ tipo: 'venda', pagamentos: pags }, f0), w => {
+    const restante = () => VENDA.r2(total - pags.reduce((a, p) => a + p.valor, 0));
+    const marcar = id => { forma = id; w.querySelectorAll('[data-forma]').forEach(b => b.classList.toggle('ativa', b.dataset.forma === id));
+      const cart = VENDA.eCartao(id); w.querySelectorAll('.pCartao').forEach(x => x.classList.toggle('oculto', !cart));
+      if (cart) { w.querySelector('#pBandeira').innerHTML = VENDA.BANDEIRAS[id].map(b => `<option>${b}</option>`).join(''); w.querySelector('#pNsu').value = ''; } w.querySelector('#pValor').value = numero(Math.max(0, restante()), 2); w.querySelector('#pValor').select(); };
+    const atual = () => { const r = restante();
+      w.querySelector('#pLista').innerHTML = pags.map((p, k) => `<div class="pdv-linha"><span>${VENDA.forma(p.forma).nome}${p.bandeira ? ` · ${p.bandeira}${p.nsu ? ' · NSU ' + esc(p.nsu) : ''}` : ''}</span><span><b>${reais(p.valor)}</b> <button type="button" class="btn btn-ico" data-tirapag="${k}" aria-label="Tirar">${icone('fechar')}</button></span></div>`).join('');
+      w.querySelector('#pRotulo').textContent = r < 0 ? 'Troco' : 'Falta'; w.querySelector('#pFalta').textContent = reais(Math.abs(r));
+      w.querySelector('#pNota').innerHTML = (venda.cpf ? `NFC-e com CPF ${esc(venda.cpf)}.` : 'NFC-e sem identificação do consumidor.')
+        + (online() ? '' : ' <b class="desce">Sem internet: a nota sai em contingência.</b>');
+      w.querySelector('button[type=submit]').disabled = r > 0; };
+    const add = () => { const val = num(w.querySelector('#pValor').value); const r = restante();
+      if (!(val > 0)) return; if (val > r && forma !== 'din') { w.querySelector('#fMsg').textContent = 'Só dinheiro pode passar do total (troco).'; return; }
+      const pg = { forma, valor: VENDA.r2(val) };
+      if (VENDA.eCartao(forma)) { pg.bandeira = w.querySelector('#pBandeira').value; pg.nsu = w.querySelector('#pNsu').value.replace(/\D/g, ''); }
+      w.querySelector('#fMsg').textContent = ''; pags.push(pg); atual(); marcar(forma); };
+    w.querySelector('#pFormas').onclick = e => { const b = e.target.closest('[data-forma]'); if (b) marcar(b.dataset.forma); };
+    w.querySelector('#pAdd').onclick = add;
+    w.querySelector('#pLista').onclick = e => { const b = e.target.closest('[data-tirapag]'); if (b) { pags.splice(+b.dataset.tirapag, 1); atual(); marcar(forma); } };
+    w.querySelector('#pNsu').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); w.querySelector('#pValor').onkeydown({ key: 'Enter', preventDefault() {} }); } };
+    w.querySelector('#pValor').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); if (restante() > 0 || !pags.length) add(); if (restante() <= 0) w.querySelector('form').requestSubmit(); } };
+    w.addEventListener('keydown', e => { const f = FORMAS.find(x => x.tecla === e.key), digitando = ['pValor', 'pNsu'].includes(e.target.id);
+      if (f && !digitando) { e.preventDefault(); marcar(f.id); }
+      if (f && digitando && e.altKey) { e.preventDefault(); marcar(f.id); } });
+    marcar(forma); atual();
+    setTimeout(() => w.querySelector(`[data-forma="${forma}"]`).focus(), 0);   // 1 a 5 escolhem a forma; Enter confirma o valor
+  });
+}
+const nomeSel = c => `${esc(c.nome)} · ${esc(nomeUnidade(c.unidade))}`;
+const comp = () => hojeISO().slice(0, 7);
+const consumoMes = id => LANCAMENTOS.filter(l => l.colab === id && l.evento === '110' && l.comp === comp()).reduce((a, l) => a + l.valor, 0);
+// Convênio PJ: sem NFC-e (a NF-e sai no fechamento do período, com o boleto)
+function lancarConvenio() {
+  const c = CLIENTES_PJ.find(x => x.id === venda.pj), f0 = foto();
+  janela(`Convênio · ${reais(totalVenda())}`, `<p><b>${esc(c.nome)}</b> · disponível ${reais(c.limite - abertoPJ(c.id))}</p>
+    <div class="form-nota">${VENDA.TIPOS.convenio.porque}</div>`, 'Lançar no convênio', () => finalizar({ tipo: 'convenio', pagamentos: [{ forma: 'pj', valor: totalVenda() }] }, f0));
+}
+// Consumo de funcionário: vai para a folha (evento 110), sem NFC-e
+function lancarFuncionario() {
+  if (!venda.itens.length) return erroEntrada('Nenhum item na venda.');
+  if (venda.pj) return erroEntrada('Tire o convênio (F7) antes de lançar como consumo de funcionário.');
+  const f0 = foto(), pessoas = COLABORADORES.filter(c => c.ativo && c.situacao !== 'desligado').sort((a, b) => (b.unidade === loja) - (a.unidade === loja) || a.nome.localeCompare(b.nome));
+  janela(`Consumo de funcionário · ${reais(totalVenda())}`, `<div class="form-grade"><label class="c12">Funcionário(a)<select name="colab" class="campo"><option value="">— escolha —</option>${pessoas.map(c =>
+    `<option value="${c.id}">${nomeSel(c)}${consumoMes(c.id) ? ` · já consumiu ${reais(consumoMes(c.id))} no mês` : ''}</option>`).join('')}</select></label></div>
+    <div class="form-nota">Sem NFC-e: ${VENDA.TIPOS.funcionario.porque} Aparece em RH › Lançamentos e no holerite. Peça a assinatura no comprovante.</div>`, 'Lançar na folha', f => {
+    if (!f.colab.value) return 'Escolha o funcionário.';
+    if (VENDA.folhaFechada(comp())) return 'A folha deste mês já foi fechada. Peça para o RH reabrir ou receba como venda.';
+    return finalizar({ tipo: 'funcionario', colab: f.colab.value, pagamentos: [] }, f0);
+  });
+}
+// Cortesia ou degustação: decisão do caixa, com motivo. Alerta para a Fernanda no fechamento do caixa.
+function lancarCortesia() {
+  if (!venda.itens.length) return erroEntrada('Nenhum item na venda.');
+  if (venda.pj) return erroEntrada('Tire o convênio (F7) antes de lançar como cortesia.');
+  const f0 = foto();
+  janela(`Cortesia / degustação · ${reais(totalVenda())}`, `<div class="form-grade"><label class="c6">Tipo<select name="t" class="campo"><option>Degustação</option><option>Cortesia ao cliente</option><option>Reclamação / troca</option><option>Outro</option></select></label>
+    <label class="c6">Autorizado por<input name="por" class="campo" value="${esc(caixa().operador)}"></label>
+    <label class="c12">Motivo (obrigatório)<input name="m" class="campo" maxlength="160" placeholder="Ex.: cliente provou o prato novo antes de pesar"></label></div>
+    <div class="form-nota">Sem cobrança: ${VENDA.TIPOS.cortesia.porque}</div>`, 'Lançar cortesia', f => {
+    const m = f.m.value.trim(); if (m.length < 5) return 'Escreva o motivo.';
+    return finalizar({ tipo: 'cortesia', pagamentos: [], motivoCortesia: `${f.t.value}: ${m}`, autorizadoPor: f.por.value.trim() }, f0);
+  });
+}
+// Confere tudo de novo na hora de confirmar e grava. Devolve a mensagem de erro (a janela fica aberta) ou nada.
+function finalizar(extra, f0) {
+  const cx = caixa();
+  if (!cx) { desenhar(); return 'O caixa foi fechado em outra tela. Nada foi feito.'; }
+  // Preço conferido de novo (alguém pode ter mudado no Cardápio)
+  const mud = venda.itens.filter(i => precoAgora(i.prod) !== i.preco);
+  if (mud.length || foto() !== f0) {
+    mud.forEach(i => i.preco = precoAgora(i.prod)); desenhar();
+    return `O preço mudou no Cardápio enquanto a venda estava aberta (${mud.map(i => esc(i.nome)).join(', ')}). Nada foi feito: o total agora é ${reais(totalVenda())}. Feche, confira com o cliente e lance de novo.`;
+  }
+  const total = totalVenda(), tipo = extra.tipo;
+  if (tipo === 'convenio') { const c = CLIENTES_PJ.find(x => x.id === venda.pj);
+    if (!c || !c.ativo) return 'Este convênio foi desativado em outra tela.';
+    if (abertoPJ(c.id) + total > c.limite) return `Limite do convênio estourado: disponível ${reais(c.limite - abertoPJ(c.id))}. Tire o convênio (F7) e receba como venda.`; }
+  if (tipo === 'funcionario' && VENDA.folhaFechada(comp())) return 'A folha deste mês foi fechada em outra tela. Nada foi lançado.';
+  const pagoTot = VENDA.r2(extra.pagamentos.reduce((a, p) => a + p.valor, 0));
+  if (tipo === 'venda' && pagoTot + 0.001 < total) return 'Falta receber.';
+  // Comanda paga em outro caixa enquanto esta venda estava aberta?
+  const jaPagas = venda.comandas.filter(n => !COMANDAS.some(c => c.unidade === loja && c.numero === n && c.status === 'aberta'));
+  if (jaPagas.length) { return `A comanda ${jaPagas.join(', ')} foi paga ou fechada em outro caixa. Nada foi feito: tire os itens dela e confira com o cliente.`; }
+  const agora = new Date(), troco = tipo === 'venda' ? VENDA.r2(pagoTot - total) : 0;
+  const v = { id: 'v' + Date.now(), tipo, unidade: loja, empresa: empresa(), pdv, caixa: cx.id, operador: cx.operador, data: hojeISO(), hora: agora.toTimeString().slice(0, 5),
+    itens: venda.itens.map(i => ({ ...i })), desconto: venda.desconto, motivoDesc: venda.motivoDesc || '', cpf: venda.cpf ? 'informado' : '', pj: tipo === 'convenio' ? venda.pj : null,
+    pagamentos: extra.pagamentos.map(p => ({ ...p })), troco, nota: null, canceladaEm: null, comandas: [...venda.comandas] };
+  if (extra.colab) v.colab = extra.colab;
+  if (extra.motivoCortesia) { v.motivoCortesia = extra.motivoCortesia; v.autorizadoPor = extra.autorizadoPor; }
+  const tabelas = VENDA.registrar(v, online());
+  venda = novaVenda(); selItem = -1; desenhar(); avisarMudanca(...tabelas);
+  setTimeout(() => mostrarCupom(v, troco), 0);
+}
+
+/* ---------- Cupom (DANFE NFC-e), reimpressão e cancelamento ---------- */
+function mostrarCupom(v, troco) {
+  const min = VENDA.minutosParaCancelar(v);
+  janela(`${rotulo(v)}${troco ? ` · troco ${reais(troco)}` : ''}`, VENDA.cupomHTML(v) + `<div class="form-nota" style="text-align:center">${!VENDA.valida(v) ? `Cancelada em ${v.canceladaEm.replace('T', ' ')} · ${esc(v.motivoCancel || '')}`
+    : !v.nota ? `${esc(VENDA.TIPOS[VENDA.tipo(v)].nome)}: sem NFC-e. <a href="#" id="lnkCancelar">Cancelar este lançamento</a>`
+    : v.nota.status === 'contingencia' ? 'A nota sobe para a SEFAZ quando a internet voltar. Só depois dá para cancelar.'
+    : min ? `Ainda dá para cancelar por ${min} min. <a href="#" id="lnkCancelar">Cancelar esta venda</a>` : 'Prazo de cancelamento encerrado.'}</div>`, 'Imprimir', () => {
+    const w = window.open('', '_blank', 'width=420,height=700'); if (!w) return 'O navegador bloqueou a janela de impressão.';
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>${rotulo(v)}</title><link rel="stylesheet" href="../assets/css/estilo.css?v=11"><body style="background:#fff;padding:8px">${VENDA.cupomHTML(v)}<script>setTimeout(()=>print(),300)<\/script>`); w.document.close();
+  }, w => { w.querySelector('.janela-rodape .btn[data-fechar]').textContent = 'Fechar'; const l = w.querySelector('#lnkCancelar'); if (l) l.onclick = e => { e.preventDefault(); w.remove(); cancelarVenda(v); }; });
+}
+function cancelarVenda(v) {
+  const t = VENDA.tipo(v);
+  janela(`Cancelar ${rotulo(v)}`, `<p>${reais(VENDA.total(v))} · ${v.hora} · ${esc(v.itens.map(i => i.nome).join(', '))}</p>
+    <div class="form-grade"><label class="c12">Justificativa (mínimo 15 letras${v.nota ? ', vai para a SEFAZ' : ''})<input name="m" class="campo" maxlength="255"></label></div>
+    <div class="form-nota">${v.nota ? 'Cancela a nota, devolve' : 'Devolve'} o estoque${t === 'convenio' ? ', tira do consumo do convênio' : t === 'funcionario' ? ', tira o desconto da folha' : ''} e sai do caixa.${t === 'venda' ? ' Devolva o dinheiro ou estorne o cartão na maquininha.' : ''}</div>`, 'Cancelar', f => {
+    const erro = VENDA.cancelar(v, f.m.value); if (erro) { desenhar(); return erro; }
+    desenhar(); });
+}
+$('ultimas').onclick = e => { const a = e.target.closest('[data-venda]'); if (!a) return; e.preventDefault(); mostrarCupom(VENDAS.find(v => v.id === a.dataset.venda)); };
+
+/* ---------- Sangria e suprimento ---------- */
+function movimento(tipo) {
+  const cx = caixa(); if (!cx) return; const r0 = VENDA.resumoCaixa(cx);
+  janela(tipo === 'sangria' ? 'Sangria (retirada da gaveta)' : 'Suprimento (reforço de troco)', `<div class="form-grade"><label class="c6">Valor (R$)<input name="v" class="campo" inputmode="decimal"></label>
+    <label class="c6">Responsável<input name="por" class="campo" value="${esc(cx.operador)}"></label><label class="c12">Motivo<input name="m" class="campo" value="${tipo === 'sangria' ? 'Excesso de dinheiro · cofre' : 'Reforço de troco'}"></label></div>
+    <div class="form-nota">Dinheiro na gaveta agora: <b>${reais(r0.dinheiroGaveta)}</b>. ${tipo === 'sangria' ? 'Guarde o comprovante junto com o dinheiro no cofre.' : ''}</div>`, 'Registrar', f => {
+    const val = num(f.v.value); if (!(val > 0)) return 'Informe o valor.';
+    const c = caixa(); if (!c || c.id !== cx.id) { desenhar(); return 'O caixa mudou em outra tela. Nada foi feito.'; }
+    if (tipo === 'sangria' && val > VENDA.resumoCaixa(c).dinheiroGaveta) return `Maior que o dinheiro da gaveta (${reais(VENDA.resumoCaixa(c).dinheiroGaveta)}).`;
+    c.movimentos.push({ tipo, valor: VENDA.r2(val), motivo: f.m.value.trim(), por: f.por.value.trim(), hora: new Date().toTimeString().slice(0, 5) });
+    desenhar(); avisarMudanca('caixas'); });
+}
+$('btnSangria').onclick = () => movimento('sangria');
+$('btnSuprimento').onclick = () => movimento('suprimento');
+$('btnFechar').onclick = () => abrirTela('fechamento_cx');
+$('lnkVendas').onclick = e => { e.preventDefault(); abrirTela('vendas_dia'); };
+
+/* ---------- Internet / contingência ---------- */
+function transmitirPendentes() { const ps = VENDA.pendentes(v => v.unidade === loja); if (!ps.length || !online()) return; ps.forEach(VENDA.transmitir); desenhar(); avisarMudanca('vendas'); }
+$('btnRede').onclick = () => { semInternet = !semInternet; desenhar(); if (online()) transmitirPendentes(); };
+window.addEventListener('online', () => { desenhar(); transmitirPendentes(); });
+window.addEventListener('offline', desenhar);
+$('aviso').onclick = e => { if (e.target.id === 'btnTransmitir') transmitirPendentes(); };
+
+/* ---------- Atalhos ---------- */
+function atalhos() {
+  janela('Atalhos do caixa', `<table class="tabela"><tbody>${[['F2', 'Comanda (número do cartão da balança)'], ['F3', 'Buscar produto'], ['F4', 'Ler a balança'], ['Enter', 'Lançar a comanda ou o item'],
+    ['F6', 'CPF na nota'], ['F7', 'Convênio (empresa): sem NFC-e, fatura no fechamento'], ['F8', 'Desconto'], ['F9', 'Cancelar item (o selecionado ou o último)'], ['F10', 'Receber e emitir NFC-e (ou lançar no convênio)'],
+    ['F11', 'Consumo de funcionário (desconto na folha)'], ['F12', 'Cancelar a venda em andamento'],
+    ['1 a 5', 'Na tela de receber: Dinheiro, Pix, Débito, Crédito, Vale-refeição (com o cursor no valor: Alt + número)'], ['Esc', 'Fechar a janela']].map(([k, t]) => `<tr><td><kbd>${k}</kbd></td><td>${t}</td></tr>`).join('')}</tbody></table>`, 'Entendi', () => {});
+}
+$('btnAtalhos').onclick = atalhos;
+$('btnCpf').onclick = pedirCpf; $('btnPj').onclick = pedirPj; $('btnDesc').onclick = pedirDesconto; $('btnTiraItem').onclick = () => tirarItem();
+$('btnLimpar').onclick = limparVenda; $('btnReceber').onclick = receber; $('btnFunc').onclick = lancarFuncionario; $('btnCortesia').onclick = lancarCortesia;
+document.addEventListener('keydown', e => {
+  if (!/^F\d+$/.test(e.key)) return;
+  if (document.querySelector('.veu')) { if (e.key !== 'F5') e.preventDefault(); return; }
+  const acoes = { F1: atalhos, F2: () => $('inComanda').focus(), F3: () => $('inProd').focus(), F4: () => $('btnBalanca').click(), F6: pedirCpf, F7: pedirPj, F8: pedirDesconto, F9: () => tirarItem(), F10: receber, F11: lancarFuncionario, F12: limparVenda };
+  if (!acoes[e.key] || !caixa() && e.key !== 'F1') return;
+  e.preventDefault(); acoes[e.key]();
+});
+
+$('selLoja').onchange = () => { if (venda.itens.length) { $('selLoja').value = loja; return erroEntrada('Termine ou cancele a venda em andamento antes de trocar de loja.'); } loja = $('selLoja').value; $('inFundo').value = ''; desenhar(); };
+$('selPdv').onchange = () => { if (venda.itens.length) { $('selPdv').value = pdv; return erroEntrada('Termine ou cancele a venda em andamento antes de trocar de PDV.'); } pdv = +$('selPdv').value; $('inFundo').value = ''; desenhar(); };
+aoTrocarUnidade(un => { if (LOJAS_PDV.includes(un) && !venda.itens.length) { loja = un; desenhar(); } });
+
+// Preço mudou no Cardápio com a venda aberta: atualiza e avisa (e confere de novo ao receber)
+vigiarDados(['vendas', 'caixas', 'comandas', 'taxas_contrato', 'produtos', 'clientes_pj', 'consumos_pj', 'colaboradores', 'lancamentos', 'fechamentos_folha'], () => {
+  const mud = venda.itens.filter(i => precoAgora(i.prod) !== undefined && precoAgora(i.prod) !== i.preco);
+  if (mud.length) { avisoPreco = `Preço atualizado pelo Cardápio: ${mud.map(i => `${esc(i.nome)} ${reais(i.preco)} → ${reais(precoAgora(i.prod))}`).join(' · ')}.`; mud.forEach(i => i.preco = precoAgora(i.prod)); }
+  desenhar();
+});
+desenhar();
+if (caixa()) $('inComanda').focus();
+</script>
+</body>
+</html>

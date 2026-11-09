@@ -12,13 +12,16 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
 - `assets/js/menu.js`: mapa do menu (`MENU`) e das unidades (`UNIDADES`). Tela nova = preencher `arquivo`.
 - `assets/js/config.js`: endereço e chave publishable do Supabase. Sem chave → modo demonstração.
 - `assets/js/tela.js`: ajudas das telas (formatos BR, unidade escolhida, abrir outra tela).
+- `assets/js/folha.js` (conta da folha) e `assets/js/vendas.js` (conta das vendas: total, NFC-e, caixa, indicadores): cada conta num lugar só.
 - Banco: Supabase (projeto `sayplpvhnoeytfnkbvpm`, São Paulo). Migrações em `supabase/migrations/`,
   aplicadas pelo GitHub Actions no merge (segredos SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_ID, SUPABASE_DB_PASSWORD).
 
 ## Regras que não se quebram
 - Nunca chave secreta (service_role / sb_secret) no repositório: o repositório é público.
 - Nenhum dado pessoal ou real no repositório.
-- Toda venda gera NFC-e no fechamento. Não existe fechamento sem nota.
+- Toda venda ao consumidor gera NFC-e no fechamento, pelo botão "Emitir NFC-e" do operador. Não existe venda ao consumidor sem nota.
+  Não são venda ao consumidor (sem NFC-e, com documento próprio): convênio PJ (NF-e + boleto no fechamento do período),
+  consumo de funcionário (desconto na folha, evento 110) e cortesia/degustação (alerta para a Fernanda no fechamento do caixa).
 - Toda tabela nova: RLS ligado e políticas na mesma migração.
 - Nunca push direto na `main`: ramo próprio + pacote; o Alexandre faz o merge.
 

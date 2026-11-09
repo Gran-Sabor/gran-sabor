@@ -6,11 +6,11 @@
 const MENU = [
   { id: 'inicio', nome: 'Início', icone: 'inicio', arquivo: 'pages/inicio.html' },
   { grupo: 'Vendas', icone: 'vendas', itens: [
-    { id: 'caixa',          nome: 'Frente de caixa (PDV)' },
+    { id: 'caixa',          nome: 'Frente de caixa (PDV)', arquivo: 'pages/pdv.html' },
     { id: 'delivery',       nome: 'Delivery' },
     { id: 'faturamento_pj', nome: 'Faturamento empresas (PJ)', arquivo: 'pages/fin-receber.html' },
-    { id: 'vendas_dia',     nome: 'Vendas do dia' },
-    { id: 'fechamento_cx',  nome: 'Abertura e fechamento de caixa' }
+    { id: 'vendas_dia',     nome: 'Vendas do dia', arquivo: 'pages/vendas-dia.html' },
+    { id: 'fechamento_cx',  nome: 'Abertura e fechamento de caixa', arquivo: 'pages/vendas-caixa.html' }
   ]},
   { grupo: 'Cozinha e produção', icone: 'cozinha', itens: [
     { id: 'ficha_tecnica',  nome: 'Ficha técnica', arquivo: 'pages/coz-ficha.html' },
@@ -34,6 +34,7 @@ const MENU = [
     { id: 'receber',        nome: 'Contas a receber', arquivo: 'pages/fin-receber.html' },
     { id: 'fluxo',          nome: 'Fluxo de caixa' },
     { id: 'conciliacao',    nome: 'Extratos e conciliação' },
+    { id: 'conciliacao_cartoes', nome: 'Conciliação de cartões', arquivo: 'pages/fin-cartoes.html' },
     { id: 'dividas',        nome: 'Dívidas e empréstimos' }
   ]},
   { grupo: 'Fiscal', icone: 'fiscal', itens: [

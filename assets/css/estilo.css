@@ -292,3 +292,47 @@ select.campo-mini { min-width: 190px; }
   .tabela.holerite .cod { display: none; }
   .tabela.holerite td.num { white-space: nowrap; }
 }
+
+/* ---------- PDV (frente de caixa) ---------- */
+kbd { display: inline-block; min-width: 18px; padding: 0 4px; border: 1px solid var(--borda-forte); border-bottom-width: 2px; border-radius: 4px;
+  font: 600 10.5px/16px Inter, system-ui, sans-serif; color: var(--texto-2); background: var(--superficie); text-align: center; }
+.pdv { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 10px; align-items: start; }
+.pdv-entrada { display: grid; grid-template-columns: 100px minmax(0, 1fr) 120px auto auto; gap: 6px; padding: 10px; }
+.pdv-entrada label { font-size: 11.5px; color: var(--texto-2); display: flex; flex-direction: column; gap: 2px; }
+.pdv-entrada .btn { height: 34px; align-self: end; }
+.pdv-prods { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; padding: 0 10px 10px; }
+.pdv-prod { text-align: left; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie-2); padding: 6px 9px; line-height: 1.3; }
+.pdv-prod:hover { border-color: var(--marca); background: var(--marca-suave); }
+.pdv-prod b { display: block; font-weight: 600; font-size: 12.5px; }
+.pdv-prod span { font-size: 12px; color: var(--texto-2); font-variant-numeric: tabular-nums; }
+.pdv-itens td.num, .pdv-itens th.num { white-space: nowrap; }
+.pdv-itens tr.sel td { background: var(--marca-suave); }
+.pdv-lado .cartao { margin-bottom: 10px; }
+.pdv-total { padding: 12px 14px; border-bottom: 1px solid var(--borda); }
+.pdv-total .rot { font-size: 12px; color: var(--texto-2); }
+.pdv-total .valor { font-size: 34px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.pdv-linha { display: flex; justify-content: space-between; gap: 8px; padding: 5px 14px; font-size: 12.5px; border-bottom: 1px solid var(--borda); }
+.pdv-linha:last-child { border-bottom: 0; }
+.pdv-botoes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; }
+.pdv-botoes .btn { justify-content: space-between; height: 34px; }
+.pdv-botoes .btn-pri { grid-column: span 2; height: 44px; font-size: 15px; font-weight: 600; }
+.pdv-botoes .btn-pri kbd { background: rgba(255,255,255,.15); color: #fff; border-color: rgba(255,255,255,.4); }
+.pdv-pag { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+.pdv-pag .btn { justify-content: space-between; height: 36px; }
+.pdv-pag .btn.ativa { border-color: var(--marca); background: var(--marca-suave); color: var(--marca-texto); font-weight: 600; }
+.pdv-restante { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 10px; border-radius: var(--raio); background: var(--superficie-2); border: 1px solid var(--borda); margin-bottom: 10px; }
+.pdv-restante b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.cupom { font: 12px/1.45 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; background: #fff; border: 1px dashed var(--borda-forte); padding: 12px; max-width: 360px; margin: 0 auto; }
+.cupom .c { text-align: center; } .cupom hr { border: 0; border-top: 1px dashed var(--borda-forte); margin: 6px 0; }
+.cupom .l { display: flex; justify-content: space-between; gap: 8px; }
+.cupom .qr { width: 96px; height: 96px; margin: 6px auto; border: 1px solid var(--texto); display: grid; place-items: center; font-size: 10px; color: var(--texto-2);
+  background: repeating-linear-gradient(45deg, #fff 0 4px, #eee 4px 8px); }
+.cupom .aviso-cont { border: 1px solid var(--perigo); color: var(--perigo); text-align: center; padding: 3px; margin: 4px 0; font-weight: 700; }
+@media (max-width: 860px) {
+  .pdv { grid-template-columns: minmax(0, 1fr); }
+  .pdv-entrada { grid-template-columns: 1fr 1fr; } .pdv-entrada label:nth-child(2) { grid-column: span 2; }
+  .pdv-pag { grid-template-columns: 1fr 1fr; }
+  .pdv-total .valor { font-size: 28px; }
+}
+.tela-cab .dir select.campo { width: auto; min-width: 0; height: 30px; }
+@media (max-width: 600px) { .so-largo { display: none !important; } }

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Contas a receber</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/estilo.css?v=9">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
 </head>
 <body>
 <div class="tela">
@@ -27,10 +27,10 @@
     <div class="rolagem"><table class="tabela" id="tabTit"></table></div></section>
 </div>
 
-<script src="../assets/js/menu.js?v=6"></script>
+<script src="../assets/js/menu.js?v=8"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=4"></script>
+<script src="../assets/js/exemplo.js?v=7"></script>
 <script src="../assets/js/cadastro.js?v=3"></script>
 <script>
 const hoje = hojeISO();
@@ -97,7 +97,7 @@ function desenhar() {
   $('contagem').textContent = `${tit.length} título(s) · ${reais(soma(tit))}`;
   $('tabTit').innerHTML = `<thead><tr><th>Vencimento</th><th>Pagador</th><th>Origem</th><th>Empresa · unidade</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead><tbody>${
     tit.map(t => `<tr data-t="${t.id}"><td class="mono">${dataBR(t.vencimento + 'T12:00')}</td><td><b>${esc(t.pagador)}</b>${t.ref ? `<small class="sub"> ${esc(t.ref)}</small>` : ''}</td><td>${esc(t.origem)}</td>
-      <td>${etqEmpresa(t.empresa)} <small class="sub">${esc(nomeUnidade(t.unidade))}</small></td><td class="num">${reais(t.valor)}</td>
+      <td>${etqEmpresa(t.empresa)} <small class="sub">${esc(nomeUnidade(t.unidade))}</small></td><td class="num">${reais(t.valor)}${t.acerto ? `<br><small class="desce" title="${esc(t.acerto.motivo)}">acerto: era ${reais(t.acerto.de)}</small>` : ''}</td>
       <td>${t.recebidoEm ? '<span class="etiqueta completa">recebido</span>' : t.vencimento < hoje ? '<span class="etiqueta perigo">vencido</span>' : t.vencimento === hoje ? '<span class="etiqueta pendente">hoje</span>' : '<span class="etiqueta">a receber</span>'}</td>
       <td>${t.recebidoEm ? `<small class="sub">${dataBR(t.recebidoEm + 'T12:00')}</small>` : '<button type="button" class="btn btn-mini" data-receber>Receber</button>'}</td></tr>`).join('')
     || '<tr><td colspan="7" class="vazio">Nenhum título com esses filtros.</td></tr>'}</tbody>`;
@@ -106,10 +106,10 @@ function desenhar() {
 /* ---------- Ações ---------- */
 function verConsumo(c) {
   const ks = consumos.filter(k => k.cliente === c.id).sort((a, b) => a.data.localeCompare(b.data));
-  janela(`${c.nome} · consumo em aberto`, `<div class="rolagem"><table class="tabela"><thead><tr><th>Data</th><th>NFC-e</th><th class="num">Refeições</th><th class="num">Valor</th></tr></thead><tbody>${
-    ks.map(k => `<tr><td>${dataBR(k.data + 'T12:00')}</td><td class="mono">${k.nfce}</td><td class="num">${k.refeicoes}</td><td class="num">${reais(k.valor)}</td></tr>`).join('')}</tbody>
+  janela(`${c.nome} · consumo em aberto`, `<div class="rolagem"><table class="tabela"><thead><tr><th>Data</th><th>Comanda</th><th class="num">Refeições</th><th class="num">Valor</th></tr></thead><tbody>${
+    ks.map(k => `<tr><td>${dataBR(k.data + 'T12:00')}</td><td class="mono">${esc(k.comanda || k.nfce || '—')}</td><td class="num">${k.refeicoes}</td><td class="num">${reais(k.valor)}</td></tr>`).join('')}</tbody>
     <tfoot><tr><td>Total</td><td></td><td class="num">${ks.reduce((a, k) => a + k.refeicoes, 0)}</td><td class="num">${reais(ks.reduce((a, k) => a + k.valor, 0))}</td></tr></tfoot></table></div>
-    <div class="form-nota">Cada refeição sai com NFC-e em nome do convênio (CNPJ) na hora da venda.</div>`, 'Fechar', () => {});
+    <div class="form-nota">Convênio não emite NFC-e na comanda: a NF-e do período sai no fechamento, junto com o boleto (sem faturar em dobro).</div>`, 'Fechar', () => {});
 }
 function fecharPeriodo(c) {
   const ks = consumos.filter(k => k.cliente === c.id);
@@ -131,8 +131,8 @@ function avancar(f) {
   const conferir = fazer => fm => { const m = mudouDesde(foto, fechamentos.find(x => x.id === f.id), ['valor', 'etapa', 'cliente'], 'Este fechamento');
     if (m) { desenhar(); return m; } fazer(fm); desenhar(); avisarMudanca('fechamentos_pj'); };
   if (f.etapa === 'fechado') janela('Emitir nota do fechamento', `<p>${esc(c.nome)} · ${fmtDoc(c.cnpj)} · <b>${reais(f.valor)}</b></p>
-      <div class="form-nota">Modelo a confirmar com o contador: (a) as NFC-e de cada refeição já valem e o fechamento sai como fatura listando os cupons; ou (b) NF-e única do período.
-      O sistema terá as duas opções; nunca fecha sem nota.</div>`, 'Emitir nota (simulação)', conferir(() => { f.etapa = 'nota'; f.nota = 'NF-e ' + proxNota++; }));
+      <div class="form-nota">As refeições do convênio não tiveram NFC-e na comanda: esta NF-e única do período é o documento fiscal delas
+      (o contador confirma CFOP e tributação). Nunca fecha sem nota.</div>`, 'Emitir nota (simulação)', conferir(() => { f.etapa = 'nota'; f.nota = 'NF-e ' + proxNota++; }));
   else if (f.etapa === 'nota') janela('Gerar boleto', `<div class="form-grade"><label class="c4">Vencimento<input name="venc" type="date" class="campo" value="${diasDaqui(c.prazo)}"></label>
       <label class="c4">Valor<input class="campo" value="${numero(f.valor, 2)}" readonly></label><label class="c4">Banco<input class="campo" value="Banco · ${esc(nomeEmpresa(f.empresa))}" readonly></label></div>
       <div class="form-nota">O boleto sai pela conta da mesma empresa que vendeu. Envio por e-mail ao convênio junto com a nota e o extrato do consumo.</div>`,
@@ -154,7 +154,7 @@ $('tabTit').addEventListener('click', e => { if (!e.target.closest('[data-recebe
 $('btnExportar').onclick = () => aba === 'titulos'
   ? exportarCSV('titulos-a-receber', ['Vencimento', 'Pagador', 'Origem', 'Empresa', 'Unidade', 'Valor', 'Recebido em'], titulos().map(t => [dataBR(t.vencimento + 'T12:00'), t.pagador, t.origem, nomeEmpresa(t.empresa), nomeUnidade(t.unidade), numero(t.valor, 2), t.recebidoEm ? dataBR(t.recebidoEm + 'T12:00') : '']))
   : exportarCSV('fechamentos-pj', ['Cliente', 'CNPJ', 'Empresa', 'Período', 'Refeições', 'Valor', 'Etapa', 'Nota', 'Vencimento'], fechamentos.filter(f => noFiltro(filtro, f)).map(f => [cli(f.cliente).nome, fmtDoc(cli(f.cliente).cnpj), nomeEmpresa(f.empresa), f.periodo, f.refeicoes, numero(f.valor, 2), NOME_ETAPA[f.etapa], f.nota, f.vencimento ? dataBR(f.vencimento + 'T12:00') : '']));
-vigiarDados(['consumos_pj', 'fechamentos_pj', 'receber_outros', 'clientes_pj'], desenhar);
+vigiarDados(['consumos_pj', 'fechamentos_pj', 'receber_outros', 'clientes_pj', 'vendas'], desenhar);
 desenhar();
 </script>
 </body>

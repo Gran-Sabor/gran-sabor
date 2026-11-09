@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vendas do dia</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Vendas do dia</h1><span class="sub">Cupons (NFC-e), convênio, funcionário e cortesias · vem direto do PDV</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn btn-pri" id="btnPdv">Ir para o caixa (PDV)</button></div></div>
+  <div id="filtros"></div>
+  <div id="aviso"></div>
+  <section class="kpis" id="kpis"></section>
+  <div class="grade-2">
+    <section class="cartao"><div class="cartao-cab"><h2>Lançamentos</h2>
+      <select class="campo campo-mini" id="selSit" aria-label="Situação" style="min-width:0;width:auto;margin-left:8px"><option value="">Todas as situações</option><option value="autorizada">Autorizadas</option><option value="contingencia">Em contingência</option><option value="convenio">Convênio (NF-e no fechamento)</option><option value="funcionario">Consumo de funcionário</option><option value="cortesia">Cortesia / degustação</option><option value="cancelada">Canceladas</option></select>
+      <span class="dir sub" id="contagem"></span></div>
+      <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+    <div>
+      <section class="cartao"><div class="cartao-cab"><h2>Por empresa e loja</h2></div><div class="rolagem"><table class="tabela" id="tabUn"></table></div></section>
+      <section class="cartao"><div class="cartao-cab"><h2>Por forma de recebimento</h2></div><div class="rolagem"><table class="tabela" id="tabForma"></table></div></section>
+      <section class="cartao"><div class="cartao-cab"><h2>Por produto</h2></div><div class="rolagem"><table class="tabela" id="tabProd"></table></div></section>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/menu.js?v=8"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=7"></script>
+<script src="../assets/js/vendas.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=3"></script>
+<script>
+/* Tudo calculado na hora a partir das vendas do PDV (VENDA.indicadores): nada guardado aqui. */
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, periodo: true, placeholder: 'NFC-e, valor, produto, operador… (atalho: /)' });
+filtro.de = filtro.ate = hojeISO(); $('filtros').querySelector('[data-f=de]').value = filtro.de; $('filtros').querySelector('[data-f=ate]').value = filtro.ate;
+const MAX = 300;
+const statusDe = v => !VENDA.valida(v) ? 'cancelada' : v.nota ? v.nota.status : VENDA.tipo(v);
+const docDe = v => v.nota ? `${v.nota.numero}<small class="sub"> s${v.nota.serie}</small>` : '—';
+const rotulo = v => v.nota ? `NFC-e ${v.nota.numero}` : VENDA.TIPOS[VENDA.tipo(v)].nome;
+const doPeriodo = () => VENDAS.filter(v => noFiltro(filtro, v) && (!filtro.de || v.data >= filtro.de) && (!filtro.ate || v.data <= filtro.ate)
+  && casaBusca([v.nota ? v.nota.numero : VENDA.TIPOS[VENDA.tipo(v)].nome, numero(VENDA.total(v), 2), v.operador, nomeUnidade(v.unidade), ...v.itens.map(i => i.nome), ...v.pagamentos.map(p => VENDA.forma(p.forma).nome)].join(' '), filtro.busca));
+const selo = v => ({ autorizada: '<span class="etiqueta completa">autorizada</span>', contingencia: '<span class="etiqueta perigo">contingência</span>', cancelada: '<span class="etiqueta">cancelada</span>',
+  convenio: '<span class="etiqueta">convênio</span>', funcionario: '<span class="etiqueta">funcionário</span>', cortesia: '<span class="etiqueta pendente">cortesia</span>' })[statusDe(v)];
+
+function desenhar() {
+  const vs = doPeriodo(), ok = vs.filter(VENDA.valida), ind = VENDA.indicadores(vs);
+  const pend = vs.filter(v => VENDA.valida(v) && v.nota && v.nota.status === 'contingencia');
+  $('aviso').innerHTML = pend.length ? `<div class="aviso perigo">${pend.length} NFC-e em contingência: ${pend.map(v => `${nomeUnidade(v.unidade)} nº ${v.nota.numero} (${VENDA.horasContingencia(v) > 0 ? 'faltam ' + Math.floor(VENDA.horasContingencia(v)) + ' h' : '<b>prazo vencido</b>'})`).join(' · ')}.
+    Sobem sozinhas quando o PDV da loja voltar a ter internet. <button type="button" class="btn btn-mini" id="btnTransmitir">Transmitir agora</button></div>` : '';
+  const desc = ok.reduce((a, v) => a + (v.desconto || 0), 0);
+  $('kpis').innerHTML = [
+    ['Faturamento', reais(ind.fat), `${ind.cupons} lançamentos · ticket ${reais(ind.ticket)}`],
+    ['Kg vendidos', numero(ind.kg, 1) + ' kg', `preço médio ${reais(ind.precoKg)}/kg`],
+    ['CMV', pct(ind.cmv), `custo ${reais(ind.custo)} · kg ${reais(ind.cmvKg)}`],
+    ['Descontos', reais(desc), `${ok.filter(v => v.desconto).length} cupom(ns)`],
+    ['Cortesias', `<span class="${ind.cortesias ? 'desce' : ''}">${reais(ind.cortesia)}</span>`, `${ind.cortesias} lançamento(s) · custo ${reais(ind.custoCortesia)}`],
+    ['Canceladas', vs.length - ok.length, reais(vs.filter(v => !VENDA.valida(v)).reduce((a, v) => a + VENDA.total(v), 0))]
+  ].map(([t, v, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${v}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+
+  const lista = vs.filter(v => !$('selSit').value || statusDe(v) === $('selSit').value).slice().reverse();
+  $('contagem').textContent = `${lista.length} lançamento(s)${lista.length > MAX ? ` · mostrando ${MAX} (exporte para ver todos)` : ''}`;
+  $('tab').innerHTML = `<thead><tr><th>NFC-e</th><th class="so-largo">Data</th><th>Loja</th><th class="so-largo">Itens</th><th class="so-largo">Recebimento</th><th class="num">Total</th><th>Situação</th></tr></thead><tbody>${
+    lista.slice(0, MAX).map(v => `<tr data-id="${v.id}" tabindex="0"><td class="mono">${docDe(v)}</td><td class="so-largo">${dataBR(v.data + 'T12:00').slice(0, 5)} ${v.hora}</td><td>${esc(nomeUnidade(v.unidade))}<small class="sub so-celular"> ${v.hora}</small></td>
+      <td class="so-largo">${esc(v.itens.map(i => i.un === 'kg' ? `${i.nome.split(' ')[0]} ${numero(i.qtd, 3)} kg` : i.nome.split(' ')[0]).join(', '))}</td>
+      <td class="so-largo">${v.pagamentos.length ? v.pagamentos.map(p => VENDA.forma(p.forma).nome).join(' + ') : VENDA.TIPOS[VENDA.tipo(v)].nome}${v.colab ? ` <small class="sub">${esc(((COLABORADORES.find(c => c.id === v.colab) || {}).nome || '').split(' ')[0])}</small>` : ''}${v.pj ? ` <small class="sub">${esc((CLIENTES_PJ.find(c => c.id === v.pj) || {}).nome || '')}</small>` : ''}</td>
+      <td class="num"><b>${reais(VENDA.total(v))}</b></td><td>${selo(v)}</td></tr>`).join('') || '<tr><td colspan="7" class="vazio">Nenhuma venda com esses filtros.</td></tr>'}</tbody>`;
+
+  // Por empresa e loja (as 3 empresas sempre separadas)
+  const uns = [...new Set(ok.map(v => v.unidade))].sort();
+  $('tabUn').innerHTML = `<thead><tr><th>Loja</th><th class="num">Cupons</th><th class="num">Kg</th><th class="num">Faturamento</th></tr></thead><tbody>${
+    EMPRESAS.map(e => { const us = uns.filter(u => UNIDADE_EMPRESA[u] === e.id); if (!us.length) return ''; const ie = VENDA.indicadores(ok.filter(v => v.empresa === e.id));
+      return `<tr class="grupo"><td>${esc(e.nome)}</td><td class="num">${ie.cupons}</td><td class="num">${numero(ie.kg, 1)}</td><td class="num">${reais(ie.fat)}</td></tr>` + us.map(u => { const iu = VENDA.indicadores(ok.filter(v => v.unidade === u));
+        return `<tr><td>${esc(nomeUnidade(u))}</td><td class="num">${iu.cupons}</td><td class="num">${numero(iu.kg, 1)}</td><td class="num">${reais(iu.fat)}</td></tr>`; }).join(''); }).join('') || '<tr><td colspan="4" class="vazio">—</td></tr>'}</tbody>`;
+
+  const porForma = {}; ok.forEach(v => { v.pagamentos.forEach(p => porForma[p.forma] = (porForma[p.forma] || 0) + p.valor); if (v.troco) porForma.din -= v.troco;
+    if (VENDA.tipo(v) === 'funcionario') porForma.func = (porForma.func || 0) + VENDA.total(v); });
+  const linhasForma = [...VENDA.FORMAS, { id: 'func', nome: 'Desconto em folha (funcionário)' }];
+  $('tabForma').innerHTML = `<thead><tr><th>Forma</th><th class="num">Valor</th><th class="num">%</th></tr></thead><tbody>${linhasForma.filter(f => porForma[f.id]).map(f =>
+    `<tr><td>${f.nome}</td><td class="num">${reais(porForma[f.id])}</td><td class="num">${pct(ind.fat ? porForma[f.id] / ind.fat * 100 : 0)}</td></tr>`).join('') || '<tr><td colspan="3" class="vazio">—</td></tr>'}</tbody>
+    ${ind.cortesia ? `<tfoot><tr><td>Cortesias (sem cobrança, fora do faturamento)</td><td class="num">${reais(ind.cortesia)}</td><td></td></tr></tfoot>` : ''}`;
+
+  const porProd = {}; ok.forEach(v => v.itens.forEach(i => { const x = porProd[i.prod] ||= { nome: i.nome, un: i.un, qtd: 0, valor: 0 }; x.qtd += i.qtd; x.valor += i.qtd * i.preco; }));
+  $('tabProd').innerHTML = `<thead><tr><th>Produto</th><th class="num">Qtd.</th><th class="num">Valor</th></tr></thead><tbody>${Object.values(porProd).sort((a, b) => b.valor - a.valor).map(x =>
+    `<tr><td>${esc(x.nome)}</td><td class="num">${x.un === 'kg' ? numero(x.qtd, 1) + ' kg' : numero(x.qtd)}</td><td class="num">${reais(x.valor)}</td></tr>`).join('') || '<tr><td colspan="3" class="vazio">—</td></tr>'}</tbody>`;
+}
+
+function abrirCupom(v) {
+  const min = VENDA.minutosParaCancelar(v), cx = CAIXAS.find(c => c.id === v.caixa);
+  const pode = VENDA.valida(v) && (v.nota ? min && v.nota.status === 'autorizada' : !(cx && cx.fechadoEm));
+  janela(`${rotulo(v)} · ${nomeUnidade(v.unidade)}`, VENDA.cupomHTML(v) + `<div class="form-nota" style="text-align:center">${!VENDA.valida(v) ? `Cancelada em ${v.canceladaEm.replace('T', ' ')} · ${esc(v.motivoCancel || '')}`
+    : !v.nota ? (pode ? 'Sem NFC-e. Dá para cancelar enquanto o caixa estiver aberto.' : 'Sem NFC-e. O caixa já foi fechado.')
+    : v.nota.status === 'contingencia' ? 'Em contingência: sobe quando o PDV tiver internet.' : min ? `Ainda dá para cancelar por ${min} min.` : 'Prazo de cancelamento encerrado.'}</div>
+    ${pode ? `<div class="form-grade"><label class="c12">Justificativa para cancelar (mínimo 15 letras)<input name="m" class="campo"></label></div>` : ''}`,
+    pode ? (v.nota ? 'Cancelar NFC-e' : 'Cancelar lançamento') : 'Fechar', f => {
+      if (!f.m) return;
+      const erro = VENDA.cancelar(v, f.m.value); desenhar(); return erro || undefined; },
+    w => { if (!pode) w.querySelector('.janela-rodape .btn[data-fechar]').classList.add('oculto'); else w.querySelector('.janela-rodape .btn[data-fechar]').textContent = 'Fechar'; });
+}
+$('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) abrirCupom(VENDAS.find(v => v.id === tr.dataset.id)); };
+$('tab').onkeydown = e => { if (e.key === 'Enter') $('tab').onclick(e); };
+$('selSit').onchange = desenhar;
+$('aviso').onclick = e => { if (e.target.id !== 'btnTransmitir') return; doPeriodo().filter(v => VENDA.valida(v) && v.nota && v.nota.status === 'contingencia').forEach(VENDA.transmitir); desenhar(); avisarMudanca('vendas'); };
+$('btnPdv').onclick = () => abrirTela('caixa');
+$('btnExportar').onclick = () => exportarCSV(`vendas-${filtro.de}-a-${filtro.ate}`, ['Empresa', 'Unidade', 'PDV', 'Data', 'Hora', 'Tipo', 'NFC-e', 'Série', 'Chave', 'Situação', 'Itens', 'Desconto', 'Total', 'Recebimento', 'Convênio / funcionário / motivo', 'Operador'],
+  doPeriodo().map(v => [nomeEmpresa(v.empresa), nomeUnidade(v.unidade), v.pdv, dataBR(v.data + 'T12:00'), v.hora, VENDA.TIPOS[VENDA.tipo(v)].nome, v.nota ? v.nota.numero : '', v.nota ? v.nota.serie : '', v.nota ? v.nota.chave : '', statusDe(v),
+    v.itens.map(i => `${i.nome} ${i.un === 'kg' ? numero(i.qtd, 3) + ' kg' : numero(i.qtd)}`).join(' | '), numero(v.desconto || 0, 2), numero(VENDA.total(v), 2),
+    v.pagamentos.map(p => `${VENDA.forma(p.forma).nome} ${numero(p.valor, 2)}`).join(' | '), v.pj ? (CLIENTES_PJ.find(c => c.id === v.pj) || {}).nome : v.colab ? (COLABORADORES.find(c => c.id === v.colab) || {}).nome : v.motivoCortesia || '', v.operador]));
+vigiarDados(['vendas', 'produtos', 'fichas', 'insumos', 'colaboradores'], desenhar);
+desenhar();
+</script>
+</body>
+</html>
