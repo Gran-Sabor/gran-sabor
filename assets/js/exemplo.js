@@ -299,14 +299,30 @@ const IMPOSTO_EMPRESA = { emp1: 6.0, emp2: 6.0, emp3: 4.5 }; // % sobre a venda 
 const TAXA_CARTAO = 2.4;     // % média das maquininhas (exemplo)
 const META_CMV = { Buffet: 35, Marmitex: 35, Bebidas: 50 }; // CMV máximo desejado por grupo (% do preço)
 const metaCMV = p => META_CMV[p.grupo] ?? 35;
-const PRODUTOS_VENDA = dadoComum('PRODUTOS_VENDA', () => [
+// Com o banco ligado, o cardápio real vem das tabelas produtos + produto_precos: a casca lê uma vez,
+// antes de abrir as telas, e todas as abas usam a mesma lista. Os produtos fictícios abaixo só
+// aparecem no modo demonstração (ou se a tabela ainda não foi publicada no banco).
+const PRODUTOS_DO_BANCO = Array.isArray(dadoComum('PRODUTOS_BANCO', () => null));
+// Linha do banco → produto das telas. Preço guardado por loja; precos[empresa] = preço da loja daquela empresa.
+const produtoDoBanco = r => {
+  const precosUn = {}, precos = {};
+  (r.produto_precos || []).forEach(x => { const un = x.unidades?.codigo; if (!un) return; precosUn[un] = Number(x.preco); if (UNIDADE_EMPRESA[un]) precos[UNIDADE_EMPRESA[un]] = Number(x.preco); });
+  return { id: r.id, codigo: r.codigo, nome: r.nome, grupo: r.categoria, un: r.vende_por, perda: 0, comp: [], precos, precosUn,
+    convenio: !!r.convenio, ativo: !!r.ativo, atualizadoEm: r.atualizado_em, doBanco: true };
+};
+// Depois de gravar: troca a lista de todas as abas de uma vez (mesmo objeto, as outras telas veem na hora)
+function trocarProdutosBanco(linhas) {
+  casca().__gsDados.PRODUTOS_BANCO = linhas;
+  PRODUTOS_VENDA.splice(0, PRODUTOS_VENDA.length, ...linhas.map(produtoDoBanco));
+}
+const PRODUTOS_VENDA = dadoComum('PRODUTOS_VENDA', () => PRODUTOS_DO_BANCO ? dadoComum('PRODUTOS_BANCO').map(produtoDoBanco) : ([
   ['p01', 'Buffet livre por kg',      'Buffet',     'kg', 8, [['ficha', 'fc01', .22], ['ficha', 'fc02', .18], ['ficha', 'fc03', .12], ['ficha', 'fc04', .16], ['ficha', 'fc05', .06], ['ficha', 'fc06', .10], ['ficha', 'fc07', .10], ['ficha', 'fc08', .06]], { emp1: 89.90, emp2: 84.90, emp3: 79.90 }],
   ['p02', 'Grelhados por kg',         'Buffet',     'kg', 5, [['ficha', 'fc03', .6], ['ficha', 'fc04', .4]], { emp1: 119.90, emp2: 114.90, emp3: 109.90 }],
   ['p03', 'Marmitex P (500 g)',       'Marmitex',   'un', 0, [['ficha', 'fc01', .14], ['ficha', 'fc02', .1], ['ficha', 'fc04', .14], ['ficha', 'fc06', .05], ['ficha', 'fc07', .05], ['ficha', 'fc08', .02], ['insumo', 'i16', 1]], { emp1: 24.90, emp2: 22.90, emp3: 21.90 }],
   ['p04', 'Marmitex G (800 g)',       'Marmitex',   'un', 0, [['ficha', 'fc01', .22], ['ficha', 'fc02', .16], ['ficha', 'fc03', .12], ['ficha', 'fc04', .12], ['ficha', 'fc06', .06], ['ficha', 'fc07', .08], ['ficha', 'fc08', .04], ['insumo', 'i16', 1]], { emp1: 34.90, emp2: 32.90, emp3: 31.90 }],
   ['p05', 'Refrigerante lata 350 ml', 'Bebidas',    'un', 0, [['insumo', 'i14', 1]], { emp1: 6.00, emp2: 6.00, emp3: 5.50 }],
   ['p06', 'Suco natural (copo 300 ml)','Bebidas',   'un', 0, [['insumo', 'i15', .3]], { emp1: 7.00, emp2: 7.00, emp3: 6.50 }]
-].map(([id, nome, grupo, un, perda, comp, precos]) => ({ id, codigo: id.toUpperCase(), nome, grupo, un, perda, comp: comp.map(([tipo, ref, qtd]) => ({ tipo, ref, qtd })), precos, ativo: true })));
+].map(([id, nome, grupo, un, perda, comp, precos]) => ({ id, codigo: id.toUpperCase(), nome, grupo, un, perda, comp: comp.map(([tipo, ref, qtd]) => ({ tipo, ref, qtd })), precos, ativo: true }))));
 // Custo de 1 unidade vendida (ou 1 kg), já com a perda/sobra do buffet
 const custoProduto = p => p.comp.reduce((a, c) => a + c.qtd * (c.tipo === 'ficha' ? custoFicha(FICHAS.find(f => f.id === c.ref) || { itens: [] }).kg : insumo(c.ref).custo), 0) * (1 + (p.perda || 0) / 100);
 // Margem de contribuição de um preço numa empresa (preço − custo − imposto − cartão)
@@ -407,7 +423,8 @@ const BANDEIRAS_EX = { deb: ['Visa', 'Mastercard', 'Elo'], cre: ['Visa', 'Master
 const CAIXAS = dadoComum('CAIXAS', () => []);
 // Vendas dos últimos 8 dias + o almoço de hoje. Venda ao consumidor sai com NFC-e; ontem, na Loja 1,
 // um consumo de funcionário (folha) e uma degustação (cortesia) para mostrar os outros tipos.
-const VENDAS = dadoComum('VENDAS', () => (() => {
+// Com o cardápio real (banco), não há vendas fictícias: elas eram de produtos que não existem mais.
+const VENDAS = dadoComum('VENDAS', () => PRODUTOS_DO_BANCO ? [] : (() => {
   const r = [], num = {}; let n = 1;
   const formaSorteio = () => { const x = aleat(); return x < .35 ? 'cre' : x < .65 ? 'deb' : x < .87 ? 'pix' : x < .95 ? 'din' : 'vr'; };
   for (let d = -8; d <= 0; d++) {
@@ -480,6 +497,7 @@ const TAXAS_CONTRATO = dadoComum('TAXAS_CONTRATO', () => [
    comandas viram uma venda. As de hoje ficam aqui; as pagas apontam para a venda. */
 const COMANDAS = dadoComum('COMANDAS', () => {
   const r = [], hoje = hojeISO();
+  if (PRODUTOS_DO_BANCO) return r;
   VENDAS.filter(v => v.data === hoje).forEach(v => (v.comandas || []).forEach((num, i) => {
     const [h, m] = v.hora.split(':').map(Number), ab = Math.max(0, h * 60 + m - 18);
     r.push({ id: `cm${v.unidade}${num}${v.id}`, numero: num, unidade: v.unidade, data: hoje, abertaEm: `${String(Math.floor(ab / 60)).padStart(2, '0')}:${String(ab % 60).padStart(2, '0')}`,

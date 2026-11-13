@@ -129,14 +129,19 @@ function janela(titulo, corpo, botao, aoSalvar, depois) {
   v.innerHTML = `<form class="janela larga" role="dialog" aria-modal="true" novalidate><div class="janela-cab"><h2>${esc(titulo)}</h2>
     <button type="button" class="btn btn-ico" data-fechar aria-label="Fechar">${icone('fechar')}</button></div>
     <div class="form">${corpo}<div class="login-msg" id="fMsg" role="alert"></div></div>
-    <div class="janela-rodape"><span class="sub">Exemplo: nada é gravado</span><button type="button" class="btn" data-fechar>Cancelar</button><button type="submit" class="btn btn-pri">${esc(botao)}</button></div></form>`;
+    <div class="janela-rodape"><span class="sub">${esc(janela.nota)}</span><button type="button" class="btn" data-fechar>Cancelar</button><button type="submit" class="btn btn-pri">${esc(botao)}</button></div></form>`;
   const fim = () => { v.remove(); document.removeEventListener('keydown', tecla); };
   const tecla = e => { if (e.key === 'Escape') fim(); };
   v.onclick = e => { if (e.target === v || e.target.closest('[data-fechar]')) fim(); };
-  v.querySelector('form').onsubmit = e => { e.preventDefault(); const erro = aoSalvar(e.target); if (erro) v.querySelector('#fMsg').textContent = erro; else fim(); };
+  // aoSalvar devolve o texto do erro (ou nada); pode ser assíncrona (gravar no banco)
+  v.querySelector('form').onsubmit = async e => {
+    e.preventDefault(); const b = v.querySelector('.btn-pri'); if (b.disabled) return; b.disabled = true;
+    let erro; try { erro = await aoSalvar(e.target); } catch (x) { erro = 'Não foi possível gravar: ' + (x?.message || x) + '. Nada foi alterado; tente de novo.'; }
+    b.disabled = false; if (erro) v.querySelector('#fMsg').textContent = erro; else fim(); };
   document.addEventListener('keydown', tecla); document.body.appendChild(v);
   if (depois) depois(v);
   v.querySelector('input:not([readonly]),select')?.focus();
   return v;
 }
 
+janela.nota = 'Exemplo: nada é gravado';   // telas ligadas ao banco trocam o aviso do rodapé
