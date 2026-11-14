@@ -9,16 +9,20 @@
 <style>
   #tab th.emp { border-left: 1px solid var(--borda); }
   #tab td.emp { border-left: 1px solid var(--borda); }
+  #abas button { white-space: nowrap; }
   @media (max-width: 860px) { #tab .so-largo { display: none; } }
 </style>
 </head>
 <body>
 <div class="tela">
   <div class="tela-cab"><h1>Cardápio e produtos</h1><span class="sub">O que se vende · custo vem da ficha técnica · preço e margem por empresa</span>
-    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+    <div class="dir"><span class="etiqueta exemplo" id="etqExemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn oculto" id="btnImportar" title="Planilha de produtos exportada do PDV (Saipos): .xlsx ou .csv">Importar planilha</button>
+      <input type="file" id="arqImportar" accept=".xlsx,.xls,.csv" class="oculto">
       <button type="button" class="btn" id="btnExportar">Exportar</button>
       <button type="button" class="btn btn-pri" id="btnNovo">+ Novo produto</button></div></div>
   <div id="filtros"></div>
+  <div id="avisoBanco"></div>
   <div class="abas-tela" id="abas"></div>
   <section class="kpis" id="kpis"></section>
   <section class="cartao"><div class="cartao-cab"><h2>Produtos</h2><span class="dir sub" id="contagem"></span></div>
@@ -26,72 +30,135 @@
   <div class="form-nota" id="nota"></div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
 <script src="../assets/js/menu.js?v=8"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=7"></script>
-<script src="../assets/js/cadastro.js?v=3"></script>
+<script src="../assets/js/exemplo.js?v=8"></script>
+<script src="../assets/js/cadastro.js?v=4"></script>
 <script>
-/* Regras (exemplo, números a confirmar com a Gran Sabor e o contador):
+/* Regras (números de imposto e cartão ainda de exemplo, a confirmar com a Gran Sabor e o contador):
    - Custo = composição (fichas técnicas e insumos de revenda) + perda/sobra do buffet.
-   - Cada empresa (CNPJ) tem o seu preço; imposto da venda depende da empresa.
+   - Preço por loja (cada loja é um estabelecimento com o seu CNPJ); imposto da venda depende da empresa.
    - Margem de contribuição = preço − custo − imposto − taxa do cartão.
-   - CMV = custo ÷ preço. Acima da meta do grupo fica em vermelho. */
-// Mesmos produtos de todas as abas; o custo é sempre calculado na hora (ficha + custo médio atual)
+   - CMV = custo ÷ preço. Acima da meta do grupo fica em vermelho.
+   - Com o banco ligado, o cardápio é o real (tabelas produtos + produto_precos) e entra pelo botão
+     "Importar planilha" (exportação da Saipos). Produto real ainda sem ficha técnica aparece "sem custo".
+   - Convênio PJ não é venda ao consumidor: não aparece no caixa, só na venda para empresa conveniada. */
+// Mesma lista de todas as abas (PDV, ficha técnica, vendas); o custo é sempre calculado na hora
 const produtos = PRODUTOS_VENDA;
+const REAL = PRODUTOS_DO_BANCO;                 // cardápio real vindo do banco
+const COLUNAS = 'id, codigo, nome, categoria, vende_por, convenio, ativo, atualizado_em, produto_precos(preco, unidades(codigo))';
+let lojas = [];                                 // lojas do banco: { id, codigo, nome }
+const semCusto = p => !p.comp.length;
+
+/* ---------- Prováveis repetidos (mesmo produto cadastrado duas vezes no PDV) ----------
+   "REFEIÇÃO KL" = "REFEICAO KG", "MARMITEX M" = "MÉDIA", "PRATO FEITO" = "PF", "A VONTADE" = "REFEIÇÃO LIVRE"… */
+const TROCAS = [[/\bPRATO FEITO\b/g, 'PF'], [/\bA VONTADE\b/g, 'REFEICAO LIVRE'], [/\bFINAL DE SEMANA\b/g, 'FDS'], [/\bKL\b/g, 'KG'],
+  [/\bM\b/g, 'MEDIA'], [/\bG\b/g, 'GRANDE'], [/\bP\b/g, 'PEQUENA'], [/\b(MARMITEX|LATA|350 ?ML|350|ML)\b/g, ' ']];
+const chaveRepetido = nome => { let t = normalizar(nome).toUpperCase().replace(/[^A-Z0-9/]+/g, ' ');
+  TROCAS.forEach(([de, para]) => { t = t.replace(de, para); });
+  return t.split(' ').filter(Boolean).sort().join(' '); };
+const repetidos = () => { const por = {}; produtos.filter(p => p.ativo).forEach(p => (por[chaveRepetido(p.nome)] ||= []).push(p.id));
+  return new Set(Object.values(por).filter(ids => ids.length > 1).flat()); };
+// Preço de convênio: nome com "EMPRESA" ou "REFEIÇÃO/REFRIGERANTE/CAFÉ + nome do cliente" (sobra palavra que não é KG, FDS, LIVRE…)
+const pareceConvenio = nome => { const t = normalizar(nome).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+  if (/\bEMPRESA\b/.test(t)) return true;
+  const m = t.match(/^(REFEICAO|REFRIGERANTE|CAFE)\b(.*)$/); if (!m) return false;
+  return m[2].split(' ').filter(w => w && !['KG', 'KL', 'FDS', 'LIVRE'].includes(w)).length > 0; };
+
+/* ---------- Abas e filtros ---------- */
 const GRUPOS = ['Buffet', 'Marmitex', 'Bebidas', 'Sobremesas'];
-const ABAS = [['todos', 'Todos'], ...GRUPOS.filter(g => produtos.some(p => p.grupo === g)).map(g => [g, g]), ['fora', 'Fora da meta']];
-let aba = 'todos';
-$('abas').innerHTML = ABAS.map(([k, n], i) => `<button type="button" data-aba="${k}"${i ? '' : ' class="ativa"'}>${n}</button>`).join('');
-const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, unidade: false, placeholder: 'Produto, código, grupo, preparo… (atalho: /)' });
+const ABAS = REAL
+  ? [['todos', 'Ativos', p => p.ativo], ['kg', 'Por kg', p => p.ativo && p.un === 'kg'], ['convenio', 'Convênio PJ', p => p.ativo && p.convenio],
+     ['repetidos', 'Prováveis repetidos', p => repSet.has(p.id)], ['semPreco', 'Sem preço', p => p.ativo && !Object.keys(p.precosUn).length], ['inativos', 'Inativos', p => !p.ativo]]
+  : [['todos', 'Todos', () => true], ...GRUPOS.filter(g => produtos.some(p => p.grupo === g)).map(g => [g, g, p => p.grupo === g]), ['fora', 'Fora da meta', p => fora(p)]];
+let aba = 'todos', repSet = new Set();
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, unidade: false, placeholder: 'Produto, código, categoria, preparo… (atalho: /)' });
+// Categoria (cardápio real tem muitas: vira uma lista na barra de filtros)
+const selCat = document.createElement('select'); selCat.className = 'campo'; selCat.setAttribute('aria-label', 'Categoria');
+$('filtros').insertBefore(selCat, $('filtros').querySelector('.busca'));
+selCat.onchange = desenhar;
+const montarCategorias = () => { const v = selCat.value, cats = [...new Set(produtos.map(p => p.grupo))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  selCat.innerHTML = `<option value="">Todas as categorias</option>${cats.map(c => `<option>${esc(c)}</option>`).join('')}`; selCat.value = cats.includes(v) ? v : ''; };
 const emps = () => filtro.empresa ? [filtro.empresa] : EMPRESAS.map(e => e.id);
-const fora = p => emps().some(e => margemProduto(p, e).cmv > metaCMV(p));
+const fora = p => !semCusto(p) && emps().some(e => margemProduto(p, e).cmv > metaCMV(p));
 const nomeComponente = c => c.tipo === 'ficha' ? (FICHAS.find(f => f.id === c.ref) || {}).nome : insumo(c.ref).nome;
-const textoBusca = p => [p.nome, p.codigo, p.grupo, p.comp.map(nomeComponente).join(' '), ...emps().map(e => numero(p.precos[e], 2))].join(' ');
+const textoBusca = p => [p.nome, p.codigo, p.grupo, p.convenio ? 'convenio' : '', p.comp.map(nomeComponente).join(' '), ...emps().map(e => numero(p.precos[e], 2))].join(' ');
 const porUn = p => p.un === 'kg' ? '/kg' : '';
 const corCMV = (m, p) => m.cmv > metaCMV(p) ? 'desce' : 'sobe';
+const etqs = p => (p.convenio ? ' <span class="etiqueta" title="Preço de convênio: não é venda ao consumidor">convênio</span>' : '')
+  + (repSet.has(p.id) ? ' <span class="etiqueta exemplo" title="Outro produto ativo parece ser o mesmo. Confira e desative um deles.">repetido?</span>' : '')
+  + (p.ativo ? '' : ' <span class="etiqueta">inativo</span>');
 
 function visiveis() {
-  return produtos.filter(p => casaBusca(textoBusca(p), filtro.busca) && (aba === 'todos' || (aba === 'fora' ? fora(p) : p.grupo === aba)));
+  const f = ABAS.find(a => a[0] === aba)[2];
+  return produtos.filter(p => f(p) && (!selCat.value || p.grupo === selCat.value) && casaBusca(textoBusca(p), filtro.busca));
 }
 
 function desenhar() {
+  repSet = REAL ? repetidos() : new Set(); montarCategorias();
   const v = visiveis(), es = emps(), uma = es.length === 1;
-  const ms = v.flatMap(p => es.map(e => margemProduto(p, e)));
-  $('kpis').innerHTML = [
+  const comCusto = v.filter(p => !semCusto(p)), ms = comCusto.flatMap(p => es.map(e => margemProduto(p, e)).filter(m => m.preco));
+  const kpis = REAL ? [
+    ['Produtos ativos', produtos.filter(p => p.ativo).length, `${new Set(produtos.filter(p => p.ativo).map(p => p.grupo)).size} categorias · ${produtos.filter(p => p.ativo && p.un === 'kg').length} por kg`],
+    ['Sem custo', `<span class="${produtos.some(p => p.ativo && semCusto(p)) ? 'desce' : ''}">${produtos.filter(p => p.ativo && semCusto(p)).length}</span>`, 'falta ligar à ficha técnica'],
+    ['Convênio PJ', produtos.filter(p => p.ativo && p.convenio).length, 'fora do caixa do consumidor'],
+    ['Prováveis repetidos', `<span class="${repSet.size ? 'desce' : ''}">${repSet.size}</span>`, 'confira e desative um de cada par']
+  ] : [
     ['Produtos', v.length, `${new Set(v.map(p => p.grupo)).size} grupos`],
     ['CMV médio', pct(ms.length ? ms.reduce((a, m) => a + m.cmv, 0) / ms.length : 0), uma ? nomeEmpresa(es[0]) : 'média das 3 empresas'],
     ['Margem média', pct(ms.length ? ms.reduce((a, m) => a + m.pct, 0) / ms.length : 0), 'depois de imposto e cartão'],
     ['Fora da meta', `<span class="${v.filter(fora).length ? 'desce' : ''}">${v.filter(fora).length}</span>`, 'CMV acima do limite do grupo']
-  ].map(([t, val, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${val}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  ];
+  $('kpis').innerHTML = kpis.map(([t, val, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${val}</div><div class="kpi-ctx">${c}</div></div>`).join('');
   $('contagem').textContent = `${v.length} de ${produtos.length}`;
+  const sc = '<span class="sub" title="Produto ainda sem ficha técnica: o custo vem quando ligar">sem custo</span>', tr = '<span class="sub">—</span>';
   let cab, linha, cols;
   if (uma) {
     const e = es[0]; cols = 9;
     cab = `<tr><th>Produto</th><th class="so-largo">Grupo</th><th class="num">Preço</th><th class="num">Custo</th><th class="num so-largo" title="Imposto da ${esc(nomeEmpresa(e))} (${numero(IMPOSTO_EMPRESA[e], 1)}%) + cartão (${numero(TAXA_CARTAO, 1)}%)">Imposto + cartão</th>
       <th class="num">Margem</th><th class="num">CMV</th><th class="num so-largo">Meta</th><th class="num so-largo" title="Preço para chegar exatamente na meta de CMV">Preço p/ meta</th></tr>`;
-    linha = p => { const m = margemProduto(p, e);
-      return `<tr data-id="${p.id}" tabindex="0"><td><b>${esc(p.nome)}</b> <small class="sub mono">${p.codigo}</small></td><td class="so-largo">${esc(p.grupo)}</td>
-        <td class="num"><b>${reais(m.preco)}</b>${porUn(p)}</td><td class="num">${reais(m.custo)}</td><td class="num so-largo">${reais(m.desp)}</td>
-        <td class="num">${reais(m.margem)} <small class="sub">${pct(m.pct)}</small></td><td class="num ${corCMV(m, p)}">${pct(m.cmv)}</td>
-        <td class="num so-largo">${pct(metaCMV(p))}</td><td class="num so-largo">${m.cmv > metaCMV(p) ? reais(precoParaCMV(m.custo, metaCMV(p))) : '<span class="sub">ok</span>'}</td></tr>`; };
+    linha = p => { const m = margemProduto(p, e), s = semCusto(p);
+      return `<tr data-id="${p.id}" tabindex="0"${p.ativo ? '' : ' class="inativa"'}><td><b>${esc(p.nome)}</b> <small class="sub mono">${esc(p.codigo)}</small>${etqs(p)}</td><td class="so-largo">${esc(p.grupo)}</td>
+        <td class="num">${m.preco ? `<b>${reais(m.preco)}</b>${porUn(p)}` : tr}</td><td class="num">${s ? sc : reais(m.custo)}</td><td class="num so-largo">${m.preco ? reais(m.desp) : tr}</td>
+        <td class="num">${s || !m.preco ? tr : `${reais(m.margem)} <small class="sub">${pct(m.pct)}</small>`}</td><td class="num ${s ? '' : corCMV(m, p)}">${s || !m.preco ? tr : pct(m.cmv)}</td>
+        <td class="num so-largo">${pct(metaCMV(p))}</td><td class="num so-largo">${s ? tr : m.cmv > metaCMV(p) || !m.preco ? reais(precoParaCMV(m.custo, metaCMV(p))) : '<span class="sub">ok</span>'}</td></tr>`; };
   } else {
     cols = 3 + es.length * 3;
     cab = `<tr><th rowspan="2">Produto</th><th rowspan="2" class="so-largo">Grupo</th><th rowspan="2" class="num">Custo</th>${es.map(e => `<th colspan="3" class="emp">${etqEmpresa(e)}</th>`).join('')}</tr>
       <tr>${es.map(() => `<th class="num emp">Preço</th><th class="num">Margem</th><th class="num">CMV</th>`).join('')}</tr>`;
-    linha = p => `<tr data-id="${p.id}" tabindex="0"><td><b>${esc(p.nome)}</b> <small class="sub mono">${p.codigo}</small></td><td class="so-largo">${esc(p.grupo)}</td>
-      <td class="num">${reais(custoProduto(p))}</td>${es.map(e => { const m = margemProduto(p, e);
-        return `<td class="num emp"><b>${reais(m.preco)}</b>${porUn(p)}</td><td class="num">${pct(m.pct)}</td><td class="num ${corCMV(m, p)}">${pct(m.cmv)}</td>`; }).join('')}</tr>`;
+    linha = p => { const s = semCusto(p);
+      return `<tr data-id="${p.id}" tabindex="0"${p.ativo ? '' : ' class="inativa"'}><td><b>${esc(p.nome)}</b> <small class="sub mono">${esc(p.codigo)}</small>${etqs(p)}</td><td class="so-largo">${esc(p.grupo)}</td>
+      <td class="num">${s ? sc : reais(custoProduto(p))}</td>${es.map(e => { const m = margemProduto(p, e);
+        return `<td class="num emp">${m.preco ? `<b>${reais(m.preco)}</b>${porUn(p)}` : tr}</td><td class="num">${s || !m.preco ? tr : pct(m.pct)}</td><td class="num ${s ? '' : corCMV(m, p)}">${s || !m.preco ? tr : pct(m.cmv)}</td>`; }).join('')}</tr>`; };
   }
-  const grupos = {}; v.forEach(p => (grupos[p.grupo] ||= []).push(p));
+  // Na aba de repetidos, cada grupo é um par (ou trio) parecido, lado a lado para comparar
+  const grupos = {}, rotulo = p => aba === 'repetidos' ? chaveRepetido(p.nome) : p.grupo; v.forEach(p => (grupos[rotulo(p)] ||= []).push(p));
+  const cabGrupo = (g, ps) => aba === 'repetidos' ? `${ps.map(p => esc(p.nome)).join(' · ')} <span class="sub">${ps.length} parecidos: desative o que não se usa</span>`
+    : `${esc(g)} <span class="sub">${ps.length} · meta de CMV até ${pct(META_CMV[g] ?? 35)}</span>`;
+  const vazio = REAL && !produtos.length ? 'Nenhum produto no banco ainda. Clique em <b>Importar planilha</b> e escolha o arquivo exportado da Saipos.'
+    : aba === 'fora' ? 'Todos os produtos estão dentro da meta. 👍' : aba === 'repetidos' ? 'Nenhum repetido à vista. 👍' : 'Nada encontrado com esses filtros.';
   $('tab').innerHTML = `<thead>${cab}</thead><tbody>${Object.entries(grupos).map(([g, ps]) =>
-    `<tr class="grupo"><td colspan="${cols}">${esc(g)} <span class="sub">meta de CMV até ${pct(META_CMV[g] ?? 35)}</span></td></tr>${ps.map(linha).join('')}`).join('')
-    || `<tr><td colspan="${cols}" class="vazio">${aba === 'fora' ? 'Todos os produtos estão dentro da meta. 👍' : 'Nada encontrado com esses filtros.'}</td></tr>`}</tbody>`;
+    `<tr class="grupo"><td colspan="${cols}">${cabGrupo(g, ps)}</td></tr>${ps.map(linha).join('')}`).join('')
+    || `<tr><td colspan="${cols}" class="vazio">${vazio}</td></tr>`}</tbody>`;
   $('nota').textContent = `Imposto sobre a venda (exemplo): ${EMPRESAS.map(e => `${e.nome} ${numero(IMPOSTO_EMPRESA[e.id], 1)}%`).join(' · ')} · cartão ${numero(TAXA_CARTAO, 1)}%. `
-    + 'Produtos por kg já incluem a perda/sobra do buffet no custo. Toda venda sai com NFC-e.';
+    + (REAL ? 'Preço gravado por loja (cada coluna de empresa mostra a loja dela). ' : 'Produtos por kg já incluem a perda/sobra do buffet no custo. ')
+    + 'Toda venda ao consumidor sai com NFC-e; convênio PJ sai com NF-e + boleto no fechamento.';
 }
 
-/* ---------- Editar / novo produto (com simulador de preço) ---------- */
+/* ---------- Banco: ler de novo e avisar todas as abas ---------- */
+async function recarregar() {
+  const { data, error } = await db.from('produtos').select(COLUNAS).order('categoria').order('nome');
+  if (error) throw error;
+  trocarProdutosBanco(data); desenhar(); avisarMudanca('produtos');
+}
+const nomeLoja = cod => (lojas.find(l => l.codigo === cod) || {}).nome || nomeUnidade(cod);
+const n = x => typeof x === 'number' ? x : Number(String(x ?? '').replace(/[R$\s]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
+
+/* ---------- Editar / novo produto no modo demonstração (com composição e simulador de preço) ---------- */
 function editar(p) {
   const novo = !p; const foto = p ? JSON.parse(JSON.stringify(p)) : null; p = p || { id: 'p' + Date.now(), codigo: 'P' + String(produtos.length + 1).padStart(2, '0'), nome: '', grupo: 'Buffet', un: 'kg', perda: 0, comp: [{ tipo: 'ficha', ref: FICHAS[0].id, qtd: 1 }], precos: {}, ativo: true };
   const n = x => Number(String(x).replace(/\./g, '').replace(',', '.'));
@@ -153,17 +220,171 @@ function editar(p) {
   calc();
 }
 
+/* ---------- Editar / novo produto no banco (cardápio real) ---------- */
+function editarBanco(p) {
+  const novo = !p;
+  const foto = p ? { atualizadoEm: p.atualizadoEm, precosUn: JSON.stringify(p.precosUn) } : null;
+  p = p || { codigo: '', nome: '', grupo: selCat.value || '', un: 'un', convenio: false, ativo: true, precosUn: {} };
+  const cats = [...new Set(produtos.map(x => x.grupo))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  janela(novo ? 'Novo produto' : `Editar · ${p.nome}`, `
+    <div class="form-grade">
+      <label class="c6">Produto *<input name="nome" class="campo" maxlength="80" value="${esc(p.nome)}"></label>
+      <label class="c2">Código *<input name="codigo" class="campo" maxlength="20" value="${esc(p.codigo)}" title="Código do produto no PDV (Saipos)"${novo ? '' : ' readonly'}></label>
+      <label class="c2">Categoria *<input name="categoria" class="campo" maxlength="60" list="listaCat" value="${esc(p.grupo)}"></label>
+      <label class="c2">Vende por<select name="un" class="campo"><option value="un"${p.un === 'un' ? ' selected' : ''}>unidade</option><option value="kg"${p.un === 'kg' ? ' selected' : ''}>kg (balança)</option></select></label>
+      <datalist id="listaCat">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
+      <label class="c3 marcar"><input type="checkbox" name="convenio"${p.convenio ? ' checked' : ''}> Preço de convênio PJ</label>
+      <label class="c3 marcar"><input type="checkbox" name="ativo"${p.ativo ? ' checked' : ''}> Ativo</label>
+    </div>
+    <div class="sub-tit">Preço por loja <span class="sub">vazio = não vende nessa loja${p.un === 'kg' ? ' · preço do kg' : ''}</span></div>
+    <table class="tabela"><thead><tr><th>Loja</th><th class="num" style="width:140px">Preço</th></tr></thead><tbody>
+    ${lojas.map(l => `<tr><td>${esc(l.nome)} <span class="sub">${esc(nomeEmpresa(UNIDADE_EMPRESA[l.codigo]))}</span></td>
+      <td><input class="campo" data-loja="${l.id}" inputmode="decimal" value="${p.precosUn[l.codigo] ? numero(p.precosUn[l.codigo], 2) : ''}"></td></tr>`).join('')}</tbody></table>
+    <div class="form-nota">Custo e margem aparecem quando o produto for ligado à ficha técnica. Produto não se apaga: desmarque "Ativo".</div>`, 'Salvar', async fm => {
+    const nome = fm.nome.value.trim(), codigo = fm.codigo.value.trim(), categoria = fm.categoria.value.trim();
+    if (!nome) return 'Informe o nome do produto.';
+    if (!codigo) return 'Informe o código (o mesmo do PDV).';
+    if (!categoria) return 'Informe a categoria.';
+    const precos = []; let erro = '';
+    fm.querySelectorAll('[data-loja]').forEach(i => { if (!i.value.trim()) return; const x = n(i.value); if (!(x > 0)) erro = 'Preço inválido: use números, ex.: 21,90.'; else precos.push({ unidade_id: i.dataset.loja, preco: Math.round(x * 100) / 100 }); });
+    if (erro) return erro;
+    const d = { nome, categoria, vende_por: fm.un.value, convenio: fm.convenio.checked, ativo: fm.ativo.checked };
+    let id = p.id;
+    if (novo) {
+      const { data, error } = await db.from('produtos').insert({ ...d, codigo }).select('id').single();
+      if (error) return error.code === '23505' ? `Já existe produto com o código ${codigo}.` : 'Não foi possível gravar: ' + error.message;
+      id = data.id;
+    } else {
+      // Relê na hora de gravar: se alguém mudou este produto depois que a janela abriu, não grava
+      const { data: agora, error: e1 } = await db.from('produtos').select(COLUNAS).eq('id', id).maybeSingle();
+      if (e1) return 'Não foi possível conferir o produto: ' + e1.message;
+      const atual = agora ? produtoDoBanco(agora) : null;
+      const m = mudouDesde(foto, atual && { atualizadoEm: atual.atualizadoEm, precosUn: JSON.stringify(atual.precosUn) }, ['atualizadoEm', 'precosUn'], 'Este produto');
+      if (m) { await recarregar(); return m; }
+      const { error } = await db.from('produtos').update(d).eq('id', id);
+      if (error) return 'Não foi possível gravar: ' + error.message;
+    }
+    // Preços: grava os preenchidos e tira os que ficaram vazios
+    if (precos.length) { const { error } = await db.from('produto_precos').upsert(precos.map(x => ({ ...x, produto_id: id })), { onConflict: 'produto_id,unidade_id' }); if (error) { await recarregar(); return 'O produto foi gravado, mas os preços não: ' + error.message; } }
+    const tirar = lojas.filter(l => !precos.some(x => x.unidade_id === l.id)).map(l => l.id);
+    if (tirar.length) { const { error } = await db.from('produto_precos').delete().eq('produto_id', id).in('unidade_id', tirar); if (error) { await recarregar(); return 'Não foi possível tirar o preço: ' + error.message; } }
+    await recarregar();
+  });
+}
+
+/* ---------- Importar planilha do PDV (Saipos) ----------
+   Colunas usadas: Código Saipos, Descrição, Categoria, Preço, Pesável (Sim = por kg) e Inativo ("Ativo" = ativo).
+   Produto novo entra completo; produto que já existe (mesmo código) só atualiza nome, categoria e "vende por",
+   para não desfazer o que já foi ajustado aqui (ativo, convênio). O preço vai para as lojas escolhidas. */
+const CDN_XLSX = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+const carregarXlsx = () => window.XLSX ? Promise.resolve() : new Promise((ok, falha) => {
+  const s = document.createElement('script'); s.src = CDN_XLSX; s.onload = ok; s.onerror = () => falha(new Error('não foi possível abrir o leitor de planilhas (sem internet?)')); document.head.appendChild(s); });
+
+async function lerPlanilha(arquivo) {
+  await carregarXlsx();
+  const wb = XLSX.read(await arquivo.arrayBuffer(), { type: 'array' });
+  const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+  const chave = t => normalizar(t).trim();
+  const iCab = linhas.findIndex(l => l.some(c => chave(c) === 'descricao') && l.some(c => chave(c).startsWith('preco')));
+  if (iCab < 0) throw new Error('não achei as colunas "Descrição" e "Preço" na primeira aba');
+  const cab = linhas[iCab].map(chave), col = (...nomes) => cab.findIndex(c => nomes.some(x => c === x || c.startsWith(x)));
+  const c = { cod: col('codigo saipos', 'codigo'), nome: col('descricao'), cat: col('categoria'), preco: col('preco'), kg: col('pesavel'), ina: col('inativo', 'situacao', 'ativo') };
+  if (c.cod < 0) throw new Error('não achei a coluna "Código Saipos"');
+  const ok = [], erros = [];
+  linhas.slice(iCab + 1).forEach((l, k) => {
+    const txt = i => i < 0 ? '' : String(l[i] ?? '').trim();
+    if (!l.some(x => String(x).trim())) return;
+    const nome = txt(c.nome).replace(/\s+/g, ' '), codigo = txt(c.cod), preco = Math.round(n(l[c.preco]) * 100) / 100, linha = iCab + k + 2;
+    if (!codigo || !nome) return erros.push(`linha ${linha}: sem código ou descrição`);
+    if (!(preco > 0)) return erros.push(`linha ${linha} (${nome}): preço inválido`);
+    if (ok.some(x => x.codigo === codigo)) return erros.push(`linha ${linha} (${nome}): código ${codigo} repetido na planilha`);
+    const sit = normalizar(txt(c.ina));
+    ok.push({ codigo, nome: nome.slice(0, 80), categoria: (txt(c.cat).replace(/\s+/g, ' ') || 'Sem categoria').slice(0, 60), vende_por: /^s/.test(normalizar(txt(c.kg))) ? 'kg' : 'un',
+      ativo: !(sit === 'inativo' || sit === 'sim' || sit === 'true' || sit === '1'), preco, convenio: pareceConvenio(nome) });
+  });
+  return { ok, erros };
+}
+
+async function importar(arquivo) {
+  let lida;
+  try { lida = await lerPlanilha(arquivo); } catch (e) { return janela('Importar planilha', `<p>Não foi possível ler <b>${esc(arquivo.name)}</b>: ${esc(e.message)}.</p>`, 'Fechar', () => ''); }
+  const { ok, erros } = lida;
+  if (!ok.length) return janela('Importar planilha', `<p>Nenhum produto válido em <b>${esc(arquivo.name)}</b>.</p>${erros.length ? `<p class="sub">${erros.slice(0, 10).map(esc).join('<br>')}</p>` : ''}`, 'Fechar', () => '');
+  const existe = new Set(produtos.map(p => p.codigo)), novos = ok.filter(x => !existe.has(x.codigo));
+  const chaves = {}; ok.forEach(x => (chaves[chaveRepetido(x.nome)] ||= []).push(x.codigo));
+  const rep = new Set(Object.values(chaves).filter(l => l.length > 1).flat());
+  const un = unidadeAtual();
+  janela(`Importar planilha · ${arquivo.name}`, `
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-tit">Produtos lidos</div><div class="kpi-valor">${ok.length}</div><div class="kpi-ctx">${ok.filter(x => x.vende_por === 'kg').length} por kg</div></div>
+      <div class="kpi"><div class="kpi-tit">Novos</div><div class="kpi-valor">${novos.length}</div><div class="kpi-ctx">${ok.length - novos.length} já cadastrados (atualiza nome e categoria)</div></div>
+      <div class="kpi"><div class="kpi-tit">Prováveis repetidos</div><div class="kpi-valor">${rep.size}</div><div class="kpi-ctx">entram e ficam marcados</div></div>
+      <div class="kpi"><div class="kpi-tit">Com problema</div><div class="kpi-valor"><span class="${erros.length ? 'desce' : ''}">${erros.length}</span></div><div class="kpi-ctx">ficam de fora</div></div></div>
+    ${erros.length ? `<div class="aviso perigo">${erros.slice(0, 8).map(esc).join('<br>')}${erros.length > 8 ? `<br>… e mais ${erros.length - 8}` : ''}</div>` : ''}
+    <div class="sub-tit">Gravar o preço da planilha em quais lojas? *</div>
+    <div class="form-grade">${lojas.map(l => `<label class="c4 marcar"><input type="checkbox" name="loja" value="${l.id}"${l.codigo === un ? ' checked' : ''}> ${esc(l.nome)}</label>`).join('')}</div>
+    <div class="sub-tit">Produtos <span class="sub">marque "convênio" nos preços combinados com empresa cliente (não aparecem no caixa do consumidor)</span></div>
+    <div class="rolagem" style="max-height:44vh"><table class="tabela"><thead><tr><th>Código</th><th>Produto</th><th class="so-largo">Categoria</th><th class="num">Preço</th><th>Convênio</th></tr></thead><tbody>
+    ${ok.map((x, i) => `<tr><td class="mono">${esc(x.codigo)}</td><td>${esc(x.nome)}${x.vende_por === 'kg' ? ' <span class="etiqueta">kg</span>' : ''}${existe.has(x.codigo) ? ' <span class="etiqueta">já existe</span>' : ''}${rep.has(x.codigo) ? ' <span class="etiqueta exemplo">repetido?</span>' : ''}${x.ativo ? '' : ' <span class="etiqueta">inativo</span>'}</td>
+      <td class="so-largo">${esc(x.categoria)}</td><td class="num">${reais(x.preco)}${x.vende_por === 'kg' ? '/kg' : ''}</td>
+      <td><input type="checkbox" data-conv="${i}"${x.convenio ? ' checked' : ''}${existe.has(x.codigo) ? ' disabled title="Já cadastrado: mude no próprio produto"' : ''}></td></tr>`).join('')}</tbody></table></div>`,
+  `Importar ${ok.length} produtos`, async fm => {
+    const ids = [...fm.querySelectorAll('[name="loja"]:checked')].map(i => i.value);
+    if (!ids.length) return 'Escolha ao menos uma loja para gravar o preço.';
+    fm.querySelectorAll('[data-conv]').forEach(i => { ok[i.dataset.conv].convenio = i.checked; });
+    const pedaco = (l, t = 400) => Array.from({ length: Math.ceil(l.length / t) }, (_, k) => l.slice(k * t, k * t + t));
+    // 1. Produtos novos (completos) e já existentes (só nome, categoria e vende por)
+    for (const lote of pedaco(ok.filter(x => !existe.has(x.codigo)))) {
+      const { error } = await db.from('produtos').upsert(lote.map(x => ({ codigo: x.codigo, nome: x.nome, categoria: x.categoria, vende_por: x.vende_por, convenio: x.convenio, ativo: x.ativo, origem: 'saipos' })), { onConflict: 'codigo' });
+      if (error) { await recarregar(); return 'Parou no meio: ' + error.message + '. O que entrou já aparece na lista; importe de novo para completar.'; } }
+    for (const lote of pedaco(ok.filter(x => existe.has(x.codigo)))) {
+      const { error } = await db.from('produtos').upsert(lote.map(x => ({ codigo: x.codigo, nome: x.nome, categoria: x.categoria, vende_por: x.vende_por })), { onConflict: 'codigo' });
+      if (error) { await recarregar(); return 'Parou no meio: ' + error.message + '. Importe de novo para completar.'; } }
+    // 2. Preço nas lojas escolhidas
+    const { data: todos, error: e2 } = await db.from('produtos').select('id, codigo').in('codigo', ok.map(x => x.codigo));
+    if (e2) { await recarregar(); return 'Os produtos entraram, mas não consegui gravar os preços: ' + e2.message; }
+    const idDe = Object.fromEntries(todos.map(r => [r.codigo, r.id]));
+    const precos = ok.filter(x => idDe[x.codigo]).flatMap(x => ids.map(u => ({ produto_id: idDe[x.codigo], unidade_id: u, preco: x.preco })));
+    for (const lote of pedaco(precos)) {
+      const { error } = await db.from('produto_precos').upsert(lote, { onConflict: 'produto_id,unidade_id' });
+      if (error) { await recarregar(); return 'Os produtos entraram, mas parte dos preços não: ' + error.message + '. Importe de novo para completar.'; } }
+    await recarregar();
+    $('avisoBanco').innerHTML = `<div class="aviso">Planilha importada: ${novos.length} produto(s) novo(s), ${ok.length - novos.length} atualizado(s), preço gravado em ${ids.map(u => esc((lojas.find(l => l.id === u) || {}).nome || '')).join(', ')}.${rep.size ? ` Confira a aba <b>Prováveis repetidos</b>.` : ''}</div>`;
+  });
+}
+
+/* ---------- Ligações da tela ---------- */
+$('abas').innerHTML = ABAS.map(([k, nm], i) => `<button type="button" data-aba="${k}"${i ? '' : ' class="ativa"'}>${nm}</button>`).join('');
 $('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba;
   $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
-$('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) editar(produtos.find(p => p.id === tr.dataset.id)); };
+const abrir = p => REAL ? editarBanco(p) : editar(p);
+$('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) abrir(produtos.find(p => p.id === tr.dataset.id)); };
 $('tab').onkeydown = e => { if (e.key === 'Enter') e.target.closest('tr[data-id]')?.click(); };
-$('btnNovo').onclick = () => editar();
-$('btnExportar').onclick = () => exportarCSV('cardapio-margens', ['Código', 'Produto', 'Grupo', 'Vende por', 'Custo', 'Empresa', 'Preço', 'Imposto + cartão', 'Margem R$', 'Margem %', 'CMV %', 'Meta CMV %'],
-  visiveis().flatMap(p => emps().map(e => { const m = margemProduto(p, e);
-    return [p.codigo, p.nome, p.grupo, p.un, numero(m.custo, 2), nomeEmpresa(e), numero(m.preco, 2), numero(m.desp, 2), numero(m.margem, 2), numero(m.pct, 1), numero(m.cmv, 1), numero(metaCMV(p), 0)]; })));
-// Ficha técnica ou custo de insumo mudou em outra aba: custo, margem e CMV se recalculam sozinhos
+$('btnNovo').onclick = () => abrir();
+$('btnImportar').onclick = () => $('arqImportar').click();
+$('arqImportar').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importar(f); };
+$('btnExportar').onclick = () => exportarCSV('cardapio-margens', ['Código', 'Produto', 'Categoria', 'Vende por', 'Convênio', 'Ativo', 'Custo', 'Empresa', 'Preço', 'Imposto + cartão', 'Margem R$', 'Margem %', 'CMV %', 'Meta CMV %'],
+  visiveis().flatMap(p => emps().map(e => { const m = margemProduto(p, e), s = semCusto(p);
+    return [p.codigo, p.nome, p.grupo, p.un, p.convenio ? 'sim' : 'não', p.ativo ? 'sim' : 'não', s ? '' : numero(m.custo, 2), nomeEmpresa(e), m.preco ? numero(m.preco, 2) : '', numero(m.desp, 2),
+      s ? '' : numero(m.margem, 2), s ? '' : numero(m.pct, 1), s ? '' : numero(m.cmv, 1), numero(metaCMV(p), 0)]; })));
+// Ficha técnica, custo de insumo ou produto mudou em outra aba: custo, margem e CMV se recalculam sozinhos
 vigiarDados(['produtos', 'fichas', 'insumos'], desenhar);
-desenhar();
+
+(async () => {
+  if (REAL) {
+    janela.nota = 'Grava no banco';
+    $('etqExemplo').classList.add('oculto'); $('btnImportar').classList.remove('oculto');
+    const { data, error } = await db.from('unidades').select('id, codigo, nome').eq('tipo', 'loja').eq('ativo', true).order('ordem').order('nome');
+    if (error) $('avisoBanco').innerHTML = '<div class="aviso perigo">Não foi possível ler as lojas. Atualize a página.</div>';
+    lojas = data || [];
+    try { await recarregar(); } catch { desenhar(); }   // sempre parte do que está no banco agora
+  } else {
+    desenhar();
+    if (db) { const { error } = await db.from('produtos').select('id', { head: true, count: 'exact' });
+      $('avisoBanco').innerHTML = `<div class="aviso">${error ? 'A tabela de produtos ainda não está no banco: os produtos abaixo são de exemplo. Ela entra quando o pacote de produtos for juntado.'
+        : 'O cardápio já está no banco: atualize o sistema (tecla F5) para trocar os produtos de exemplo pelos reais.'}</div>`; }
+  }
+})();
 </script>
 </body>
 </html>

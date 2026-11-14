@@ -76,9 +76,9 @@
 <script src="../assets/js/menu.js?v=8"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=7"></script>
+<script src="../assets/js/exemplo.js?v=8"></script>
 <script src="../assets/js/vendas.js?v=3"></script>
-<script src="../assets/js/cadastro.js?v=3"></script>
+<script src="../assets/js/cadastro.js?v=4"></script>
 <script>
 /* Frente de caixa. Regras (exemplo, a Gran Sabor e o contador confirmam):
    - Só vende com caixa aberto (operador + fundo de troco).
@@ -115,7 +115,8 @@ function desenhar() {
   if (!cx) return desenharAbrir();
 
   // Produtos (atalhos) e lista para busca
-  const ativos = PRODUTOS_VENDA.filter(p => p.ativo && p.precos[empresa()] > 0);
+  // preço de convênio só na venda para empresa conveniada; os por kg (balança) primeiro
+  const ativos = PRODUTOS_VENDA.filter(p => p.ativo && p.precos[empresa()] > 0 && (!p.convenio || venda.pj)).sort((a, b) => (a.un === 'kg' ? 0 : 1) - (b.un === 'kg' ? 0 : 1));
   $('prods').innerHTML = ativos.map(p => `<button type="button" class="pdv-prod" data-prod="${p.id}"><b>${esc(p.nome)}</b><span>${p.codigo} · ${reais(p.precos[empresa()])}${p.un === 'kg' ? '/kg' : ''}</span></button>`).join('');
   $('listaProd').innerHTML = ativos.map(p => `<option value="${p.codigo} · ${esc(p.nome)}">`).join('');
 
@@ -172,7 +173,8 @@ $('formAbrir').onsubmit = e => { e.preventDefault();
 function acharProduto(txt) {
   const t = String(txt || '').trim().toLowerCase(); if (!t) return null;
   const cod = t.split(' ')[0];
-  return PRODUTOS_VENDA.find(p => p.ativo && p.codigo.toLowerCase() === cod) || PRODUTOS_VENDA.find(p => p.ativo && casaBusca(p.nome + ' ' + p.codigo, t));
+  const pode = p => p.ativo && (!p.convenio || venda.pj);   // preço de convênio não entra na venda ao consumidor
+  return PRODUTOS_VENDA.find(p => pode(p) && p.codigo.toLowerCase() === cod) || PRODUTOS_VENDA.find(p => pode(p) && casaBusca(p.nome + ' ' + p.codigo, t));
 }
 function lerBalanca() {   // exemplo: peso de um prato; na loja vem da balança pela USB/serial
   const kg = +(0.28 + Math.random() * 0.6).toFixed(3);
@@ -204,8 +206,10 @@ $('comandas').onclick = e => { const a = e.target.closest('[data-comanda]'); if 
 $('btnAdd').onclick = () => lancar(acharProduto($('inProd').value), num($('inQtd').value));
 $('inProd').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const p = acharProduto($('inProd').value);
   if (p && !$('inQtd').value && p.un === 'kg') { $('inQtd').focus(); return; } lancar(p, num($('inQtd').value)); } };
-$('inQtd').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); lancar(acharProduto($('inProd').value) || PRODUTOS_VENDA[0], num($('inQtd').value)); } };
-$('btnBalanca').onclick = () => { lerBalanca(); if (!$('inProd').value) $('inProd').value = 'P01 · ' + PRODUTOS_VENDA[0].nome; $('inQtd').focus(); };
+// Peso sem produto escolhido = primeiro produto por kg da loja (a refeição do buffet)
+const produtoBalanca = () => PRODUTOS_VENDA.find(p => p.ativo && p.un === 'kg' && !p.convenio && p.precos[empresa()] > 0) || PRODUTOS_VENDA[0];
+$('inQtd').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); lancar(acharProduto($('inProd').value) || produtoBalanca(), num($('inQtd').value)); } };
+$('btnBalanca').onclick = () => { lerBalanca(); const b = produtoBalanca(); if (!$('inProd').value && b) $('inProd').value = `${b.codigo} · ${b.nome}`; $('inQtd').focus(); };
 $('prods').onclick = e => { const b = e.target.closest('[data-prod]'); if (!b) return; lancar(PRODUTOS_VENDA.find(p => p.id === b.dataset.prod), num($('inQtd').value)); };
 $('tabItens').onclick = e => { const t = e.target.closest('[data-tira]'); if (t) return tirarItem(+t.dataset.tira);
   const tr = e.target.closest('tr[data-k]'); if (tr) { selItem = +tr.dataset.k; desenhar(); } };

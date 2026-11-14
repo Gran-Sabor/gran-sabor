@@ -29,7 +29,7 @@ async function iniciar() {
   $('btnSair').onclick = sair;
   if (!MODO_DEMO) { $('avatar').onclick = $('usuarioNome').onclick = trocarSenha; $('usuarioNome').title = 'Trocar minha senha'; }
 
-  if (!MODO_DEMO) await atualizarUnidades();
+  if (!MODO_DEMO) await Promise.all([atualizarUnidades(), carregarProdutos()]);
   montarUnidades();
   montarMenu();
   abas = lembrar('abas', [{ id: 'inicio' }]).filter(a => acharTela(a.id));
@@ -84,6 +84,17 @@ async function atualizarUnidades() {
   const lst = data.map(u => ({ id: u.codigo, nome: u.nome, tipo: u.tipo }));
   UNIDADES.splice(1, UNIDADES.length, ...lst);
   guardar('unidadesBanco', lst);
+}
+/* ---------- Cardápio real (produtos + preço por loja) ----------
+   Lido uma vez aqui, antes de abrir as telas: todas as abas usam a mesma lista (dadoComum).
+   Se a tabela ainda não existir no banco, as telas seguem com o exemplo. */
+const COLUNAS_PRODUTOS = 'id, codigo, nome, categoria, vende_por, convenio, ativo, atualizado_em, produto_precos(preco, unidades(codigo))';
+async function carregarProdutos() {
+  let raiz = window;
+  try { while (raiz.parent !== raiz && raiz.parent.location.origin === location.origin) raiz = raiz.parent; } catch {}
+  const { data, error } = await db.from('produtos').select(COLUNAS_PRODUTOS).order('categoria').order('nome');
+  if (error) { console.warn('Produtos ainda não estão no banco:', error.message); return; }
+  (raiz.__gsDados || (raiz.__gsDados = {})).PRODUTOS_BANCO = data;
 }
 function montarUnidades() {
   const s = $('unidade');
