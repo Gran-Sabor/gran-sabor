@@ -29,6 +29,11 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
 - Nunca push direto na `main`: ramo próprio + pacote; o Alexandre faz o merge.
 
 ## Dados sempre atualizados em toda a cadeia (lição da Drogarema, 08/11/2026)
+**Regra obrigatória: toda tela é ao vivo.** Qualquer cadastro, edição, exclusão, valor ou texto alterado por um usuário
+aparece na hora para todos os usuários e em todas as telas, contas, pagamentos e relatórios ligados àquele dado, sem botão
+de atualizar e sem fechar a tela (usar Supabase Realtime ou equivalente). Nenhuma entrega é aceita sem testar isso com duas
+telas abertas. Toda tabela nova entra na publicação `supabase_realtime` na mesma migração.
+
 Na Drogarema uma tela aberta mostrava valor antigo e um pagamento saiu errado. Aqui, sempre:
 - Cada dado mora num lugar só e cada conta é feita numa função só (hoje `exemplo.js`/`dadoComum`, depois o banco).
   Tela nenhuma guarda cópia própria nem número calculado congelado; derivado (custo, margem, saldo, líquido) é recalculado da origem.
