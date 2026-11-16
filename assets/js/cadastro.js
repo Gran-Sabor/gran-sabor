@@ -2,8 +2,9 @@
    Gran Sabor · cadastro.js — motor das telas de cadastro
    Cada tela só descreve colunas, campos e regras; a lista, os filtros
    (empresa · unidade · busca), os indicadores, a exportação e o
-   formulário em popup saem daqui. Por enquanto trabalha com DADOS DE
-   EXEMPLO em memória (nada é gravado).
+   formulário em popup saem daqui. Sem cfg.salvar trabalha com DADOS DE
+   EXEMPLO em memória (nada é gravado); com cfg.salvar (telas ligadas ao
+   banco) grava pelo salvar e a lista vem da casca, ao vivo.
    ===================================================================== */
 function montarCadastro(cfg) {
   // A lista é a mesma de todas as abas (dadoComum): nada de cópia própria que fica velha
@@ -11,10 +12,10 @@ function montarCadastro(cfg) {
   let filtro;
   document.body.innerHTML = `<div class="tela">
     <div class="tela-cab"><h1>${esc(cfg.titulo)}</h1>${cfg.sub ? `<span class="sub">${esc(cfg.sub)}</span>` : ''}
-      <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <div class="dir">${cfg.salvar ? '' : '<span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>'}
         <button type="button" class="btn" id="btnExportar" title="Baixar a lista filtrada em planilha">Exportar</button>
         <button type="button" class="btn btn-pri" id="btnNovo">+ ${esc(cfg.novoRotulo || 'Novo')}</button></div></div>
-    <div id="filtros"></div>
+    <div id="filtros"></div><div id="avisoCadastro">${cfg.aviso || ''}</div>
     ${cfg.abas ? `<div class="abas-tela" id="abas">${cfg.abas.map((a, i) => `<button type="button" data-aba="${i}"${i ? '' : ' class="ativa"'}>${esc(a.nome)}</button>`).join('')}</div>` : ''}
     <section class="kpis" id="kpis"></section>
     <section class="cartao"><div class="cartao-cab"><h2 id="tituloLista">${esc(cfg.tituloLista || 'Lista')}</h2><span class="dir sub" id="contagem"></span></div>
@@ -30,6 +31,7 @@ function montarCadastro(cfg) {
 
   function desenhar() {
     const v = visiveis();
+    if (cfg.ordenar) v.sort(cfg.ordenar);
     $('kpis').innerHTML = (cfg.kpis ? cfg.kpis(v, lista, filtro) : []).map(([t, val, c]) =>
       `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${val}</div><div class="kpi-ctx">${c || ''}</div></div>`).join('');
     $('kpis').classList.toggle('oculto', !cfg.kpis);
@@ -62,6 +64,7 @@ function montarCadastro(cfg) {
       else if (c.tipo === 'multi') { const ops = typeof c.opcoes === 'function' ? c.opcoes(item) : c.opcoes;
         el = `<span class="multi" data-multi="${c.campo}">${ops.map(([k, n]) => `<label><input type="checkbox" value="${esc(k)}"${(v || []).includes(k) ? ' checked' : ''}> ${esc(n)}</label>`).join('')}</span>`; }
       else if (c.tipo === 'texto-longo') el = `<textarea ${attrs} rows="2">${esc(v)}</textarea>`;
+      else if (c.tipo === 'data') el = `<input ${attrs} type="date" value="${esc(v ?? '')}">`;
       else el = `<input ${attrs} ${c.tipo === 'numero' || c.tipo === 'dinheiro' ? 'inputmode="decimal"' : ''} value="${esc(c.tipo === 'dinheiro' && v != null ? numero(v, 2) : c.tipo === 'doc' ? fmtDoc(v) : v ?? '')}">`;
       return `<label class="${c.larg || 'c4'}">${esc(c.titulo)}${c.obrig ? ' *' : ''}${el}</label>`;
     };
@@ -73,20 +76,22 @@ function montarCadastro(cfg) {
       <div class="form">${secoes.map(s => `<fieldset>${s ? `<legend>${esc(s)}</legend>` : ''}<div class="form-grade">${cfg.campos.filter(c => (c.secao || '') === s).map(campo).join('')}</div></fieldset>`).join('')}
         ${cfg.rodapeForm ? `<div class="form-nota">${cfg.rodapeForm(item)}</div>` : ''}
         <div class="login-msg" id="fMsg" role="alert"></div></div>
-      <div class="janela-rodape"><span class="sub">Exemplo: as alterações somem ao recarregar</span>
+      <div class="janela-rodape"><span class="sub">${cfg.salvar ? 'Grava no banco' : 'Exemplo: as alterações somem ao recarregar'}</span>
         <button type="button" class="btn" data-fechar>Cancelar</button><button type="submit" class="btn btn-pri">Salvar</button></div></form>`;
     const f = v.querySelector('form');
     const fim = () => { v.remove(); document.removeEventListener('keydown', tecla); };
     const tecla = e => { if (e.key === 'Escape') fim(); };
     v.onclick = e => { if (e.target === v || e.target.closest('[data-fechar]')) fim(); };
-    f.onsubmit = e => {
+    f.onsubmit = async e => {
       e.preventDefault();
+      const btn = f.querySelector('.btn-pri'); if (btn.disabled) return;
       const d = {};
       cfg.campos.forEach(c => {
         if (c.tipo === 'multi') { d[c.campo] = [...f.querySelectorAll(`[data-multi="${c.campo}"] input:checked`)].map(i => i.value); return; }
         const el = f.elements[c.campo]; if (!el) return;
         if (c.tipo === 'check') d[c.campo] = el.checked;
         else if (c.tipo === 'numero' || c.tipo === 'dinheiro') d[c.campo] = el.value.trim() === '' ? null : Number(el.value.replace(/\./g, '').replace(',', '.'));
+        else if (c.tipo === 'data') d[c.campo] = el.value || null;
         else if (c.tipo === 'doc') d[c.campo] = el.value.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
         else d[c.campo] = el.value.trim();
       });
@@ -95,6 +100,14 @@ function montarCadastro(cfg) {
       // Alguém mudou este cadastro em outra aba enquanto o formulário estava aberto? Não sobrescreve.
       const mudou = !novo && mudouDesde(foto, lista.find(x => x.id === item.id), Object.keys(foto), 'Este cadastro');
       if (erro || mudou) { f.querySelector('#fMsg').textContent = erro || mudou; return; }
+      if (cfg.salvar) {
+        // Banco: o salvar grava (conferindo se ninguém mudou o cadastro) e a casca relê a lista para todas as abas
+        btn.disabled = true;
+        let falha; try { falha = await cfg.salvar(d, novo ? null : item); } catch (x) { falha = 'Não foi possível gravar: ' + (x?.message || x); }
+        btn.disabled = false;
+        if (falha) { f.querySelector('#fMsg').textContent = falha; desenhar(); return; }
+        fim(); desenhar(); return;
+      }
       if (novo) lista.unshift({ ...d, id: cfg.gerarId ? cfg.gerarId(d) : 'n' + Date.now() });
       else Object.assign(lista.find(x => x.id === item.id), d);
       fim(); desenhar(); if (cfg.tabela) avisarMudanca(cfg.tabela);

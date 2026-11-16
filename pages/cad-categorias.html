@@ -8,48 +8,80 @@
 <link rel="stylesheet" href="../assets/css/estilo.css?v=11">
 </head>
 <body>
-<script src="../assets/js/menu.js?v=8"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=9"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=8"></script>
-<script src="../assets/js/cadastro.js?v=4"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/financeiro.js?v=1"></script>
 <script>
 /* Categorias financeiras (plano de contas gerencial). Valem para as 3 empresas;
-   o resultado (DRE) sai separado por empresa porque cada lançamento tem empresa. */
+   o resultado (DRE) sai separado por empresa porque cada lançamento tem empresa.
+   Com o banco: tabela categorias_financeiras (ao vivo). A importação do fluxo de caixa
+   cria sozinha as categorias que faltam, no bloco certo (3.xx CMV, 4.xx folha...). */
 const TIPO = { receita: 'Receita', despesa: 'Despesa' }, NAT = { fixa: 'Fixa', variavel: 'Variável' };
-const LINHAS_DRE = ['Receita bruta', 'Impostos sobre vendas', 'Deduções', 'CMV', 'Pessoal', 'Ocupação', 'Administrativas', 'Financeiras'];
-montarCadastro({
-  titulo: 'Categorias financeiras', sub: 'Plano de contas gerencial · usado em contas a pagar, a receber e no resultado',
-  novoRotulo: 'Nova categoria', tituloLista: 'Categorias por linha do resultado', porUnidade: false,
-  dados: CATEGORIAS, tabela: 'categorias',
-  agrupar: l => l.dre,
-  colunas: [
-    { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
-    { campo: 'nome', titulo: 'Categoria', fmt: v => `<b>${esc(v)}</b>` },
-    { campo: 'tipo', titulo: 'Tipo', fmt: v => `<span class="etiqueta ${v === 'receita' ? 'completa' : ''}">${TIPO[v]}</span>` },
-    { campo: 'natureza', titulo: 'Natureza', fmt: v => NAT[v] || '—' },
-    { campo: 'dre', titulo: 'Linha do resultado' },
-    { campo: 'ativo', titulo: 'Ativa', fmt: sim }
-  ],
-  kpis: (v, todos) => [
-    ['Categorias', v.length, `${todos.filter(c => !c.ativo).length} inativa(s)`],
-    ['Receitas', v.filter(c => c.tipo === 'receita').length, 'entradas de dinheiro'],
-    ['Despesas fixas', v.filter(c => c.tipo === 'despesa' && c.natureza === 'fixa').length, 'pesam todo mês'],
-    ['Despesas variáveis', v.filter(c => c.tipo === 'despesa' && c.natureza === 'variavel').length, 'acompanham as vendas']
-  ],
-  campos: [
-    { campo: 'codigo', titulo: 'Código', obrig: true, larg: 'c3', max: 10, dica: 'ex.: 5.05', somenteLeitura: true },
-    { campo: 'nome', titulo: 'Nome', obrig: true, larg: 'c9', max: 60 },
-    { campo: 'tipo', titulo: 'Tipo', tipo: 'select', opcoes: Object.entries(TIPO), larg: 'c3' },
-    { campo: 'natureza', titulo: 'Natureza', tipo: 'select', opcoes: Object.entries(NAT), larg: 'c3' },
-    { campo: 'dre', titulo: 'Linha do resultado (DRE)', tipo: 'select', opcoes: LINHAS_DRE.map(x => [x, x]), larg: 'c4' },
-    { campo: 'ativo', titulo: 'Ativa', tipo: 'check', larg: 'c2' }
-  ],
-  novo: () => ({ tipo: 'despesa', natureza: 'variavel', dre: 'Administrativas', ativo: true }),
-  validar: (d, item, lista) => !/^\d\.\d{2}$/.test(d.codigo || item.codigo) ? 'Código no formato 0.00 (ex.: 5.05).'
-    : !item.id && lista.some(c => c.codigo === d.codigo) ? 'Já existe uma categoria com esse código.' : '',
-  gerarId: d => d.codigo
-});
+const LINHAS_DRE = ['Receita bruta', 'Impostos sobre vendas', 'Deduções', 'CMV', 'Pessoal', 'Ocupação', 'Administrativas', 'Financeiras', 'Investimentos'];
+const ordemCod = (a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true });
+
+(async () => {
+  const REAL = await FIN.usar();
+  const lista = REAL ? FIN.categorias() : CATEGORIAS;
+  const usoDe = REAL ? id => FIN.L('contas_pagar').filter(c => c.categoria_id === id).length + FIN.L('contas_receber').filter(c => c.categoria_id === id).length : () => 0;
+  if (REAL) FIN.garantir('contas_pagar', 'contas_receber').then(() => avisarMudanca('categorias_financeiras')).catch(() => {});
+  montarCadastro({
+    titulo: 'Categorias financeiras', sub: 'Plano de contas gerencial · usado em contas a pagar, a receber e no resultado',
+    novoRotulo: 'Nova categoria', tituloLista: 'Categorias por grupo', porUnidade: false,
+    dados: lista, tabela: REAL ? 'categorias_financeiras' : 'categorias', depende: REAL ? ['contas_pagar', 'contas_receber'] : [],
+    aviso: REAL ? '' : (db ? '<div class="aviso">A tabela de categorias ainda não está no banco: a lista abaixo é de exemplo.</div>' : ''),
+    ordenar: ordemCod,
+    agrupar: l => REAL ? `${String(l.codigo).split('.')[0]} · ${l.grupo}` : l.dre,
+    colunas: [
+      { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
+      { campo: 'nome', titulo: 'Categoria', fmt: v => `<b>${esc(v)}</b>` },
+      { campo: 'tipo', titulo: 'Tipo', fmt: v => `<span class="etiqueta ${v === 'receita' ? 'completa' : ''}">${TIPO[v]}</span>` },
+      { campo: 'natureza', titulo: 'Natureza', fmt: v => NAT[v] || '—' },
+      { campo: 'dre', titulo: 'Linha do resultado' },
+      ...(REAL ? [{ campo: 'id', titulo: 'Lançamentos', num: true, fmt: v => numero(usoDe(v)), busca: () => '' }] : []),
+      { campo: 'ativo', titulo: 'Ativa', fmt: sim }
+    ],
+    kpis: (v, todos) => [
+      ['Categorias', v.length, `${todos.filter(c => !c.ativo).length} inativa(s)`],
+      ['Receitas', v.filter(c => c.tipo === 'receita').length, 'entradas de dinheiro'],
+      ['Despesas fixas', v.filter(c => c.tipo === 'despesa' && c.natureza === 'fixa').length, 'pesam todo mês'],
+      ['Despesas variáveis', v.filter(c => c.tipo === 'despesa' && c.natureza === 'variavel').length, 'acompanham as vendas']
+    ],
+    campos: [
+      { campo: 'codigo', titulo: 'Código', obrig: true, larg: 'c3', max: 6, dica: 'ex.: 5.05', somenteLeitura: true },
+      { campo: 'nome', titulo: 'Nome', obrig: true, larg: 'c9', max: REAL ? 80 : 60 },
+      ...(REAL ? [{ campo: 'grupo', titulo: 'Grupo (bloco do fluxo de caixa)', obrig: true, larg: 'c6', max: 60, dica: 'ex.: Despesas fixas' }] : []),
+      { campo: 'tipo', titulo: 'Tipo', tipo: 'select', opcoes: Object.entries(TIPO), larg: 'c3' },
+      { campo: 'natureza', titulo: 'Natureza', tipo: 'select', opcoes: Object.entries(NAT), larg: 'c3' },
+      { campo: 'dre', titulo: 'Linha do resultado (DRE)', tipo: 'select', opcoes: LINHAS_DRE.map(x => [x, x]), larg: 'c4' },
+      { campo: 'ativo', titulo: 'Ativa', tipo: 'check', larg: 'c2' }
+    ],
+    novo: () => ({ tipo: 'despesa', natureza: 'variavel', dre: 'Administrativas', grupo: '', ativo: true }),
+    validar: (d, item, lista) => !(REAL ? /^\d{1,2}\.\d{2,3}$/ : /^\d\.\d{2}$/).test(d.codigo || item.codigo) ? 'Código no formato 0.00 (ex.: 5.05).'
+      : !item.id && lista.some(c => c.codigo === d.codigo) ? 'Já existe uma categoria com esse código.'
+      : REAL && lista.some(c => c.id !== item.id && c.tipo === d.tipo && normalizar(c.grupo) === normalizar(d.grupo) && normalizar(c.nome) === normalizar(d.nome)) ? 'Já existe uma categoria com esse nome nesse grupo.' : '',
+    gerarId: d => d.codigo,
+    salvar: REAL ? async (d, item) => {
+      const reg = { nome: d.nome, grupo: d.grupo, tipo: d.tipo, natureza: d.natureza, dre: d.dre, ativo: d.ativo };
+      if (!item) {
+        const { error } = await db.from('categorias_financeiras').insert({ ...reg, codigo: d.codigo });
+        if (error) return 'Não foi possível gravar: ' + error.message;
+      } else {
+        // só grava se ninguém mudou a categoria desde que o formulário abriu
+        const { data, error } = await db.from('categorias_financeiras').update(reg).eq('id', item.id).eq('atualizado_em', item.atualizado_em).select('id');
+        if (error) return 'Não foi possível gravar: ' + error.message;
+        if (!data.length) { await FIN.gravou('categorias_financeiras'); return 'Esta categoria mudou em outra tela enquanto o formulário estava aberto. Nada foi feito: feche e confira.'; }
+      }
+      await FIN.gravou('categorias_financeiras');
+    } : null
+  });
+})();
 </script>
 </body>
 </html>

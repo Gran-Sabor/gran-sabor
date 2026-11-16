@@ -228,7 +228,7 @@ function mostrarAlertas() {
 window.addEventListener('message', e => {
   if (e.origin !== location.origin) return;
   if (e.data?.tipo === 'abrir') abrir(e.data.id);
-  if (e.data?.tipo === 'unidades' && !MODO_DEMO) atualizarUnidades().then(montarUnidades);
+  if (e.data?.tipo === 'unidades' && !MODO_DEMO) { atualizarUnidades().then(montarUnidades); dadosBanco.recarregar('unidades').catch(() => {}); }
 });
 
 document.addEventListener('DOMContentLoaded', () => {
