@@ -10,10 +10,13 @@
 <body>
 <div class="tela">
   <div class="tela-cab"><h1>Contas a receber</h1><span class="sub">Convênios PJ (consumo → fechamento → nota → boleto), cartões e repasses de delivery</span>
-    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+    <div class="dir"><span class="etiqueta exemplo" id="etqExemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn oculto" id="btnImportar" title="Planilha do fluxo de caixa (uma aba por loja): recebimentos e pagamentos">Importar fluxo de caixa</button>
+      <input type="file" id="arqImportar" accept=".xlsx,.xls" class="oculto">
       <button type="button" class="btn" id="btnExportar">Exportar</button></div></div>
   <div id="filtros"></div>
-  <div class="abas-tela" id="abas"><button type="button" data-aba="pj" class="ativa">Faturamento PJ</button><button type="button" data-aba="titulos">Títulos a receber</button></div>
+  <div id="avisoBanco"></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="rec" class="oculto">Recebimentos</button><button type="button" data-aba="pj" class="ativa">Faturamento PJ <small class="sub">exemplo</small></button><button type="button" data-aba="titulos">Títulos a receber <small class="sub">exemplo</small></button></div>
   <section class="kpis" id="kpis"></section>
 
   <div id="painelPJ" class="grade-2 largo">
@@ -23,15 +26,28 @@
       <div id="fechamentos"></div></section>
   </div>
 
+  <div id="painelRec" class="grade-2 largo oculto">
+    <section class="cartao"><div class="cartao-cab"><h2>Recebimentos</h2><span class="dir sub" id="contagemRec"></span></div>
+      <div class="rolagem"><table class="tabela clicavel" id="tabRec"></table></div></section>
+    <div class="coluna">
+      <section class="cartao"><div class="cartao-cab"><h2>Por forma · no período</h2></div><div id="porForma"></div></section>
+      <section class="cartao"><div class="cartao-cab"><h2>Por empresa · no período</h2></div><div id="porEmpresaRec"></div></section>
+    </div>
+  </div>
+
   <section id="painelTit" class="cartao oculto"><div class="cartao-cab"><h2>Títulos</h2><span class="dir sub" id="contagem"></span></div>
     <div class="rolagem"><table class="tabela" id="tabTit"></table></div></section>
 </div>
 
-<script src="../assets/js/menu.js?v=8"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=9"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=8"></script>
-<script src="../assets/js/cadastro.js?v=4"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/financeiro.js?v=1"></script>
 <script>
 const hoje = hojeISO();
 // Mesmos dados de todas as abas (o PDV lança consumo, o acerto entre empresas lança título): nada de cópia própria
@@ -40,7 +56,7 @@ let aba = 'pj', proxNota = 2233;
 const cli = id => CLIENTES_PJ.find(c => c.id === id) || {};
 const ETAPAS = ['fechado', 'nota', 'boleto', 'pago'], NOME_ETAPA = { fechado: 'Fechado', nota: 'Nota emitida', boleto: 'Boleto enviado', pago: 'Pago' };
 
-const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Cliente, CNPJ, NF, valor… (atalho: /)' });
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, periodo: true, placeholder: 'Cliente, forma, CNPJ, NF, valor… (atalho: /)' });
 const buscaCli = c => [c.nome, c.cnpj, fmtDoc(c.cnpj), nomeUnidade(c.unidade), nomeEmpresa(c.empresa)].join(' ');
 
 // Títulos = boletos dos fechamentos + cartões/delivery
@@ -54,7 +70,9 @@ function titulos() {
 }
 
 function desenhar() {
-  $('painelPJ').classList.toggle('oculto', aba !== 'pj'); $('painelTit').classList.toggle('oculto', aba !== 'titulos');
+  $('painelPJ').classList.toggle('oculto', aba !== 'pj'); $('painelTit').classList.toggle('oculto', aba !== 'titulos'); $('painelRec').classList.toggle('oculto', aba !== 'rec');
+  $('etqExemplo').classList.toggle('oculto', aba === 'rec');
+  if (aba === 'rec') return desenharRec();
   const clientes = CLIENTES_PJ.filter(c => noFiltro(filtro, c) && casaBusca(buscaCli(c), filtro.busca));
   const ids = new Set(clientes.map(c => c.id));
   const abertos = consumos.filter(k => ids.has(k.cliente));
@@ -151,11 +169,108 @@ $('tabTit').addEventListener('click', e => { if (!e.target.closest('[data-recebe
     <label class="c4">Valor<input name="valor" class="campo" value="${numero(r.valor, 2)}"></label></div><div class="form-nota">Diferença de valor (taxa do cartão ou do app) vai para a categoria "Taxas de cartão e apps".</div>`,
     'Confirmar', fm => { const m = mudouDesde(foto, outros.find(x => x.id === r.id), ['valor', 'recebidoEm'], 'Este título'); if (m) { desenhar(); return m; }
       r.recebidoEm = fm.data.value; desenhar(); avisarMudanca('receber_outros'); }); });
-$('btnExportar').onclick = () => aba === 'titulos'
+$('btnExportar').onclick = () => aba === 'rec' ? exportarRec() : aba === 'titulos'
   ? exportarCSV('titulos-a-receber', ['Vencimento', 'Pagador', 'Origem', 'Empresa', 'Unidade', 'Valor', 'Recebido em'], titulos().map(t => [dataBR(t.vencimento + 'T12:00'), t.pagador, t.origem, nomeEmpresa(t.empresa), nomeUnidade(t.unidade), numero(t.valor, 2), t.recebidoEm ? dataBR(t.recebidoEm + 'T12:00') : '']))
   : exportarCSV('fechamentos-pj', ['Cliente', 'CNPJ', 'Empresa', 'Período', 'Refeições', 'Valor', 'Etapa', 'Nota', 'Vencimento'], fechamentos.filter(f => noFiltro(filtro, f)).map(f => [cli(f.cliente).nome, fmtDoc(cli(f.cliente).cnpj), nomeEmpresa(f.empresa), f.periodo, f.refeicoes, numero(f.valor, 2), NOME_ETAPA[f.etapa], f.nota, f.vencimento ? dataBR(f.vencimento + 'T12:00') : '']));
-vigiarDados(['consumos_pj', 'fechamentos_pj', 'receber_outros', 'clientes_pj', 'vendas'], desenhar);
-desenhar();
+vigiarDados(['consumos_pj', 'fechamentos_pj', 'receber_outros', 'clientes_pj', 'vendas', 'contas_receber', 'categorias_financeiras', 'contas_bancarias', 'extrato_lancamentos', 'unidades'], desenhar);
+
+/* =====================================================================
+   RECEBIMENTOS (banco · tabela contas_receber, ao vivo)
+   Do fluxo de caixa vem só o valor RECEBIDO por dia, loja e forma (dinheiro, Pix,
+   cartões, vales, fiado). O valor VENDIDO fica vazio até vir do PDV; dá para
+   preencher à mão clicando na linha. A diferença vendido × recebido aparece quando os dois existem.
+   ===================================================================== */
+let REAL = false, lendo = false;
+const LIMITE_REC = 400;
+const recDaLinha = r => ({ id: r.id, unidade: FIN.codUnidade(r.unidade_id), empresa: FIN.empresaDaUnidade(r.unidade_id), forma: r.forma, cliente: r.cliente, documento: r.documento,
+  vendido: r.valor_vendido == null ? null : Number(r.valor_vendido), valor: Number(r.valor), vencimento: r.vencimento, recebidoEm: r.recebido_em,
+  recebido: r.valor_recebido == null ? null : Number(r.valor_recebido), conta: r.conta_bancaria_id, origem: r.origem, obs: r.obs, atualizado_em: r.atualizado_em });
+const conciliadosRec = () => new Set(FIN.L('extrato_lancamentos').filter(x => x.conta_receber_id).map(x => x.conta_receber_id));
+const dataRec = r => r.recebidoEm || r.vencimento;
+const noPeriodoRec = r => (!filtro.de || dataRec(r) >= filtro.de || (!r.recebidoEm && r.vencimento < hoje)) && (!filtro.ate || dataRec(r) <= filtro.ate);
+const buscaRec = r => [r.forma, r.cliente, r.documento, FIN.nomeConta(r.conta), nomeUnidade(r.unidade), nomeEmpresa(r.empresa), numero(r.valor, 2), dataBR(dataRec(r) + 'T12:00')].join(' ');
+function recebimentos() {
+  return FIN.L('contas_receber').map(recDaLinha).filter(r => noFiltro(filtro, r) && noPeriodoRec(r) && casaBusca(buscaRec(r), filtro.busca))
+    .sort((a, b) => dataRec(b).localeCompare(dataRec(a)) || a.unidade.localeCompare(b.unidade) || a.forma.localeCompare(b.forma));
+}
+function desenharRec() {
+  const v = recebimentos(), conc = conciliadosRec();
+  const rec = v.filter(r => r.recebidoEm), abertos = v.filter(r => !r.recebidoEm), comVenda = rec.filter(r => r.vendido != null);
+  const s = (l, k) => l.reduce((a, r) => a + (r[k] || 0), 0);
+  const dias = new Set(rec.map(r => r.recebidoEm)).size || 1;
+  $('kpis').innerHTML = [
+    ['Recebido no período', reais(s(rec, 'recebido')), `${numero(rec.length)} lançamento(s) · ${numero(dias)} dia(s)`],
+    ['Média por dia', reais(s(rec, 'recebido') / dias), 'recebido ÷ dias com recebimento'],
+    ['Vendido no período', comVenda.length ? reais(s(comVenda, 'vendido')) : '<span class="sub">não informado</span>', comVenda.length ? `diferença ${reais(s(comVenda, 'vendido') - s(comVenda, 'recebido'))}` : 'o fluxo de caixa traz só o recebido'],
+    ['A receber', reais(s(abertos, 'valor')), `${numero(abertos.length)} em aberto`],
+    ['Conciliado no extrato', `${numero(rec.filter(r => conc.has(r.id)).length)} de ${numero(rec.length)}`, 'ligado a uma linha do extrato']
+  ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  $('contagemRec').textContent = `${numero(v.length)} lançamento(s) · ${reais(s(rec, 'recebido') + s(abertos, 'valor'))}`;
+  const vazio = lendo ? 'Lendo o banco…' : !FIN.L('contas_receber').length ? 'Nada no banco ainda. Clique em <b>Importar fluxo de caixa</b>.' : 'Nada com esses filtros (o período começa no mês atual).';
+  $('tabRec').innerHTML = `<thead><tr><th>Data</th><th>Forma · origem</th><th>Empresa · unidade</th><th class="num">Vendido</th><th class="num">Recebido</th><th>Situação</th></tr></thead><tbody>${
+    v.slice(0, LIMITE_REC).map(r => `<tr data-r="${r.id}" tabindex="0"><td class="mono">${dataBR(dataRec(r) + 'T12:00')}</td>
+      <td><b>${esc(r.forma || '—')}</b><small class="sub"> ${esc(r.cliente || r.documento)}</small></td>
+      <td>${etqEmpresa(r.empresa)} <small class="sub">${esc(nomeUnidade(r.unidade))}</small></td>
+      <td class="num">${r.vendido == null ? '<span class="sub" title="O fluxo de caixa não traz o valor vendido">—</span>' : reais(r.vendido)}</td>
+      <td class="num">${r.recebidoEm ? reais(r.recebido) : `<span class="sub">${reais(r.valor)}</span>`}</td>
+      <td>${r.recebidoEm ? (conc.has(r.id) ? '<span class="etiqueta completa">conciliado</span>' : '<span class="etiqueta">recebido</span>') : r.vencimento < hoje ? '<span class="etiqueta perigo">vencido</span>' : '<span class="etiqueta pendente">a receber</span>'}</td></tr>`).join('')
+    || `<tr><td colspan="6" class="vazio">${vazio}</td></tr>`}
+    ${v.length > LIMITE_REC ? `<tr><td colspan="6" class="vazio">Mostrando ${LIMITE_REC} de ${numero(v.length)}. Use o período, a unidade ou a busca (o Exportar leva todos).</td></tr>` : ''}</tbody>`;
+  const formas = {}; rec.forEach(r => formas[r.forma] = (formas[r.forma] || 0) + r.recebido);
+  const tot = s(rec, 'recebido') || 1;
+  $('porForma').innerHTML = Object.entries(formas).sort((a, b) => b[1] - a[1]).map(([f, x]) => `<div class="lista-linha"><div>${esc(f)}<small>${pct(x / tot * 100)}</small></div>
+    <div class="barra" style="flex:1"><i style="width:${(x / tot * 100).toFixed(1)}%"></i></div><span class="dir">${reais(x)}</span></div>`).join('') || '<div class="vazio">Nada no período.</div>';
+  $('porEmpresaRec').innerHTML = EMPRESAS.map(e => { const x = s(rec.filter(r => r.empresa === e.id), 'recebido');
+    return `<div class="lista-linha"><div>${etqEmpresa(e.id)}</div><div class="barra" style="flex:1"><i style="width:${(x / tot * 100).toFixed(1)}%;background:${e.cor}"></i></div><span class="dir">${reais(x)}</span></div>`; }).join('');
+}
+function exportarRec() {
+  exportarCSV('recebimentos', ['Data', 'Forma', 'Cliente/documento', 'Empresa', 'Unidade', 'Vendido', 'Recebido', 'A receber', 'Situação'],
+    recebimentos().map(r => [dataBR(dataRec(r) + 'T12:00'), r.forma, r.cliente || r.documento, nomeEmpresa(r.empresa), nomeUnidade(r.unidade), r.vendido == null ? '' : numero(r.vendido, 2),
+      r.recebidoEm ? numero(r.recebido, 2) : '', r.recebidoEm ? '' : numero(r.valor, 2), r.recebidoEm ? 'recebido' : 'a receber']));
+}
+// Clicar na linha: informar o valor vendido (quando vier do PDV/relatório) ou receber o que está em aberto
+function editarRec(r) {
+  const foto = { ...r }, nota = janela.nota; janela.nota = 'Grava no banco';
+  setTimeout(() => { janela.nota = nota; });
+  janela(`${r.forma} · ${nomeUnidade(r.unidade)} · ${dataBR(dataRec(r) + 'T12:00')}`, `
+    <div class="form-grade">
+      <label class="c4">Valor vendido (R$)<input name="vendido" class="campo" inputmode="decimal" value="${r.vendido == null ? '' : numero(r.vendido, 2)}" placeholder="não informado"></label>
+      <label class="c4">${r.recebidoEm ? 'Recebido (R$)' : 'A receber (R$)'}<input class="campo" value="${numero(r.recebidoEm ? r.recebido : r.valor, 2)}" readonly></label>
+      ${r.recebidoEm ? `<label class="c4">Recebido em<input class="campo" value="${dataBR(r.recebidoEm + 'T12:00')}" readonly></label>`
+        : `<label class="c4">Receber em<input name="data" type="date" class="campo" value="${hoje}"></label>`}
+      <label class="c12">Observação<input name="obs" class="campo" maxlength="200" value="${esc(r.obs)}"></label>
+    </div><div class="form-nota">${r.origem === 'fluxo' ? 'Veio do fluxo de caixa: o valor recebido é o da planilha. ' : ''}A diferença entre vendido e recebido (taxa de cartão, vale, fiado) aparece nos indicadores.</div>`,
+  r.recebidoEm ? 'Salvar' : 'Receber', async f => {
+    const t = f.vendido.value.trim(), vendido = t === '' ? null : FIN.centavos(FIN.num(t));
+    if (t !== '' && !(vendido >= 0)) return 'Valor vendido inválido.';
+    const upd = { valor_vendido: vendido, obs: f.obs.value.trim() };
+    if (!r.recebidoEm) Object.assign(upd, { recebido_em: f.data.value, valor_recebido: r.valor });
+    const { data, error } = await db.from('contas_receber').update(upd).eq('id', r.id).eq('atualizado_em', foto.atualizado_em).select('id');
+    if (error) return 'Não foi possível gravar: ' + error.message;
+    if (!data.length) { FIN.gravou('contas_receber').then(desenhar); return 'Este lançamento mudou em outra tela enquanto a janela estava aberta. Nada foi feito: feche e confira o valor novo.'; }
+    await FIN.gravou('contas_receber'); desenhar();
+  });
+}
+$('tabRec').addEventListener('click', e => { const tr = e.target.closest('tr[data-r]'); if (!tr) return; const r = FIN.L('contas_receber').find(x => x.id === tr.dataset.r); if (r) editarRec(recDaLinha(r)); });
+$('tabRec').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.closest('tr[data-r]')?.click(); });
+$('btnImportar').onclick = () => $('arqImportar').click();
+$('arqImportar').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) FIN.importarFluxo(f, msg => { $('avisoBanco').innerHTML = `<div class="aviso">${msg} O período começa no mês atual: mude as datas para ver o ano.</div>`; desenhar(); }); };
+
+(async () => {
+  REAL = await FIN.usar();
+  if (REAL) {
+    janela.nota = 'Exemplo: nada é gravado';   // convênio PJ ainda é exemplo; recebimentos gravam no banco
+    $('etqExemplo').title = 'Faturamento PJ e títulos ainda são exemplo; Recebimentos vêm do banco';
+    $('btnImportar').classList.remove('oculto');
+    const b = $('abas').querySelector('[data-aba="rec"]'); b.classList.remove('oculto'); b.click();
+    $('kpis').innerHTML = '<div class="kpi"><div class="kpi-tit">Lendo o banco…</div></div>';
+    lendo = true;
+    try { await FIN.garantir('contas_receber', 'extrato_lancamentos'); }
+    catch (e) { $('avisoBanco').innerHTML = `<div class="aviso perigo">Não foi possível ler os recebimentos: ${esc(e.message)}. Atualize a página.</div>`; }
+    lendo = false;
+  }
+  desenhar();
+})();
 </script>
 </body>
 </html>

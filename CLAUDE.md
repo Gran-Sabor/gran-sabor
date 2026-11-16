@@ -16,6 +16,11 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
 - Cardápio real: tabelas `produtos` + `produto_precos` (preço por loja). A casca lê uma vez (`carregarProdutos` em sistema.js)
   e `exemplo.js` monta `PRODUTOS_VENDA` com elas; sem a tabela, ficam os produtos de exemplo. Dado real entra pela tela
   (botão "Importar planilha" da Saipos), nunca por migração.
+- Financeiro no banco: `categorias_financeiras`, `contas_bancarias`, `contas_pagar`, `contas_receber`, `extrato_lancamentos`.
+  `assets/js/dados-banco.js` (na casca) lê cada tabela uma vez, guarda para todas as abas e escuta `dados_versao` pelo Realtime
+  (um gatilho por tabela sobe a versão a cada gravação); `assets/js/financeiro.js` converte, grava e importa (fluxo de caixa xlsx,
+  extrato OFX/CSV). Gravação com conferência: `update ... eq('atualizado_em', foto)`; se não voltou linha, alguém mudou antes.
+  Tabela nova que precisa ser ao vivo: gatilho `subir_versao` + linha em `dados_versao` + entrada em `TABELAS_BANCO`.
 - Banco: Supabase (projeto `sayplpvhnoeytfnkbvpm`, São Paulo). Migrações em `supabase/migrations/`,
   aplicadas pelo GitHub Actions no merge (segredos SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_ID, SUPABASE_DB_PASSWORD).
 

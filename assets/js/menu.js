@@ -33,7 +33,7 @@ const MENU = [
     { id: 'pagar',          nome: 'Contas a pagar', arquivo: 'pages/fin-pagar.html' },
     { id: 'receber',        nome: 'Contas a receber', arquivo: 'pages/fin-receber.html' },
     { id: 'fluxo',          nome: 'Fluxo de caixa' },
-    { id: 'conciliacao',    nome: 'Extratos e conciliação' },
+    { id: 'conciliacao',    nome: 'Extratos e conciliação', arquivo: 'pages/fin-conciliacao.html' },
     { id: 'conciliacao_cartoes', nome: 'Conciliação de cartões', arquivo: 'pages/fin-cartoes.html' },
     { id: 'dividas',        nome: 'Dívidas e empréstimos' }
   ]},
@@ -71,6 +71,7 @@ const MENU = [
     { id: 'fornecedores',   nome: 'Fornecedores', arquivo: 'pages/cad-fornecedores.html' },
     { id: 'clientes',       nome: 'Clientes e convênios', arquivo: 'pages/cad-clientes.html' },
     { id: 'plano_contas',   nome: 'Categorias financeiras', arquivo: 'pages/cad-categorias.html' },
+    { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/cad-contas-bancarias.html' },
     { id: 'centros_custo',  nome: 'Centros de custo', arquivo: 'pages/cad-centros.html' }
   ]},
   { grupo: 'Configurações', icone: 'config', itens: [

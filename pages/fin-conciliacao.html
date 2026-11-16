@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extratos e conciliação</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+<style>
+  .barra-conta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .barra-conta select { width: auto; min-width: 260px; max-width: 100%; }
+  .entra { color: var(--sucesso, #2f7d4f); }
+  #tab td.hist small { display: block; }
+  .cand td { cursor: pointer; }
+  @media (max-width: 860px) { #tab .so-largo { display: none; } }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Extratos e conciliação</h1><span class="sub">Extrato do banco · saldo conferido linha a linha · cada linha ligada à conta paga ou recebida</span>
+    <div class="dir">
+      <button type="button" class="btn" id="btnImportar" title="Arquivo OFX do banco ou planilha CSV (Data, Histórico, Valor, Saldo)">Importar extrato</button>
+      <input type="file" id="arqImportar" accept=".ofx,.csv,.txt" class="oculto">
+      <button type="button" class="btn" id="btnAuto" title="Liga cada linha do extrato à conta paga/recebida de mesmo valor e data próxima (até 3 dias)">Conciliar automático</button>
+      <button type="button" class="btn" id="btnExportar">Exportar</button></div></div>
+  <div id="filtros"></div>
+  <div class="barra-conta"><select class="campo" id="conta" aria-label="Conta bancária"></select><span class="sub" id="infoConta"></span></div>
+  <div id="avisoBanco"></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="todas" class="ativa">Todas</button><button type="button" data-aba="pendentes">Pendentes</button><button type="button" data-aba="conciliadas">Conciliadas</button></div>
+  <section class="kpis" id="kpis"></section>
+  <div class="grade-2 largo">
+    <section class="cartao"><div class="cartao-cab"><h2>Lançamentos do extrato</h2><span class="dir sub" id="contagem"></span></div>
+      <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+    <div class="coluna">
+      <section class="cartao"><div class="cartao-cab"><h2>Por dia</h2><span class="dir sub">entradas · saídas · saldo</span></div><div id="porDia"></div></section>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=9"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=8"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/financeiro.js?v=1"></script>
+<script>
+/* Extrato bancário e conciliação (banco, ao vivo).
+   - Importar: OFX do banco ou CSV. A mesma linha não entra duas vezes (chave por linha).
+   - Saldo: conferido linha a linha (saldo anterior + valor = saldo da linha). Se não fechar, avisa.
+   - Conciliar: ligar a saída a uma conta paga, a entrada a uma conta recebida. Ligou, aparece nas
+     duas telas na hora (contas a pagar/receber mostram "conciliado").
+   Nada de ajuste silencioso: diferença fica visível como pendente. */
+let REAL = false, aba = 'todas', contaId = '';
+const hoje = hojeISO();
+const LIMITE = 500;
+janela.nota = 'Grava no banco';
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, periodo: true, unidade: false, placeholder: 'Histórico, favorecido, documento, valor… (atalho: /)' });
+filtro.de = ''; $('filtros').querySelector('[data-f="de"]').value = '';   // extrato: começa mostrando tudo da conta
+filtro.ate = ''; $('filtros').querySelector('[data-f="ate"]').value = '';
+
+const linhasConta = () => FIN.L('extrato_lancamentos').filter(x => x.conta_bancaria_id === contaId)
+  .sort((a, b) => a.data.localeCompare(b.data) || a.ordem - b.ordem);   // ordem do banco dentro do dia (fecha o saldo)
+const pagar = id => FIN.L('contas_pagar').find(c => c.id === id);
+const receber = id => FIN.L('contas_receber').find(c => c.id === id);
+const ligada = x => x.conta_pagar_id ? pagar(x.conta_pagar_id) : x.conta_receber_id ? receber(x.conta_receber_id) : null;
+const descLigada = x => { const c = ligada(x); if (!c) return '';
+  const d = x.conta_pagar_id ? c.pago_em : c.recebido_em, nome = x.conta_pagar_id ? (c.favorecido || FIN.nomeCategoria(c.categoria_id)) : `${c.forma || 'Recebimento'}`;
+  return `${x.conta_pagar_id ? 'Pago' : 'Recebido'}: ${nome} · ${nomeUnidade(FIN.codUnidade(c.unidade_id))} · ${FIN.dataBRIso(d)}`; };
+const noPeriodo = x => (!filtro.de || x.data >= filtro.de) && (!filtro.ate || x.data <= filtro.ate);
+const busca = x => [x.historico, x.favorecido, x.documento, x.cpf_cnpj, numero(Math.abs(x.valor), 2), FIN.dataBRIso(x.data), descLigada(x)].join(' ');
+const conciliada = x => !!(x.conta_pagar_id || x.conta_receber_id);
+
+function montarContas() {
+  const cs = FIN.contas().filter(c => c.ativo && noFiltro(filtro, { empresa: FIN.empresaDaConta(c) || undefined }));
+  if (!cs.some(c => c.id === contaId)) contaId = (cs.find(c => FIN.L('extrato_lancamentos').some(x => x.conta_bancaria_id === c.id)) || cs[0] || {}).id || '';
+  $('conta').innerHTML = cs.map(c => `<option value="${c.id}"${c.id === contaId ? ' selected' : ''}>${esc(c.apelido)}${c.unidade_id ? ' · ' + esc(FIN.unidade(c.unidade_id).nome) : ' · grupo'}</option>`).join('')
+    || '<option value="">Nenhuma conta cadastrada</option>';
+  const c = FIN.conta(contaId);
+  $('infoConta').innerHTML = c.id ? [c.banco, c.agencia && 'ag. ' + c.agencia, c.conta && 'c/c ' + c.conta, c.titular].filter(Boolean).map(esc).join(' · ')
+    : 'Cadastre a conta em <a href="#" data-abrir="contas_bancarias">Cadastros › Contas bancárias</a> e depois importe o extrato.';
+}
+
+function desenhar() {
+  if (!REAL) return;
+  montarContas();
+  const todas = linhasConta(), v0 = todas.filter(x => noPeriodo(x) && casaBusca(busca(x), filtro.busca));
+  const v = v0.filter(x => aba === 'todas' || (aba === 'conciliadas' ? conciliada(x) : !conciliada(x)));
+  const ent = v0.filter(x => x.valor > 0), sai = v0.filter(x => x.valor < 0), s = l => l.reduce((a, x) => a + Number(x.valor), 0);
+  const ult = [...v0].reverse().find(x => x.saldo != null), conf = FIN.conferirSaldo(todas.map(x => ({ valor: Number(x.valor), saldo: x.saldo == null ? null : Number(x.saldo) })));
+  const pend = v0.filter(x => !conciliada(x));
+  $('kpis').innerHTML = [
+    ['Saldo no extrato', ult ? `<span class="${ult.saldo < 0 ? 'desce' : ''}">${reais(ult.saldo)}</span>` : '—', ult ? `em ${FIN.dataBRIso(ult.data)}${ult.hora ? ' ' + ult.hora.slice(0, 5) : ''}` : 'importe o extrato'],
+    ['Entradas', `<span class="entra">${reais(s(ent))}</span>`, `${numero(ent.length)} lançamento(s)`],
+    ['Saídas', `<span class="desce">${reais(-s(sai))}</span>`, `${numero(sai.length)} lançamento(s)`],
+    ['Conciliadas', `${numero(v0.length - pend.length)} de ${numero(v0.length)}`, v0.length ? pct((v0.length - pend.length) / v0.length * 100) : '—'],
+    ['Saldo conferido', !conf.conferido ? '<span class="sub">sem saldo no arquivo</span>' : conf.erros ? `<span class="desce">${conf.erros} quebra(s)</span>` : 'fecha linha a linha',
+      conf.conferido ? `${reais(conf.inicial)} → ${reais(conf.final)}` : '']
+  ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+
+  $('contagem').textContent = `${numero(v.length)} linha(s)`;
+  const vazio = !contaId ? 'Cadastre uma conta bancária primeiro.' : !todas.length ? 'Nenhum extrato desta conta ainda. Clique em <b>Importar extrato</b>.' : 'Nada com esses filtros.';
+  $('tab').innerHTML = `<thead><tr><th>Data</th><th>Histórico · favorecido</th><th class="num">Valor</th><th class="num so-largo">Saldo</th><th>Conciliação</th></tr></thead><tbody>${
+    [...v].reverse().slice(0, LIMITE).map(x => `<tr data-id="${x.id}" tabindex="0"><td class="mono">${FIN.dataBRIso(x.data)}<small class="sub"> ${esc((x.hora || '').slice(0, 5))}</small></td>
+      <td class="hist"><b>${esc(x.historico)}</b><small class="sub">${esc([x.favorecido, x.documento && 'doc ' + x.documento].filter(Boolean).join(' · '))}</small></td>
+      <td class="num ${x.valor > 0 ? 'entra' : 'desce'}">${reais(x.valor)}</td><td class="num so-largo">${x.saldo == null ? '' : reais(x.saldo)}</td>
+      <td>${conciliada(x) ? `<span class="etiqueta completa">conciliado</span><small class="sub"> ${esc(descLigada(x))}</small>` : '<button type="button" class="btn btn-mini" data-conciliar>Conciliar</button>'}</td></tr>`).join('')
+    || `<tr><td colspan="5" class="vazio">${vazio}</td></tr>`}
+    ${v.length > LIMITE ? `<tr><td colspan="5" class="vazio">Mostrando ${LIMITE} de ${numero(v.length)}. Use o período ou a busca.</td></tr>` : ''}</tbody>`;
+
+  const dias = {}; v0.forEach(x => { const d = dias[x.data] || (dias[x.data] = { e: 0, s: 0, saldo: null, pend: 0 });
+    if (x.valor > 0) d.e += Number(x.valor); else d.s -= Number(x.valor); if (x.saldo != null) d.saldo = Number(x.saldo); if (!conciliada(x)) d.pend++; });
+  $('porDia').innerHTML = Object.entries(dias).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 31).map(([d, x]) =>
+    `<div class="lista-linha"><div>${FIN.dataBRIso(d)}<small>${x.pend ? `${x.pend} pendente(s)` : 'tudo conciliado'}</small></div>
+      <div style="text-align:right;flex:1"><span class="entra">+${numero(x.e, 2)}</span> <span class="desce">−${numero(x.s, 2)}</span></div><span class="dir">${x.saldo == null ? '' : reais(x.saldo)}</span></div>`).join('')
+    || '<div class="vazio">Nada no período.</div>';
+}
+
+/* ---------- Importar extrato ---------- */
+async function importar(arquivo) {
+  if (!contaId) return janela('Importar extrato', '<p>Cadastre a conta bancária primeiro (Cadastros › Contas bancárias) e escolha-a no seletor acima.</p>', 'Fechar', () => '');
+  let linhas;
+  try { linhas = await FIN.lerExtrato(arquivo); } catch (e) { return janela('Importar extrato', `<p>Não foi possível ler <b>${esc(arquivo.name)}</b>: ${esc(e.message)}.</p>`, 'Fechar', () => ''); }
+  const conf = FIN.conferirSaldo(linhas), ja = new Set(linhasConta().map(x => x.chave)), novas = linhas.filter(l => !ja.has(l.chave));
+  const s = l => l.reduce((a, x) => a + x.valor, 0), c = FIN.conta(contaId);
+  janela(`Importar extrato · ${arquivo.name}`, `
+    <p>Conta: <b>${esc(c.apelido)}</b>. Confira se o arquivo é mesmo desta conta.</p>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-tit">Lançamentos</div><div class="kpi-valor">${numero(linhas.length)}</div><div class="kpi-ctx">${FIN.dataBRIso(linhas[0].data)} a ${FIN.dataBRIso(linhas[linhas.length - 1].data)}</div></div>
+      <div class="kpi"><div class="kpi-tit">Novos</div><div class="kpi-valor">${numero(novas.length)}</div><div class="kpi-ctx">${numero(linhas.length - novas.length)} já estavam no sistema</div></div>
+      <div class="kpi"><div class="kpi-tit">Entradas · saídas</div><div class="kpi-valor"><span class="entra">${numero(s(linhas.filter(x => x.valor > 0)), 2)}</span></div><div class="kpi-ctx"><span class="desce">−${numero(-s(linhas.filter(x => x.valor < 0)), 2)}</span></div></div>
+      <div class="kpi"><div class="kpi-tit">Saldo</div><div class="kpi-valor">${conf.conferido ? reais(conf.final) : '—'}</div><div class="kpi-ctx">${!conf.conferido ? 'o arquivo não traz saldo' : conf.erros ? `<span class="desce">não fecha em ${conf.erros} linha(s)</span>` : `fecha linha a linha desde ${reais(conf.inicial)}`}</div></div>
+    </div>
+    ${conf.erros ? '<div class="aviso perigo">O saldo não fecha linha a linha: falta lançamento no arquivo ou há valor errado. Importe mesmo assim só se tiver certeza.</div>' : ''}`,
+  novas.length ? `Importar ${numero(novas.length)} lançamento(s)` : 'Fechar', async () => {
+    if (!novas.length) return;
+    const T = 500;
+    for (let i = 0; i < novas.length; i += T) {
+      const { error } = await db.from('extrato_lancamentos').upsert(novas.slice(i, i + T).map(l => ({ ...l, conta_bancaria_id: contaId })), { onConflict: 'conta_bancaria_id,chave', ignoreDuplicates: true });
+      if (error) { await FIN.gravou('extrato_lancamentos'); return 'Parou no meio: ' + error.message + '. Importe de novo para completar (não duplica).'; }
+    }
+    await FIN.gravou('extrato_lancamentos');
+    $('avisoBanco').innerHTML = `<div class="aviso">Extrato importado: ${numero(novas.length)} lançamento(s) em ${esc(c.apelido)}. Clique em <b>Conciliar automático</b> para ligar ao que já está em contas a pagar e a receber.</div>`;
+    desenhar();
+  });
+}
+
+/* ---------- Conciliação ---------- */
+// Candidatos: mesma direção, ainda não ligados a outra linha, da unidade da conta (ou de todas, se a conta é do grupo)
+function candidatos(x, dias = 3, soMesmoValor = true) {
+  const usados = new Set(FIN.L('extrato_lancamentos').flatMap(e => [e.conta_pagar_id, e.conta_receber_id]).filter(Boolean));
+  const un = FIN.conta(x.conta_bancaria_id).unidade_id, alvo = Math.abs(Number(x.valor));
+  const dif = d => Math.abs((new Date(d + 'T12:00') - new Date(x.data + 'T12:00')) / 864e5);
+  const lista = x.valor < 0
+    ? FIN.L('contas_pagar').filter(c => c.pago_em).map(c => ({ c, tipo: 'pagar', data: c.pago_em, valor: Number(c.valor_pago), nome: c.favorecido || FIN.nomeCategoria(c.categoria_id) }))
+    : FIN.L('contas_receber').filter(c => c.recebido_em).map(c => ({ c, tipo: 'receber', data: c.recebido_em, valor: Number(c.valor_recebido), nome: `${c.forma || 'Recebimento'}` }));
+  return lista.filter(k => !usados.has(k.c.id) && (!un || k.c.unidade_id === un) && dif(k.data) <= dias && (soMesmoValor ? Math.abs(k.valor - alvo) < 0.005 : Math.abs(k.valor - alvo) <= alvo * 0.1 + 0.01))
+    .map(k => ({ ...k, dist: dif(k.data) + Math.abs(k.valor - alvo) / (alvo || 1) })).sort((a, b) => a.dist - b.dist);
+}
+async function ligar(x, k) {
+  // Relê a linha na hora: se outra pessoa já conciliou, não faz nada
+  const campo = k.tipo === 'pagar' ? 'conta_pagar_id' : 'conta_receber_id';
+  const { data, error } = await db.from('extrato_lancamentos').update({ [campo]: k.c.id }).eq('id', x.id).is('conta_pagar_id', null).is('conta_receber_id', null).select('id');
+  if (error) return /duplicate|unique/i.test(error.message) ? 'Essa conta já está ligada a outra linha do extrato.' : 'Não foi possível gravar: ' + error.message;
+  if (!data.length) return 'Esta linha já foi conciliada em outra tela. Nada foi feito.';
+}
+function conciliar(x) {
+  if (conciliada(x)) {
+    return janela('Desfazer conciliação', `<p>${esc(x.historico)} · <b>${reais(x.valor)}</b> em ${FIN.dataBRIso(x.data)}</p><p class="sub">${esc(descLigada(x))}</p>`, 'Desfazer', async () => {
+      const { data, error } = await db.from('extrato_lancamentos').update({ conta_pagar_id: null, conta_receber_id: null }).eq('id', x.id).eq('atualizado_em', x.atualizado_em).select('id');
+      if (error) return 'Não foi possível gravar: ' + error.message;
+      await FIN.gravou('extrato_lancamentos'); desenhar();
+      if (!data.length) return 'Esta linha mudou em outra tela. Nada foi feito: feche e confira.';
+    });
+  }
+  let cs = candidatos(x); const exatos = cs.length;
+  if (!cs.length) cs = candidatos(x, 7, false);
+  janela(`Conciliar · ${x.historico} · ${reais(x.valor)}`, `
+    <p class="sub">${FIN.dataBRIso(x.data)} · ${esc(x.favorecido)} ${x.documento ? '· doc ' + esc(x.documento) : ''}</p>
+    <p>${exatos ? 'Contas com o mesmo valor, até 3 dias de diferença:' : cs.length ? 'Nenhuma com o mesmo valor. Parecidas (até 10% e 7 dias):' : `Nenhuma conta ${x.valor < 0 ? 'paga' : 'recebida'} parecida. Lance em contas a ${x.valor < 0 ? 'pagar' : 'receber'} e volte aqui.`}</p>
+    ${cs.length ? `<div class="rolagem" style="max-height:46vh"><table class="tabela cand"><thead><tr><th></th><th>Data</th><th>Conta</th><th>Unidade</th><th class="num">Valor</th></tr></thead><tbody>
+      ${cs.slice(0, 40).map((k, i) => `<tr><td><input type="radio" name="cand" value="${i}"${i ? '' : ' checked'}></td><td>${FIN.dataBRIso(k.data)}</td><td>${esc(k.nome)}<small class="sub"> ${esc(FIN.nomeCategoria(k.c.categoria_id))}</small></td>
+        <td>${esc(nomeUnidade(FIN.codUnidade(k.c.unidade_id)))}</td><td class="num">${reais(k.valor)}</td></tr>`).join('')}</tbody></table></div>` : ''}`,
+  cs.length ? 'Conciliar' : 'Fechar', async f => {
+    if (!cs.length) return;
+    const k = cs[+(f.querySelector('[name="cand"]:checked')?.value ?? -1)]; if (!k) return 'Escolha uma conta.';
+    const erro = await ligar(x, k); await FIN.gravou('extrato_lancamentos'); desenhar(); return erro;
+  }, v => v.querySelectorAll('.cand tbody tr').forEach(tr => tr.onclick = () => { tr.querySelector('input').checked = true; }));
+}
+// Automático: só liga quando há UM candidato claro (mesmo valor, data mais próxima sem empate)
+async function automatico() {
+  const pend = linhasConta().filter(x => !conciliada(x) && noPeriodo(x));
+  if (!pend.length) return janela('Conciliar automático', '<p>Nenhuma linha pendente nesta conta e período.</p>', 'Fechar', () => '');
+  const usados = new Set(), pares = [];
+  pend.forEach(x => { const cs = candidatos(x).filter(k => !usados.has(k.c.id));
+    if (!cs.length || (cs[1] && cs[1].dist === cs[0].dist)) return; usados.add(cs[0].c.id); pares.push([x, cs[0]]); });
+  janela('Conciliar automático', `<p>${numero(pend.length)} linha(s) pendente(s). Achei <b>${numero(pares.length)}</b> com uma conta de mesmo valor e data próxima (até 3 dias).</p>
+    <p class="sub">As outras ficam pendentes para conciliar uma a uma (valores somados, pagamentos lançados em outra data, ou que não estão no sistema).</p>
+    <div class="form-nota" id="autoProg"></div>`, pares.length ? `Conciliar ${numero(pares.length)}` : 'Fechar', async f => {
+    if (!pares.length) return;
+    let ok = 0, falhas = 0;
+    for (let i = 0; i < pares.length; i += 10) {
+      const r = await Promise.all(pares.slice(i, i + 10).map(([x, k]) => ligar(x, k)));
+      r.forEach(e => e ? falhas++ : ok++); f.querySelector('#autoProg').textContent = `${ok + falhas} de ${pares.length}…`;
+    }
+    await FIN.gravou('extrato_lancamentos'); desenhar();
+    $('avisoBanco').innerHTML = `<div class="aviso">${numero(ok)} linha(s) conciliada(s) automaticamente${falhas ? `; ${falhas} já tinham sido conciliadas em outra tela` : ''}.</div>`;
+  });
+}
+
+$('conta').onchange = e => { contaId = e.target.value; desenhar(); };
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba; $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
+$('tab').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (!tr) return; const x = FIN.L('extrato_lancamentos').find(l => l.id === tr.dataset.id); if (x) conciliar(x); });
+$('tab').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.closest('tr[data-id]')?.click(); });
+$('btnImportar').onclick = () => $('arqImportar').click();
+$('arqImportar').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importar(f); };
+$('btnAuto').onclick = () => automatico();
+$('btnExportar').onclick = () => exportarCSV('extrato-' + (FIN.conta(contaId).apelido || 'conta'), ['Data', 'Hora', 'Documento', 'Histórico', 'Favorecido', 'Valor', 'Saldo', 'Conciliação'],
+  linhasConta().filter(x => noPeriodo(x) && casaBusca(busca(x), filtro.busca)).map(x => [FIN.dataBRIso(x.data), x.hora || '', x.documento, x.historico, x.favorecido, numero(x.valor, 2), x.saldo == null ? '' : numero(x.saldo, 2), descLigada(x)]));
+// Outra aba (ou outra pessoa) importou, conciliou, pagou ou recebeu: redesenha sozinho
+vigiarDados(['extrato_lancamentos', 'contas_bancarias', 'contas_pagar', 'contas_receber', 'categorias_financeiras', 'unidades'], desenhar);
+
+(async () => {
+  REAL = await FIN.usar();
+  if (!REAL) {
+    ['btnImportar', 'btnAuto', 'btnExportar'].forEach(id => $(id).disabled = true);
+    $('avisoBanco').innerHTML = `<div class="aviso">${db ? 'As tabelas do financeiro ainda não estão no banco. Esta tela funciona quando o pacote do financeiro for juntado (depois, tecla F5).' : 'Modo demonstração: esta tela precisa do banco ligado.'}</div>`;
+    return;
+  }
+  $('kpis').innerHTML = '<div class="kpi"><div class="kpi-tit">Lendo o banco…</div></div>';
+  try { await FIN.garantir('extrato_lancamentos', 'contas_pagar', 'contas_receber'); }
+  catch (e) { $('avisoBanco').innerHTML = `<div class="aviso perigo">Não foi possível ler o extrato: ${esc(e.message)}. Atualize a página.</div>`; }
+  desenhar();
+})();
+</script>
+</body>
+</html>

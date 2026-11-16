@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contas bancárias</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=9"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=8"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/financeiro.js?v=1"></script>
+<script>
+/* Contas bancárias, caixas e maquininhas: de onde sai o pagamento e para onde entra o recebimento.
+   Cada conta é de uma unidade (e, por ela, de uma empresa) ou do grupo (sem unidade).
+   O saldo mostrado vem do último extrato importado (Extratos e conciliação): nada é digitado à mão. */
+const TIPOS = { corrente: 'Conta corrente', poupanca: 'Poupança', caixa: 'Caixa (dinheiro)', maquininha: 'Maquininha / adquirente', aplicacao: 'Aplicação' };
+
+(async () => {
+  const REAL = await FIN.usar();
+  if (REAL) FIN.garantir('extrato_lancamentos').then(() => avisarMudanca('contas_bancarias')).catch(() => {});
+  // Exemplo (sem banco): 3 contas fictícias, uma por empresa
+  const lista = REAL ? FIN.contas() : dadoComum('CONTAS_BANCARIAS', () => EMPRESAS.map((e, i) => ({ id: 'cb' + (i + 1), apelido: `Banco · ${e.nome}`, tipo: 'corrente', banco: 'Banco exemplo',
+    agencia: '0001', conta: `1000${i + 1}-0`, titular: e.razao, unidade: Object.keys(UNIDADE_EMPRESA).find(u => UNIDADE_EMPRESA[u] === e.id), saldo_inicial: 0, ativo: true })));
+  const codUn = l => REAL ? FIN.codUnidade(l.unidade_id) : l.unidade;
+  const empresaDe = l => REAL ? FIN.empresaDaConta(l) : UNIDADE_EMPRESA[l.unidade] || '';
+  const extrato = id => REAL ? FIN.L('extrato_lancamentos').filter(x => x.conta_bancaria_id === id) : [];
+  const ultimo = id => extrato(id).reduce((m, x) => !m || (x.data + (x.hora || '')) >= (m.data + (m.hora || '')) ? x : m, null);
+  const saldoDe = l => { const u = ultimo(l.id); return u && u.saldo != null ? Number(u.saldo) : null; };
+  montarCadastro({
+    titulo: 'Contas bancárias', sub: 'Contas, caixas e maquininhas · de onde sai o pagamento e para onde entra o recebimento',
+    novoRotulo: 'Nova conta', tituloLista: 'Contas', arquivoCSV: 'contas-bancarias',
+    dados: lista, tabela: 'contas_bancarias', depende: ['extrato_lancamentos', 'unidades'],
+    aviso: REAL ? '' : (db ? '<div class="aviso">A tabela de contas bancárias ainda não está no banco: a lista abaixo é de exemplo.</div>' : ''),
+    escopo: l => ({ empresa: empresaDe(l), unidade: codUn(l) }),
+    colunas: [
+      { campo: 'apelido', titulo: 'Conta', fmt: (v, l) => `<b>${esc(v)}</b><small class="sub"> ${esc(TIPOS[l.tipo] || '')}</small>` },
+      { campo: 'banco', titulo: 'Banco · agência · conta', fmt: (v, l) => [v, l.agencia, l.conta].filter(Boolean).map(esc).join(' · ') || '<span class="sub">—</span>' },
+      { campo: 'unidade_id', titulo: 'Empresa · unidade', fmt: (v, l) => codUn(l) ? `${etqEmpresa(empresaDe(l))} <small class="sub">${esc(nomeUnidade(codUn(l)))}</small>` : '<span class="etiqueta">grupo</span>',
+        busca: l => codUn(l) ? nomeUnidade(codUn(l)) + ' ' + nomeEmpresa(empresaDe(l)) : 'grupo' },
+      { campo: 'id', titulo: 'Último extrato', fmt: v => { const u = ultimo(v); return u ? `${FIN.dataBRIso(u.data)} <small class="sub">${numero(extrato(v).length)} linha(s)</small>` : '<span class="sub">nenhum</span>'; }, busca: () => '' },
+      { campo: 'saldo_inicial', titulo: 'Saldo no extrato', num: true, fmt: (v, l) => { const s = saldoDe(l); return s == null ? '<span class="sub">—</span>' : `<span class="${s < 0 ? 'desce' : ''}">${reais(s)}</span>`; }, busca: () => '' },
+      { campo: 'ativo', titulo: 'Ativa', fmt: sim }
+    ],
+    kpis: (v, todos) => [
+      ['Contas ativas', v.filter(c => c.ativo).length, `${todos.filter(c => !c.ativo).length} inativa(s)`],
+      ['Saldo nos extratos', reais(v.reduce((a, c) => a + (saldoDe(c) || 0), 0)), 'soma do último saldo de cada conta'],
+      ...EMPRESAS.map(e => [e.nome, reais(v.filter(c => empresaDe(c) === e.id).reduce((a, c) => a + (saldoDe(c) || 0), 0)), `${v.filter(c => empresaDe(c) === e.id).length} conta(s)`])
+    ],
+    campos: [
+      { campo: 'apelido', titulo: 'Apelido (como aparece nas telas)', obrig: true, larg: 'c6', max: 40, dica: 'ex.: Caixa Econômica · Loja 1' },
+      { campo: 'tipo', titulo: 'Tipo', tipo: 'select', opcoes: Object.entries(TIPOS), larg: 'c6' },
+      { campo: 'banco', titulo: 'Banco', larg: 'c4', max: 40 },
+      { campo: 'agencia', titulo: 'Agência', larg: 'c4', max: 10 },
+      { campo: 'conta', titulo: 'Conta', larg: 'c4', max: 30 },
+      { campo: 'titular', titulo: 'Titular', larg: 'c6', max: 80 },
+      { campo: REAL ? 'unidade_id' : 'unidade', titulo: 'Unidade', tipo: 'select', vazio: 'Várias unidades (conta do grupo)', larg: 'c6',
+        opcoes: () => REAL ? FIN.unidades().filter(u => u.ativo !== false).map(u => [u.id, `${u.nome} · ${nomeEmpresa(UNIDADE_EMPRESA[u.codigo])}`]) : UNIDADES.filter(u => u.id !== 'todas').map(u => [u.id, u.nome]) },
+      { campo: 'saldo_inicial', titulo: 'Saldo inicial (R$)', tipo: 'dinheiro', larg: 'c4' },
+      { campo: 'saldo_inicial_em', titulo: 'Saldo inicial em', tipo: 'data', larg: 'c4' },
+      { campo: 'ativo', titulo: 'Ativa', tipo: 'check', larg: 'c4' }
+    ],
+    rodapeForm: () => 'O saldo do dia vem do extrato importado em <b>Extratos e conciliação</b>. Conta pessoal usada pela empresa: cadastre com o titular, para separar depois.',
+    novo: () => ({ tipo: 'corrente', ativo: true, saldo_inicial: 0 }),
+    validar: (d, item, todos) => todos.some(c => c.id !== item.id && normalizar(c.apelido) === normalizar(d.apelido)) ? 'Já existe uma conta com esse apelido.' : '',
+    salvar: REAL ? async (d, item) => {
+      const reg = { apelido: d.apelido, tipo: d.tipo, banco: d.banco || null, agencia: d.agencia || null, conta: d.conta || null, titular: d.titular || null,
+        unidade_id: d.unidade_id || null, saldo_inicial: d.saldo_inicial || 0, saldo_inicial_em: d.saldo_inicial_em, ativo: d.ativo };
+      if (!item) { const { error } = await db.from('contas_bancarias').insert(reg); if (error) return 'Não foi possível gravar: ' + error.message; }
+      else {
+        const { data, error } = await db.from('contas_bancarias').update(reg).eq('id', item.id).eq('atualizado_em', item.atualizado_em).select('id');
+        if (error) return 'Não foi possível gravar: ' + error.message;
+        if (!data.length) { await FIN.gravou('contas_bancarias'); return 'Esta conta mudou em outra tela enquanto o formulário estava aberto. Nada foi feito: feche e confira.'; }
+      }
+      await FIN.gravou('contas_bancarias');
+    } : null
+  });
+})();
+</script>
+</body>
+</html>
