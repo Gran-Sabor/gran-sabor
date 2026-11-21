@@ -24,11 +24,12 @@
   </div>
 </div>
 
-<script src="../assets/js/menu.js?v=9"></script>
+<script src="../assets/js/menu.js?v=10"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=8"></script>
-<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/folha.js?v=2"></script>
+<script src="../assets/js/escala.js?v=1"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
 /* Regras (exemplo):
@@ -109,7 +110,7 @@ $('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (!tr) r
 $('btnExportar').onclick = () => exportarCSV(`lancamentos-${comp}`, ['Competência', 'Matrícula', 'Colaborador', 'Empresa', 'Unidade', 'Evento', 'Quantidade', 'Valor', 'Observação'],
   LANCAMENTOS.filter(l => l.comp === comp && doFiltro(l)).map(l => { const c = colab(l.colab);
     return [nomeComp(comp), c.matricula, c.nome, nomeEmpresa(c.empresa), nomeUnidade(c.unidade), `${l.evento} ${ev(l.evento).nome}`, numero(l.qtd, 1), numero(FOLHA.valorLancamento(c, l), 2), l.obs]; }));
-vigiarDados(['lancamentos', 'colaboradores', 'eventos', 'fechamentos_folha'], desenhar);
+vigiarDados(['escala_dias', 'lancamentos', 'colaboradores', 'eventos', 'fechamentos_folha'], desenhar);
 desenhar();
 </script>
 </body>

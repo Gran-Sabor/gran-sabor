@@ -58,6 +58,9 @@ const FOLHA = (() => {
     lancs.forEach(l => { const v = valorLancamento(c, l); const e = evento(l.evento);
       add(l.evento, l.qtd ? `${numero(l.qtd, 1)} ${['104'].includes(l.evento) ? 'd' : 'h'}` : '', v);
       if (['010', '011', '020'].includes(l.evento)) he += v; if (l.evento === '104') faltas += l.qtd; });
+    // Faltas marcadas na escala: descontam direto daqui (a escala é a origem; não se lança de novo)
+    const faltasEscala = typeof ESC !== 'undefined' ? ESC.faltasNoMes(c, comp) : 0;
+    if (faltasEscala) { add('104', `${faltasEscala} d (escala)`, c.salario / 30 * faltasEscala); faltas += faltasEscala; }
     if (he) add('015', '4/26', he / 26 * 4);                          // DSR sobre horas extras (exemplo: 4 domingos, 26 dias úteis)
     if (faltas) add('106', `${Math.min(faltas, 4)} d`, c.salario / 30 * Math.min(faltas, 4));
     const proventos = itens.filter(i => i.tipo === 'provento'), descs = itens.filter(i => i.tipo === 'desconto');
@@ -120,7 +123,8 @@ const FOLHA = (() => {
       const limite = new Date(fim); limite.setFullYear(limite.getFullYear() + 1);
       const iso = d => d.toISOString().slice(0, 10), aq = iso(ini);
       if (aq > hoje) break;
-      const faltas = LANCAMENTOS.filter(l => l.colab === c.id && l.evento === '104' && l.comp >= aq.slice(0, 7) && l.comp <= iso(fim).slice(0, 7)).reduce((a, l) => a + l.qtd, 0);
+      const faltas = LANCAMENTOS.filter(l => l.colab === c.id && l.evento === '104' && l.comp >= aq.slice(0, 7) && l.comp <= iso(fim).slice(0, 7)).reduce((a, l) => a + l.qtd, 0)
+        + (typeof ESC !== 'undefined' ? ESC.faltasEntre(c, aq, iso(fim)).length : 0);
       const direito = DIAS_POR_FALTAS.find(([max]) => faltas <= max)[1];
       const tiradas = FERIAS.filter(f => f.colab === c.id && f.aquisitivo === aq);
       // Períodos antigos, de antes do sistema, contam como quitados (o histórico real entra na implantação)
@@ -138,20 +142,8 @@ const FOLHA = (() => {
     return { base, terco, abono: vAbono, inss: vInss, irrf: vIr, liquido: r2(base + terco + vAbono - vInss - vIr) };
   }
 
-  /* Escala: turno do dia (férias e afastamento vêm direto dos cadastros; folga em rodízio quando não há registro) */
-  function turnoNoDia(c, data) {
-    if (FERIAS.some(f => f.colab === c.id && data >= f.inicio && data <= somaDias(f.inicio, f.dias - 1))) return 'FER';
-    if (c.situacao === 'afastado') return 'AF';
-    if (c.admissao > data) return '';
-    const marcado = ESCALA[c.id]?.[data]; if (marcado) return marcado;
-    const d = new Date(data + 'T12:00'), dow = d.getDay();
-    if (c.turno === 'C') return dow === 0 || dow === 6 ? 'F' : 'C';
-    // Exemplo de 6x1: uma folga fixa na semana (seg a sáb) e folga no domingo a cada 3 semanas, em rodízio
-    const semana = Math.floor((d - new Date('2026-01-04T12:00')) / 6048e5);
-    const h = [...c.matricula].reduce((a, x) => a + x.charCodeAt(0), 0);
-    return dow === 1 + (h % 6) || (dow === 0 && semana % 3 === h % 3) ? 'F' : c.turno;
-  }
+  /* A escala (turno do dia, folgas, faltas) fica em escala.js */
   const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 
-  return { r2, adiantamentoPago, inss, irrf, valorHora, valorLancamento, holerite, folha, adiantamentoDe, avos13, decimo, periodosFerias, calculoFerias, turnoNoDia, somaDias, diasNoMes };
+  return { r2, adiantamentoPago, inss, irrf, valorHora, valorLancamento, holerite, folha, adiantamentoDe, avos13, decimo, periodosFerias, calculoFerias, somaDias, diasNoMes };
 })();

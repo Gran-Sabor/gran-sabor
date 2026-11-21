@@ -23,11 +23,12 @@
   <div class="form-nota">Base de exemplo: salário do cadastro ÷ 12 × avos (mês com 15 dias ou mais de trabalho). Médias de horas extras e tabelas de INSS/IRRF o contador confirma.</div>
 </div>
 
-<script src="../assets/js/menu.js?v=9"></script>
+<script src="../assets/js/menu.js?v=10"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=8"></script>
-<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/folha.js?v=2"></script>
+<script src="../assets/js/escala.js?v=1"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
 /* Regras (exemplo):
@@ -104,7 +105,7 @@ $('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) de
 $('btnExportar').onclick = () => exportarCSV(`13-salario-${ano}`, ['Ano', 'Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Avos', '13º total', '1ª parcela', 'INSS', 'IRRF', '2ª parcela líquida'],
   elegiveis().filter(naTela).map(c => { const d = FOLHA.decimo(c, ano);
     return [ano, nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.matricula, c.nome, d.avos, numero(d.total, 2), numero(d.primeira, 2), numero(d.inss, 2), numero(d.irrf, 2), numero(d.segunda, 2)]; }));
-vigiarDados(['colaboradores', 'pagamentos_13', 'contas_pagar'], desenhar);
+vigiarDados(['escala_dias', 'colaboradores', 'pagamentos_13', 'contas_pagar'], desenhar);
 desenhar();
 </script>
 </body>

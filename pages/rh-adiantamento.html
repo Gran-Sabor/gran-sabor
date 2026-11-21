@@ -21,11 +21,12 @@
     <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
 </div>
 
-<script src="../assets/js/menu.js?v=9"></script>
+<script src="../assets/js/menu.js?v=10"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=8"></script>
-<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/folha.js?v=2"></script>
+<script src="../assets/js/escala.js?v=1"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
 /* Regras (exemplo, a Gran Sabor confirma):
@@ -109,7 +110,7 @@ $('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) ed
 $('btnExportar').onclick = () => exportarCSV(`adiantamento-${comp}`, ['Competência', 'Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Salário', 'Adiantamento', 'Situação'],
   COLABORADORES.filter(c => c.ativo && naTela(c)).map(c => { const a = doMes().find(x => x.colab === c.id);
     return [nomeComp(comp), nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.matricula, c.nome, numero(c.salario, 2), a ? numero(a.valor, 2) : '', a ? (FOLHA.adiantamentoPago(a) ? 'pago' : 'a pagar') : 'não gerado']; }));
-vigiarDados(['adiantamentos', 'colaboradores', 'contas_pagar', 'fechamentos_folha'], desenhar);
+vigiarDados(['escala_dias', 'adiantamentos', 'colaboradores', 'contas_pagar', 'fechamentos_folha'], desenhar);
 desenhar();
 </script>
 </body>
