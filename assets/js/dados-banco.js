@@ -13,8 +13,18 @@ const TABELAS_BANCO = {
   contas_bancarias: { ordem: 'apelido' },
   contas_pagar: { ordem: 'vencimento', incremental: true },
   contas_receber: { ordem: 'vencimento', incremental: true },
-  extrato_lancamentos: { ordem: 'data' }   // dentro do dia, a tela ordena pela coluna ordem
+  extrato_lancamentos: { ordem: 'data' },  // dentro do dia, a tela ordena pela coluna ordem
+  // RH e escala (pequenas: relê inteiras; nelas se apaga linha, ex.: voltar o dia ao padrão)
+  colaboradores: { ordem: 'nome' },
+  escala_turnos: { ordem: 'ordem' },
+  escala_funcionamento: { ordem: 'dia_semana' },
+  escala_padrao: { ordem: 'colaborador_id' },
+  escala_dias: { ordem: 'data' },
+  feriados: { ordem: 'data' },
+  freelancers: { ordem: 'nome' },
+  freela_diarias: { ordem: 'data' }
 };
+const TABELAS_RH = ['colaboradores', 'escala_turnos', 'escala_funcionamento', 'escala_padrao', 'escala_dias', 'feriados', 'freelancers', 'freela_diarias'];
 
 window.dadosBanco = (() => {
   const listas = {}, estado = {}, ouvintes = [];
