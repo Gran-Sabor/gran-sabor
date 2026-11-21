@@ -22,11 +22,12 @@
     pagamento até 2 dias antes do início, sem começar nos 2 dias antes de feriado ou domingo. Vencida = paga em dobro.</div>
 </div>
 
-<script src="../assets/js/menu.js?v=9"></script>
+<script src="../assets/js/menu.js?v=10"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=8"></script>
-<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/folha.js?v=3"></script>
+<script src="../assets/js/escala.js?v=1"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
 let aba = 'situacao';
@@ -152,7 +153,7 @@ $('btnExportar').onclick = () => exportarCSV('ferias', ['Empresa', 'Unidade', 'M
   COLABORADORES.filter(c => c.ativo && naTela(c)).map(c => { const s = situacao(c);
     return [nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.matricula, c.nome, s.aberto ? dataBR(s.aberto.aquisitivo + 'T12:00') : '', s.aberto ? s.aberto.saldo : '', s.aberto ? dataBR(s.aberto.limite + 'T12:00') : '', s.sit[0],
       s.prog.map(f => `${dataBR(f.inicio + 'T12:00')} (${f.dias} d)`).join(', ')]; }));
-vigiarDados(['ferias', 'colaboradores', 'lancamentos', 'contas_pagar'], desenhar);
+vigiarDados(['escala_dias', 'ferias', 'colaboradores', 'lancamentos', 'contas_pagar'], desenhar);
 desenhar();
 </script>
 </body>

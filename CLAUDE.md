@@ -21,6 +21,12 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
   (um gatilho por tabela sobe a versão a cada gravação); `assets/js/financeiro.js` converte, grava e importa (fluxo de caixa xlsx,
   extrato OFX/CSV). Gravação com conferência: `update ... eq('atualizado_em', foto)`; se não voltou linha, alguém mudou antes.
   Tabela nova que precisa ser ao vivo: gatilho `subir_versao` + linha em `dados_versao` + entrada em `TABELAS_BANCO`.
+- RH e escala no banco: `colaboradores`, `escala_turnos`, `escala_funcionamento` (abre/fecha/mínimo por unidade e dia da semana),
+  `escala_padrao` (folgas), `escala_dias` (troca, folga, falta, atestado), `feriados`, `freelancers`, `freela_diarias`.
+  A casca (`carregarRH` em sistema.js) monta `COLABORADORES`, `TURNOS` e `FERIADOS` a partir do banco e refaz no mesmo objeto a cada mudança.
+  `assets/js/escala.js` (ESC) é a regra da escala num lugar só (dia de cada pessoa, cobertura mínima, faltas, pagamento de freelancer);
+  a folha desconta falta direto da escala (`ESC.faltasNoMes`), sem lançamento. `UNIDADE_EMPRESA` mora em menu.js.
+  Colaboradores reais entram pela tela (Novo ou "Importar planilha"), nunca pelo repositório.
 - Banco: Supabase (projeto `sayplpvhnoeytfnkbvpm`, São Paulo). Migrações em `supabase/migrations/`,
   aplicadas pelo GitHub Actions no merge (segredos SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_ID, SUPABASE_DB_PASSWORD).
 

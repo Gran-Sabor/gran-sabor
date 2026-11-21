@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuração da escala</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+<style>
+  .grade-un { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+  .tabela td.fech { color: var(--texto-3); }
+  .dias-sem { display: flex; gap: 4px; flex-wrap: wrap; }
+  .dias-sem label { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--borda); border-radius: 6px; padding: 3px 7px; font-size: 12px; cursor: pointer; color: var(--texto); }
+  .dias-sem label:has(input:checked) { border-color: var(--marca); background: var(--marca-suave); }
+  .func-dias td { padding: 3px 6px; } .func-dias input.campo { height: 30px; }
+  .previa { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; }
+  .previa span { border: 1px solid var(--borda); border-radius: 4px; padding: 1px 4px; } .previa span.f { color: var(--texto-3); border-style: dashed; }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Configuração da escala</h1><span class="sub">Horário de cada unidade, turnos, folgas de cada colaborador e feriados</span>
+    <div class="dir"><span class="etiqueta exemplo oculto" id="etqExemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" data-abrir="escala">Ver escala</button></div></div>
+  <div id="filtros"></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="func" class="ativa">Funcionamento das unidades</button><button type="button" data-aba="folgas">Folgas dos colaboradores</button>
+    <button type="button" data-aba="turnos">Turnos</button><button type="button" data-aba="feriados">Feriados</button></div>
+  <div id="conteudo"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=10"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/folha.js?v=3"></script>
+<script src="../assets/js/escala.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script>
+/* Configuração da escala. Tudo é editado em janela (popup): enquanto ela está aberta a tela não se redesenha,
+   e na hora de salvar o sistema confere se ninguém mudou o mesmo dado em outra tela. */
+const ORDEM = [1, 2, 3, 4, 5, 6, 0];
+let aba = 'func';
+janela.nota = ESC.REAL ? 'Grava no banco e a escala muda na hora em todas as telas' : 'Exemplo: as alterações somem ao recarregar';
+$('etqExemplo').classList.toggle('oculto', ESC.REAL);
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador, cargo ou feriado… (atalho: /)' });
+const unidades = () => ESC.unidadesEscala().filter(u => noFiltro(filtro, { empresa: UNIDADE_EMPRESA[u.id], unidade: u.id }));
+const opTurnos = (sel, vazio) => (vazio ? `<option value="">${vazio}</option>` : '') + ESC.turnos().map(t => `<option value="${t.codigo}"${t.codigo === sel ? ' selected' : ''}>${t.codigo} · ${esc(t.nome)} ${ESC.hm(t.entrada)}–${ESC.hm(t.saida)}</option>`).join('');
+const nomeCargo = c => CARGOS[c.cargo] || c.cargo;
+const DOMINGO = { folga: 'Folga todo domingo', trabalha: 'Trabalha todo domingo', alternado: 'Alternado (1 sim, 1 não)', dois_um: 'Trabalha 2, folga 1' };
+
+/* ---------- Funcionamento ---------- */
+function abaFunc() {
+  return `<div class="form-nota" style="margin-bottom:8px">Mínimo = quantas pessoas precisam estar na unidade ao mesmo tempo. Abaixo disso a escala fica vermelha no horário que faltar gente. Dia fechado: ninguém é escalado.</div>
+  <div class="grade-un">${unidades().map(u => {
+    const linhas = ORDEM.map(d => { const f = ESC.funcionamento(u.id, d);
+      return `<tr><td><b>${ESC.SEMANA[d]}</b></td>${!f ? '<td colspan="2" class="fech">não informado</td><td></td>' : f.aberta ? `<td>${ESC.hm(f.abre)}</td><td>${ESC.hm(f.fecha)}</td><td class="num">${f.minimo}</td>` : '<td colspan="2" class="fech">fechada</td><td></td>'}</tr>`; }).join('');
+    const falta = ORDEM.filter(d => !ESC.funcionamento(u.id, d)).length;
+    return `<section class="cartao"><div class="cartao-cab"><h2>${esc(u.nome)}</h2>${etqEmpresa(UNIDADE_EMPRESA[u.id])}${falta ? '<span class="etiqueta pendente">a configurar</span>' : ''}
+      <span class="dir"><button type="button" class="btn btn-mini" data-func="${u.id}">Editar</button></span></div>
+      <table class="tabela"><thead><tr><th>Dia</th><th>Abre</th><th>Fecha</th><th class="num">Mínimo</th></tr></thead><tbody>${linhas}</tbody></table></section>`; }).join('')}</div>`;
+}
+function editarFunc(un) {
+  const fotos = Object.fromEntries(ORDEM.map(d => [d, ESC.funcionamento(un, d) ? { ...ESC.funcionamento(un, d) } : null]));
+  const corpo = `<table class="tabela func-dias"><thead><tr><th>Dia</th><th>Abre?</th><th>Abertura</th><th>Fechamento</th><th>Mínimo</th></tr></thead><tbody>
+    ${ORDEM.map(d => { const f = fotos[d] || { aberta: d !== 0, abre: '', fecha: '', minimo: 1 };
+      return `<tr><td><b>${ESC.SEMANA[d]}</b></td><td><input type="checkbox" name="a${d}"${f.aberta ? ' checked' : ''} aria-label="${ESC.SEMANA[d]} abre"></td>
+        <td><input type="time" class="campo" name="i${d}" value="${ESC.hm(f.abre)}"></td><td><input type="time" class="campo" name="f${d}" value="${ESC.hm(f.fecha)}"></td>
+        <td><input class="campo" name="m${d}" inputmode="numeric" value="${f.minimo ?? 1}" style="width:60px"></td></tr>`; }).join('')}</tbody></table>
+    <div class="form-nota"><button type="button" class="btn btn-mini" data-copiar>Copiar segunda para terça a sexta</button> · Fechamento depois da meia-noite: informe a hora normalmente (ex.: 00:30).</div>`;
+  const v = janela(`Funcionamento · ${nomeUnidade(un)}`, corpo, 'Salvar', async f => {
+    const dias = ORDEM.map(d => ({ d, aberta: f['a' + d].checked, abre: f['i' + d].value || null, fecha: f['f' + d].value || null, minimo: Number(f['m' + d].value) }));
+    const sem = dias.filter(x => x.aberta && (!x.abre || !x.fecha)).map(x => ESC.SEMANA[x.d]);
+    if (sem.length) return `Informe abertura e fechamento de: ${sem.join(', ')} (ou desmarque "Abre?").`;
+    if (dias.some(x => !(x.minimo >= 0 && x.minimo <= 50))) return 'Mínimo de pessoas entre 0 e 50.';
+    for (const x of dias) { const m = fotos[x.d] ? mudouDesde(fotos[x.d], ESC.funcionamento(un, x.d), ['aberta', 'abre', 'fecha', 'minimo', 'atualizado_em'], `${ESC.SEMANA[x.d]}`) : (ESC.funcionamento(un, x.d) ? 'Alguém configurou esta unidade em outra tela agora. Nada foi gravado: feche e confira.' : ''); if (m) return m; }
+    for (const x of dias) {
+      const dados = { unidade_id: ESC.unId(un), dia_semana: x.d, aberta: x.aberta, abre: x.aberta ? x.abre : null, fecha: x.aberta ? x.fecha : null, minimo: x.aberta ? x.minimo : 0 };
+      const ant = fotos[x.d];
+      if (ant && ant.aberta === dados.aberta && ESC.hm(ant.abre) === ESC.hm(dados.abre) && ESC.hm(ant.fecha) === ESC.hm(dados.fecha) && ant.minimo === dados.minimo) continue;
+      const e = await ESC.salvar('escala_funcionamento', dados, ant); if (e) return `${ESC.SEMANA[x.d]}: ${e}`;
+    }
+    return '';
+  });
+  const f = v.querySelector('form');
+  v.querySelector('[data-copiar]').onclick = () => [2, 3, 4, 5].forEach(d => { f['a' + d].checked = f.a1.checked; f['i' + d].value = f.i1.value; f['f' + d].value = f.f1.value; f['m' + d].value = f.m1.value; });
+}
+
+/* ---------- Folgas de cada colaborador ---------- */
+const textoPadrao = (c, p) => {
+  if (!p) return '<span class="etiqueta pendente">sem padrão</span> <small class="sub">folga no domingo</small>';
+  if (p.regime === 'ciclo') return `Ciclo ${p.ciclo_trabalho}x${p.ciclo_folga} <small class="sub">a partir da folga de ${ESC.dm(p.ciclo_ref)}</small>`;
+  const fs = (p.folgas || []).map(d => ESC.SEM[d]).join(', ');
+  return `${fs ? 'Folga ' + fs + ' · ' : ''}${DOMINGO[p.domingo] || ''}`;
+};
+function abaFolgas() {
+  const cs = COLABORADORES.filter(c => c.ativo && unidades().some(u => u.id === c.unidade) && casaBusca([c.nome, nomeCargo(c), c.matricula].join(' '), filtro.busca));
+  const grupos = unidades().map(u => [u, cs.filter(c => c.unidade === u.id)]).filter(([, l]) => l.length);
+  return `<section class="cartao"><div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Colaborador</th><th>Turno padrão</th><th>Folgas</th><th>Sábado / domingo</th><th>Próximos 14 dias</th></tr></thead><tbody>
+    ${grupos.map(([u, l]) => `<tr class="grupo"><td colspan="5">${esc(u.nome)} · ${esc(nomeEmpresa(UNIDADE_EMPRESA[u.id]))} <span class="sub">${l.length}</span></td></tr>` + l.map(c => { const p = ESC.padraoDe(c.id);
+      return `<tr data-colab="${c.id}" tabindex="0"><td><b>${esc(c.nome)}</b> <small class="sub">${esc(nomeCargo(c))}</small></td><td>${esc(c.turno)} <small class="sub">${esc(TURNOS[c.turno]?.[1] || '')}</small></td>
+        <td>${textoPadrao(c, p)}</td><td><small>${p?.turno_sabado ? 'sáb ' + esc(p.turno_sabado) : ''}${p?.turno_domingo ? ' dom ' + esc(p.turno_domingo) : ''}</small></td>
+        <td><div class="previa" style="margin:0">${Array.from({ length: 14 }, (_, i) => ESC.somaDias(hojeISO(), i)).map(d => { const r = ESC.padrao(c, d), s = ESC.sigla(r);
+          return `<span class="${r.tipo === 'turno' ? '' : 'f'}" title="${ESC.SEM[ESC.dow(d)]} ${ESC.dm(d)}">${esc(s)}</span>`; }).join('')}</div></td></tr>`; }).join('')).join('')
+      || '<tr><td colspan="5" class="vazio">Nenhum colaborador. Os colaboradores vêm do cadastro <a href="#" data-abrir="colaboradores">Colaboradores</a>.</td></tr>'}</tbody></table></div></section>
+    <div class="form-nota">A prévia mostra só o padrão; trocas, faltas e férias aparecem na tela Escala. Clique na linha para editar.</div>`;
+}
+function editarFolgas(c) {
+  const p = ESC.padraoDe(c.id), foto = p ? { ...p } : null, fotoC = { ...c };
+  const x = p || { regime: 'semanal', folgas: [], domingo: 'folga' };
+  const proxDom = (() => { let d = hojeISO(); while (ESC.dow(d) !== 0) d = ESC.somaDias(d, 1); return d; })();
+  const corpo = `<div class="form-grade">
+    <label class="c6">Turno padrão<select name="turno" class="campo">${opTurnos(c.turno)}</select></label>
+    <label class="c6">Regime<select name="regime" class="campo"><option value="semanal"${x.regime === 'semanal' ? ' selected' : ''}>Folga fixa na semana (6x1, 5x2)</option><option value="ciclo"${x.regime === 'ciclo' ? ' selected' : ''}>Ciclo corrido (5x1, 4x2, 12x36...)</option></select></label>
+    <div class="c12" data-semanal><span class="sub">Folga fixa</span><div class="dias-sem">${[1, 2, 3, 4, 5, 6].map(d => `<label><input type="checkbox" name="fg" value="${d}"${(x.folgas || []).includes(d) ? ' checked' : ''}> ${ESC.SEM[d]}</label>`).join('')}</div></div>
+    <label class="c6" data-semanal>Domingo<select name="domingo" class="campo">${Object.entries(DOMINGO).map(([k, n]) => `<option value="${k}"${k === x.domingo ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+    <label class="c6" data-semanal data-ref>Um domingo de FOLGA (referência)<input type="date" name="dref" class="campo" value="${x.domingo_ref || proxDom}"></label>
+    <label class="c4" data-ciclo>Trabalha (dias)<input name="ct" class="campo" inputmode="numeric" value="${x.ciclo_trabalho || 5}"></label>
+    <label class="c4" data-ciclo>Folga (dias)<input name="cf" class="campo" inputmode="numeric" value="${x.ciclo_folga || 1}"></label>
+    <label class="c4" data-ciclo>Um dia de FOLGA<input type="date" name="cref" class="campo" value="${x.ciclo_ref || hojeISO()}"></label>
+    <label class="c6">Turno no sábado (se diferente)<select name="tsab" class="campo">${opTurnos(x.turno_sabado, '— o mesmo —')}</select></label>
+    <label class="c6">Turno no domingo (se diferente)<select name="tdom" class="campo">${opTurnos(x.turno_domingo, '— o mesmo —')}</select></label></div>
+    <div class="previa" id="previa"></div>
+    <div class="form-nota">12x36 = ciclo trabalha 1, folga 1. A escala de cada dia ainda pode ser trocada na tela Escala.
+      ${p ? ' <button type="button" class="btn btn-mini" data-remover>Remover padrão</button>' : ''}</div>`;
+  const ler = f => {
+    const regime = f.regime.value;
+    return { colaborador_id: c.id, regime, folgas: regime === 'semanal' ? [...f.querySelectorAll('[name=fg]:checked')].map(i => Number(i.value)) : [],
+      domingo: regime === 'semanal' ? f.domingo.value : 'folga', domingo_ref: regime === 'semanal' && ['alternado', 'dois_um'].includes(f.domingo.value) ? f.dref.value || null : null,
+      ciclo_trabalho: regime === 'ciclo' ? Number(f.ct.value) : null, ciclo_folga: regime === 'ciclo' ? Number(f.cf.value) : null, ciclo_ref: regime === 'ciclo' ? f.cref.value || null : null,
+      turno_sabado: f.tsab.value || null, turno_domingo: f.tdom.value || null };
+  };
+  const v = janela(`Folgas · ${c.nome}`, corpo, 'Salvar', async f => {
+    const d = ler(f);
+    if (d.regime === 'ciclo' && (!(d.ciclo_trabalho >= 1 && d.ciclo_trabalho <= 13) || !(d.ciclo_folga >= 1 && d.ciclo_folga <= 6) || !d.ciclo_ref)) return 'Ciclo: trabalha de 1 a 13 dias, folga de 1 a 6, e informe um dia de folga.';
+    if (d.domingo_ref && ESC.dow(d.domingo_ref) !== 0) return 'A referência precisa ser um DOMINGO em que a pessoa folga.';
+    if (['alternado', 'dois_um'].includes(d.domingo) && !d.domingo_ref) return 'Informe um domingo de folga como referência.';
+    const m = (foto ? mudouDesde(foto, ESC.padraoDe(c.id), ['atualizado_em'], 'O padrão deste colaborador') : (ESC.padraoDe(c.id) ? 'Alguém definiu as folgas deste colaborador em outra tela agora. Nada foi gravado.' : ''))
+      || mudouDesde(fotoC, COLABORADORES.find(y => y.id === c.id), ['turno', 'unidade', 'situacao'], 'O cadastro deste colaborador');
+    if (m) return m;
+    if (f.turno.value !== c.turno) { const e = await ESC.salvarColaborador(c, { turno: f.turno.value }); if (e) return e; }
+    return ESC.salvar('escala_padrao', d, foto);
+  });
+  const f = v.querySelector('form');
+  const ver = () => { const sem = f.regime.value === 'semanal';
+    v.querySelectorAll('[data-semanal]').forEach(e => e.classList.toggle('oculto', !sem)); v.querySelectorAll('[data-ciclo]').forEach(e => e.classList.toggle('oculto', sem));
+    v.querySelector('[data-ref]').classList.toggle('oculto', !sem || !['alternado', 'dois_um'].includes(f.domingo.value));
+    // prévia com o que está na janela (sem gravar)
+    const d = ler(f), cc = { ...c, turno: f.turno.value }, lista = ESC.lista('escala_padrao'), i = lista.findIndex(y => y.colaborador_id === c.id), ant = lista[i];
+    const tmp = { id: 'previa', ...d }; if (i >= 0) lista[i] = tmp; else lista.push(tmp);
+    try {
+      v.querySelector('#previa').innerHTML = Array.from({ length: 21 }, (_, k) => ESC.somaDias(hojeISO(), k)).map(x => { const r = ESC.padrao(cc, x);
+        return `<span class="${r.tipo === 'turno' ? '' : 'f'}">${ESC.SEM[ESC.dow(x)]} ${x.slice(8)} <b>${esc(ESC.sigla(r))}</b></span>`; }).join(''); }
+    finally { if (i >= 0) lista[i] = ant; else lista.pop(); }
+  };
+  f.addEventListener('change', ver); f.addEventListener('input', ver); ver();
+  v.querySelector('[data-remover]')?.addEventListener('click', async () => { const e = await ESC.apagar('escala_padrao', foto); if (e) v.querySelector('#fMsg').textContent = e; else v.remove(); });
+}
+
+/* ---------- Turnos ---------- */
+function abaTurnos() {
+  const ts = ESC.lista('escala_turnos').slice().sort((a, b) => a.ordem - b.ordem);
+  return `<section class="cartao"><div class="cartao-cab"><h2>Turnos</h2><span class="dir"><button type="button" class="btn btn-mini" data-turno="">+ Novo turno</button></span></div>
+    <table class="tabela clicavel"><thead><tr><th>Código</th><th>Nome</th><th>Entrada</th><th>Saída</th><th class="num">Intervalo</th><th class="num">Horas</th><th class="num">Pessoas</th><th>Situação</th></tr></thead><tbody>
+    ${ts.map(t => { const fx = ESC.faixa(t.entrada, t.saida), min = fx ? fx[1] - fx[0] - (fx[1] - fx[0] > 360 ? t.intervalo_min : 0) : 0;
+      return `<tr data-turno="${t.id}" tabindex="0"${t.ativo ? '' : ' class="inativa"'}><td><b>${esc(t.codigo)}</b></td><td>${esc(t.nome)}</td><td>${ESC.hm(t.entrada)}</td><td>${ESC.hm(t.saida)}</td><td class="num">${t.intervalo_min} min</td>
+        <td class="num">${numero(min / 60, 2)} h</td><td class="num">${COLABORADORES.filter(c => c.ativo && c.turno === t.codigo).length}</td><td>${t.ativo ? 'ativo' : 'inativo'}</td></tr>`; }).join('')}</tbody></table></section>
+    <div class="form-nota">Mudou o horário de um turno? A escala, a cobertura mínima e as horas mudam na hora em todas as telas.</div>`;
+}
+function editarTurno(t) {
+  const foto = t ? { ...t } : null, x = t || { codigo: '', nome: '', entrada: '', saida: '', intervalo_min: 60, ativo: true, ordem: ESC.lista('escala_turnos').length + 1 };
+  janela(t ? `Turno ${t.codigo}` : 'Novo turno', `<div class="form-grade">
+    <label class="c3">Código<input name="cod" class="campo" maxlength="3" value="${esc(x.codigo)}"${t ? ' readonly' : ''} placeholder="Ex.: N"></label>
+    <label class="c9">Nome<input name="nome" class="campo" maxlength="30" value="${esc(x.nome)}"></label>
+    <label class="c4">Entrada<input name="ent" type="time" class="campo" value="${ESC.hm(x.entrada)}"></label>
+    <label class="c4">Saída<input name="sai" type="time" class="campo" value="${ESC.hm(x.saida)}"></label>
+    <label class="c4">Intervalo (min)<input name="int" class="campo" inputmode="numeric" value="${x.intervalo_min}"></label>
+    <label class="c4 marcar"><input type="checkbox" name="ativo"${x.ativo ? ' checked' : ''}> Ativo</label></div>`, 'Salvar', async f => {
+    const cod = f.cod.value.trim().toUpperCase();
+    if (!/^[A-Z]{1,3}$/.test(cod) || ['F', 'FA', 'AT', 'AB'].includes(cod)) return 'Código de 1 a 3 letras (F, FA, AT e AB são reservados).';
+    if (!t && ESC.turno(cod)) return 'Já existe um turno com esse código.';
+    if (f.nome.value.trim().length < 2 || !f.ent.value || !f.sai.value) return 'Informe nome, entrada e saída.';
+    if (t && !f.ativo.checked && COLABORADORES.some(c => c.ativo && c.turno === cod)) return 'Há colaboradores com este turno padrão: troque o turno deles antes de desativar.';
+    if (foto) { const m = mudouDesde(foto, ESC.lista('escala_turnos').find(y => y.id === t.id), ['atualizado_em'], 'Este turno'); if (m) return m; }
+    return ESC.salvar('escala_turnos', { codigo: cod, nome: f.nome.value.trim(), entrada: f.ent.value, saida: f.sai.value, intervalo_min: Number(f.int.value) || 0, ativo: f.ativo.checked, ordem: x.ordem }, foto);
+  });
+}
+
+/* ---------- Feriados ---------- */
+function abaFeriados() {
+  const hoje = hojeISO(), fs = ESC.feriados().filter(f => casaBusca(f.nome + ' ' + dataBR(f.data + 'T12:00'), filtro.busca));
+  return `<section class="cartao"><div class="cartao-cab"><h2>Feriados</h2><span class="dir"><button type="button" class="btn btn-mini" data-novofer>+ Novo feriado</button></span></div>
+    <table class="tabela"><thead><tr><th>Data</th><th>Dia</th><th>Feriado</th><th></th></tr></thead><tbody>
+    ${fs.map(f => `<tr${f.data < hoje ? ' class="inativa"' : ''}><td>${dataBR(f.data + 'T12:00')}</td><td>${ESC.SEMANA[ESC.dow(f.data)]}</td><td>${esc(f.nome)}</td>
+      <td class="num"><button type="button" class="btn btn-mini" data-apagafer="${esc(f.id)}">Excluir</button></td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Nenhum feriado.</td></tr>'}</tbody></table></section>
+    <div class="form-nota">Os nacionais já vêm cadastrados; inclua os municipais e estaduais das cidades das lojas. Quem trabalha no feriado aparece na Escala com o botão "Lançar HE 100%".</div>`;
+}
+function novoFeriado() {
+  janela('Novo feriado', `<div class="form-grade"><label class="c4">Data<input name="data" type="date" class="campo"></label><label class="c8">Nome<input name="nome" class="campo" maxlength="60" placeholder="Ex.: Aniversário da cidade"></label></div>`, 'Salvar', async f => {
+    if (!f.data.value || f.nome.value.trim().length < 2) return 'Informe data e nome.';
+    if (ESC.feriados().some(x => x.data === f.data.value)) return 'Já existe feriado nesta data.';
+    if (!ESC.REAL) { FERIADOS[f.data.value] = f.nome.value.trim(); avisarMudanca('feriados'); desenhar(); return ''; }
+    return ESC.salvar('feriados', { data: f.data.value, nome: f.nome.value.trim() });
+  });
+}
+async function apagarFeriado(id) {
+  if (!ESC.REAL) { delete FERIADOS[id]; avisarMudanca('feriados'); return desenhar(); }
+  const f = ESC.feriados().find(x => x.id === id); if (!f) return desenhar();
+  const e = await ESC.apagar('feriados', f); if (e) janela('Não foi possível excluir', `<p>${esc(e)}</p>`, 'Entendi', () => {});
+}
+
+function desenhar() {
+  $('abas').querySelectorAll('button').forEach(b => b.classList.toggle('ativa', b.dataset.aba === aba));
+  $('conteudo').innerHTML = { func: abaFunc, folgas: abaFolgas, turnos: abaTurnos, feriados: abaFeriados }[aba]();
+}
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (b) { aba = b.dataset.aba; desenhar(); } };
+$('conteudo').onclick = e => {
+  const t = e.target;
+  if (t.closest('[data-func]')) return editarFunc(t.closest('[data-func]').dataset.func);
+  if (t.closest('[data-colab]')) return editarFolgas(colab(t.closest('[data-colab]').dataset.colab));
+  if (t.closest('[data-turno]')) { const id = t.closest('[data-turno]').dataset.turno; return editarTurno(id ? ESC.lista('escala_turnos').find(x => x.id === id) : null); }
+  if (t.closest('[data-novofer]')) return novoFeriado();
+  if (t.closest('[data-apagafer]')) return apagarFeriado(t.closest('[data-apagafer]').dataset.apagafer);
+};
+$('conteudo').onkeydown = e => { if (e.key === 'Enter' && e.target.matches('tr[tabindex]')) e.target.click(); };
+ESC.aoGravar = desenhar;
+vigiarDados(['colaboradores', 'escala_turnos', 'escala_funcionamento', 'escala_padrao', 'feriados', 'unidades'], desenhar);
+desenhar();
+</script>
+</body>
+</html>

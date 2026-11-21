@@ -13,8 +13,7 @@ const EMPRESAS = [
   { id: 'emp2', nome: 'Empresa 2', razao: 'Empresa Exemplo Dois Ltda', cnpj: '44555666000110', cor: '#2c5f8a' },
   { id: 'emp3', nome: 'Empresa 3', razao: 'Empresa Exemplo Três Ltda', cnpj: '77888999000150', cor: '#2f7d4f' }
 ];
-// Unidade → empresa (exemplo)
-const UNIDADE_EMPRESA = { loja1: 'emp1', central: 'emp1', escritorio: 'emp1', loja2: 'emp2', loja3: 'emp3' };
+// Unidade → empresa: UNIDADE_EMPRESA fica em menu.js (a casca também usa)
 const empresaDe = un => EMPRESAS.find(e => e.id === UNIDADE_EMPRESA[un]);
 const nomeUnidade = un => (UNIDADES.find(u => u.id === un) || {}).nome || un || '—';
 const nomeEmpresa = id => (EMPRESAS.find(e => e.id === id) || {}).nome || 'Todas';
@@ -343,8 +342,13 @@ const compAnterior = c => { const [a, m] = c.split('-').map(Number); return m ==
 const nomeComp = c => { const [a, m] = c.split('-'); return `${m}/${a}`; };
 
 const CARGOS = { cozinheiro: 'Cozinheiro(a)', aux_cozinha: 'Auxiliar de cozinha', atendente: 'Atendente de salão', caixa: 'Operador(a) de caixa',
-  acougueiro: 'Açougueiro(a)', aux_acougue: 'Auxiliar de açougue', motorista: 'Motorista', gerente: 'Gerente administrativo', aux_adm: 'Auxiliar administrativo', comprador: 'Comprador(a)' };
-const COLABORADORES = dadoComum('COLABORADORES', () => [
+  acougueiro: 'Açougueiro(a)', aux_acougue: 'Auxiliar de açougue', motorista: 'Motorista', gerente: 'Gerente administrativo', aux_adm: 'Auxiliar administrativo', comprador: 'Comprador(a)',
+  diretoria: 'Diretoria', assist_financeiro: 'Assistente financeiro', gerente_loja: 'Gerente de loja', subgerente: 'Subgerente', lider_cozinha: 'Líder de cozinha',
+  churrasqueiro: 'Churrasqueiro(a)', motoboy: 'Motoboy' };
+// Com o banco ligado, os colaboradores (e feriados e turnos) vêm das tabelas do banco: a casca lê antes de abrir as
+// telas e mantém a MESMA lista ao vivo para todas as abas (sistema.js · carregarRH). Os de baixo só no modo demonstração.
+const RH_DO_BANCO = !!dadoComum('RH_BANCO', () => false);
+const COLABORADORES = dadoComum('COLABORADORES', () => RH_DO_BANCO ? [] : [
   // matrícula, nome (inventado), cargo, unidade, admissão, salário, VT/dia, dependentes, turno, situação
   ['0101', 'Ana Paula Ribeiro',     'cozinheiro',  'loja1',      '2020-03-02', 2650, 10.6, 1, 'M', 'ativo'],
   ['0102', 'Bruno Henrique Lopes',  'aux_cozinha', 'loja1',      '2023-07-10', 1780, 10.6, 0, 'M', 'ativo'],
@@ -373,6 +377,7 @@ const colab = id => COLABORADORES.find(c => c.id === id) || { nome: id, salario:
 // qtd = horas ou dias; valor = R$ (eventos "valor")
 const LANCAMENTOS = dadoComum('LANCAMENTOS', () => {
   const r = []; let n = 1;
+  if (RH_DO_BANCO) return r;   // colaboradores reais: nada de lançamento inventado
   const l = (comp, c, ev, qtd, valor, obs = '') => r.push({ id: 'l' + n++, comp, colab: 'c' + c, evento: ev, qtd, valor, obs, criadoEm: comp + '-25' });
   const ant = compAnterior(COMPETENCIA_ATUAL), at = COMPETENCIA_ATUAL;
   [[ant, 1], [at, 0.6]].forEach(([comp, k]) => {
@@ -388,7 +393,7 @@ const LANCAMENTOS = dadoComum('LANCAMENTOS', () => {
 
 /* ---------- Adiantamento salarial (vale do dia 20) ---------- */
 const REGRA_ADIANTAMENTO = { pct: 40, dia: 20, minimoDiasCasa: 15 };   // exemplo: 40% do salário, pago dia 20
-const ADIANTAMENTOS = dadoComum('ADIANTAMENTOS', () => COLABORADORES.filter(c => c.admissao <= compAnterior(COMPETENCIA_ATUAL) + '-05' && c.situacao !== 'afastado')
+const ADIANTAMENTOS = dadoComum('ADIANTAMENTOS', () => RH_DO_BANCO ? [] : COLABORADORES.filter(c => c.admissao <= compAnterior(COMPETENCIA_ATUAL) + '-05' && c.situacao !== 'afastado')
   .map(c => ({ id: 'a' + c.id + compAnterior(COMPETENCIA_ATUAL), comp: compAnterior(COMPETENCIA_ATUAL), colab: c.id, valor: +(c.salario * REGRA_ADIANTAMENTO.pct / 100).toFixed(2), pagoEm: compAnterior(COMPETENCIA_ATUAL) + '-20' })));
 
 /* ---------- Fechamentos da folha (uma linha por competência) ---------- */
@@ -397,17 +402,17 @@ const FECHAMENTOS_FOLHA = dadoComum('FECHAMENTOS_FOLHA', () => []);
 
 /* ---------- 13º e férias ---------- */
 const PAGAMENTOS_13 = dadoComum('PAGAMENTOS_13', () => []);   // { colab, ano, parcela: 1|2, bruto, inss, irrf, liquido, pagoEm }
-const FERIAS = dadoComum('FERIAS', () => [
+const FERIAS = dadoComum('FERIAS', () => RH_DO_BANCO ? [] : [
   { id: 'f1', colab: 'c0202', aquisitivo: '2025-02-01', inicio: diasDaqui(-6), dias: 30, abono: false, pagoEm: diasDaqui(-8) },
   { id: 'f2', colab: 'c0101', aquisitivo: '2024-03-02', inicio: '2025-07-01', dias: 30, abono: false, pagoEm: '2025-06-27' },
   { id: 'f3', colab: 'c0401', aquisitivo: '2024-06-11', inicio: '2025-08-04', dias: 20, abono: true, pagoEm: '2025-07-31' }
 ]);
 
 /* ---------- Escala (turnos por dia) ---------- */
-const TURNOS = { M: ['Manhã', '06:00–14:20'], T: ['Tarde', '14:00–22:20'], I: ['Intermediário', '10:00–18:20'], C: ['Comercial', '08:00–17:48'], F: ['Folga', ''] };
+// Turnos, funcionamento das unidades, folgas, faltas e freelancers: regras e dados em escala.js.
+// TURNOS[codigo] = [nome, 'entrada–saída'] (com o banco, vem de escala_turnos, ao vivo)
+const TURNOS = dadoComum('TURNOS', () => ({ M: ['Manhã', '06:00–14:20'], I: ['Intermediário', '10:00–18:20'], T: ['Tarde', '14:00–22:20'], C: ['Comercial', '08:00–17:48'], F: ['Folga', ''] }));
 const FERIADOS = dadoComum('FERIADOS', () => ({ '2026-11-15': 'Proclamação da República', '2026-11-20': 'Consciência Negra', '2026-12-25': 'Natal', '2027-01-01': 'Confraternização' }));
-// ESCALA[colab][data] = turno; dia sem registro = turno padrão do cadastro, com folga em rodízio
-const ESCALA = dadoComum('ESCALA', () => ({}));
 
 /* =====================================================================
    BLOCO 5 · PDV (vendas, NFC-e e caixas)

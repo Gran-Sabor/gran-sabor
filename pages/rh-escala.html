@@ -11,20 +11,38 @@
   .esc th.dia small { display: block; font-weight: 500; color: var(--texto-3); }
   .esc th.fer, .esc td.fer { background: color-mix(in srgb, var(--alerta-suave) 70%, transparent); }
   .esc th.dom, .esc td.dom { background: var(--superficie-2); }
-  .turno { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 22px; border-radius: 5px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid var(--borda); background: var(--superficie); color: var(--texto-2); }
+  .esc th.hoje { box-shadow: inset 0 -2px var(--marca); }
+  .esc td.nome { white-space: nowrap; }
+  .turno { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 22px; padding: 0 3px; border-radius: 5px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid var(--borda); background: var(--superficie); color: var(--texto-2); }
   .turno.t-M { background: #fdf0e6; color: #9a4a1c; border-color: transparent; } .turno.t-T { background: #e8eef6; color: #2c5f8a; border-color: transparent; }
   .turno.t-I { background: #eef3e6; color: #4d6b22; border-color: transparent; } .turno.t-C { background: #f1ecf6; color: #6a4a8a; border-color: transparent; }
+  .turno.t-x { background: #eef0f2; color: #3b4652; border-color: transparent; }
   .turno.t-F { background: transparent; color: var(--texto-3); border-style: dashed; }
+  .turno.t-FA { background: var(--perigo); color: #fff; border-color: transparent; }
+  .turno.t-AT { background: #f6dfea; color: #8a2a5a; border-color: transparent; } .turno.t-AB { background: #e3f1ea; color: #2f7d4f; border-color: transparent; }
   .turno.t-FER, .turno.t-AF { cursor: default; background: var(--alerta-suave); color: var(--alerta); border-color: transparent; font-size: 10px; }
+  .turno.t-fech { cursor: default; border: 0; background: none; color: var(--texto-3); }
+  .turno.t-fl { background: #ede7fb; color: #5b3fa8; border-color: transparent; font-size: 10px; }
+  .turno.dia-mudado { box-shadow: 0 0 0 1.5px var(--texto-2); }
+  .turno.outra { outline: 1.5px dotted var(--texto-2); outline-offset: 1px; }
   .esc tfoot td { font-size: 11.5px; text-align: center; }
+  .esc tfoot td.buraco { color: var(--perigo); background: var(--perigo-suave); cursor: help; }
+  .esc tr.freela td.nome b { color: #5b3fa8; }
   .legenda { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--texto-2); padding: 8px 12px; border-top: 1px solid var(--borda); }
+  .opcoes-dia { display: flex; flex-wrap: wrap; gap: 6px; }
+  .opcoes-dia label { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--borda); border-radius: 6px; padding: 4px 8px; font-size: 12.5px; cursor: pointer; }
+  .opcoes-dia label:has(input:checked) { border-color: var(--marca); background: var(--marca-suave); }
+  .opcoes-dia input { margin: 0; }
 </style>
 </head>
 <body>
 <div class="tela">
-  <div class="tela-cab"><h1>Escala</h1><span class="sub">Turnos por unidade · férias e afastamentos entram sozinhos · clique no dia para trocar o turno</span>
-    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+  <div class="tela-cab"><h1>Escala</h1><span class="sub">Quem trabalha em cada dia · clique no dia para trocar turno, dar folga ou marcar falta</span>
+    <div class="dir"><span class="etiqueta exemplo oculto" id="etqExemplo" title="Dados fictícios: nada é gravado">exemplo</span>
       <span class="comp-nav"><button type="button" class="btn btn-ico" id="semAnt" aria-label="Semanas anteriores">‹</button><b id="perTxt"></b><button type="button" class="btn btn-ico" id="semProx" aria-label="Próximas semanas">›</button></span>
+      <button type="button" class="btn" id="btnHoje">Hoje</button>
+      <button type="button" class="btn" data-abrir="faltas_freelas">Faltas e freelancers</button>
+      <button type="button" class="btn" data-abrir="escala_config">Configurar</button>
       <button type="button" class="btn" id="btnExportar">Exportar</button></div></div>
   <div id="filtros"></div>
   <div id="alertas"></div>
@@ -32,71 +50,158 @@
   <div id="conteudo"></div>
 </div>
 
-<script src="../assets/js/menu.js?v=9"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=10"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=8"></script>
-<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/folha.js?v=3"></script>
+<script src="../assets/js/escala.js?v=1"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
-/* Regras (exemplo, a Gran Sabor e o contador confirmam):
-   - Escala 6x1: no máximo 6 dias seguidos de trabalho. Folga no domingo pelo menos 1 vez a cada 3 semanas (comércio).
-   - Férias e afastamento vêm dos cadastros (não se digita na escala). Trabalhou no feriado: hora extra 100% ou folga
-     compensatória; o botão lança a hora extra direto nos lançamentos do mês. */
-const DIAS = 14, SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+/* Escala: tudo sai de escala.js (a mesma regra que a folha usa para descontar falta).
+   - Colaboradores vêm do cadastro (Colaboradores); turnos, funcionamento das unidades e folgas, da Configuração.
+   - Clique no dia: trocar turno, folga, falta (desconta na folha), atestado, falta abonada, trabalhar em outra unidade
+     e, se precisar, chamar um freelancer para cobrir. Tudo aparece na hora nas outras telas.
+   - A linha "Trabalhando" fica vermelha quando falta gente em algum horário (mínimo da Configuração). */
+const DIAS = 14;
 const segunda = d => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); };
 let inicio = segunda(hojeISO());
+janela.nota = ESC.REAL ? 'Grava no banco e aparece na hora nas outras telas' : 'Exemplo: as alterações somem ao recarregar';
+$('etqExemplo').classList.toggle('oculto', ESC.REAL);
 const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador ou cargo… (atalho: /)' });
-const datas = () => Array.from({ length: DIAS }, (_, i) => FOLHA.somaDias(inicio, i));
-const trabalha = t => ['M', 'T', 'I', 'C'].includes(t);
-const CICLO = ['M', 'I', 'T', 'C', 'F'];
-// Alertas de um colaborador olhando também as 3 semanas antes da janela
-function alertasDe(c) {
-  const a = [], dias = Array.from({ length: DIAS + 21 }, (_, i) => FOLHA.somaDias(inicio, i - 21));
-  let seguidos = 0, max = 0, maxAte = '';
-  dias.forEach(d => { if (trabalha(FOLHA.turnoNoDia(c, d))) { seguidos++; if (seguidos > max) { max = seguidos; maxAte = d; } } else seguidos = 0; });
-  if (max > 6 && maxAte >= inicio) a.push(`${max} dias seguidos sem folga (até ${dataBR(maxAte + 'T12:00').slice(0, 5)})`);
-  const doms = dias.filter(d => new Date(d + 'T12:00').getDay() === 0 && d >= FOLHA.somaDias(inicio, -7));
-  for (let i = 0; i + 2 < doms.length; i++) if (doms.slice(i, i + 3).every(d => trabalha(FOLHA.turnoNoDia(c, d)))) { a.push(`3 domingos seguidos trabalhando (até ${dataBR(doms[i + 2] + 'T12:00').slice(0, 5)})`); break; }
-  datas().filter(d => FERIADOS[d] && trabalha(FOLHA.turnoNoDia(c, d))).forEach(d => a.push({ feriado: d }));
-  return a;
+const datas = () => Array.from({ length: DIAS }, (_, i) => ESC.somaDias(inicio, i));
+const curto = n => n.split(' ').slice(0, 2).join(' ');
+const nomeCargo = c => CARGOS[c.cargo] || c.cargo;
+const folhaFechada = d => FECHAMENTOS_FOLHA.some(f => f.comp === d.slice(0, 7) && !f.reabertaEm);
+const clsSigla = s => ({ F: 't-F', FA: 't-FA', AT: 't-AT', AB: 't-AB', 'Fér': 't-FER', Af: 't-AF', '–': 't-fech' }[s] || (['M', 'T', 'I', 'C'].includes(s) ? 't-' + s : 't-x'));
+
+function chip(c, d) {
+  const r = ESC.dia(c, d), s = ESC.sigla(r);
+  if (!s) return '';
+  const tit = [ESC.NOME[r.tipo], r.tipo === 'turno' ? `${(TURNOS[r.turno] || [r.turno])[0]} ${ESC.horario(r)}` : '', r.unidade && r.unidade !== c.unidade ? 'em ' + nomeUnidade(r.unidade) : '',
+    r.ex?.obs || '', r.origem === 'dia' ? '(alterado no dia)' : ''].filter(Boolean).join(' · ');
+  const clicavel = !['ferias', 'afastado', 'fora'].includes(r.tipo);
+  return `<span class="turno ${clsSigla(s)}${r.origem === 'dia' ? ' dia-mudado' : ''}${r.unidade && r.unidade !== c.unidade ? ' outra' : ''}"${clicavel ? ` data-c="${c.id}" data-d="${d}" role="button" tabindex="0"` : ''} title="${esc(tit)}">${esc(s)}</span>`;
 }
 
 function desenhar() {
-  const ds = datas(), unidades = UNIDADES.filter(u => u.id !== 'todas' && LOCAIS_ESTOQUE.concat('escritorio').includes(u.id) && noFiltro(filtro, { empresa: UNIDADE_EMPRESA[u.id], unidade: u.id }));
-  $('perTxt').textContent = `${dataBR(ds[0] + 'T12:00').slice(0, 5)} a ${dataBR(ds[DIAS - 1] + 'T12:00').slice(0, 5)}`;
-  const cs = COLABORADORES.filter(c => c.ativo && unidades.some(u => u.id === c.unidade) && casaBusca([c.nome, CARGOS[c.cargo]].join(' '), filtro.busca));
-  const todosAlertas = cs.flatMap(c => alertasDe(c).map(x => ({ c, x })));
-  const feriadosTrab = todosAlertas.filter(a => a.x.feriado), regras = todosAlertas.filter(a => !a.x.feriado);
-  const hoje = hojeISO(), escalados = cs.filter(c => trabalha(FOLHA.turnoNoDia(c, hoje)));
+  const ds = datas(), hoje = hojeISO();
+  const unidades = ESC.unidadesEscala().filter(u => noFiltro(filtro, { empresa: UNIDADE_EMPRESA[u.id], unidade: u.id }));
+  $('perTxt').textContent = `${ESC.dm(ds[0])} a ${ESC.dm(ds[DIAS - 1])}`;
+  const cs = COLABORADORES.filter(c => c.ativo && unidades.some(u => u.id === c.unidade) && casaBusca([c.nome, nomeCargo(c), c.matricula].join(' '), filtro.busca));
+  const regras = cs.flatMap(c => ESC.alertas(c, inicio, DIAS).map(x => `${curto(c.nome)}: ${x}`));
+  const semPadrao = cs.filter(c => !ESC.padraoDe(c.id) && !['afastado', 'desligado'].includes(c.situacao));
+  const semConfig = unidades.filter(u => cs.some(c => c.unidade === u.id) && [0, 1, 2, 3, 4, 5, 6].some(d => !ESC.funcionamento(u.id, d)));
+  const buracos = unidades.flatMap(u => ds.filter(d => d >= hoje).map(d => ({ u, d, cob: ESC.cobertura(u.id, d) })).filter(x => x.cob.buracos.length));
+  const fls = ESC.diarias().filter(x => x.data >= ds[0] && x.data <= ds[DIAS - 1] && ESC.valeDiaria(x) && unidades.some(u => u.id === ESC.unCod(x.unidade_id)));
+  const faltas = cs.flatMap(c => ds.map(d => ESC.dia(c, d)).filter(r => ['falta', 'atestado', 'abonada'].includes(r.tipo)));
+  const feriadosTrab = cs.flatMap(c => ds.filter(d => FERIADOS[d] && ESC.trabalha(ESC.dia(c, d))).map(d => ({ c, d })));
+  const nHoje = cs.filter(c => ESC.trabalha(ESC.dia(c, hoje))).length;
+
   $('kpis').innerHTML = [
-    ['Trabalhando hoje', escalados.length, `de ${cs.length} colaborador(es)`],
-    ['Folgas hoje', cs.filter(c => FOLHA.turnoNoDia(c, hoje) === 'F').length, 'pela escala'],
-    ['Férias / afastados', `${cs.filter(c => FOLHA.turnoNoDia(c, hoje) === 'FER').length} / ${cs.filter(c => c.situacao === 'afastado').length}`, 'vêm dos cadastros'],
-    ['Alertas da escala', `<span class="${regras.length ? 'desce' : ''}">${regras.length}</span>`, `${feriadosTrab.length} feriado(s) trabalhado(s)`]
+    ['Trabalhando hoje', nHoje, `de ${cs.length} colaborador(es)${fls.filter(x => x.data === hoje).length ? ` + ${fls.filter(x => x.data === hoje).length} freela` : ''}`],
+    ['Folgas hoje', cs.filter(c => ESC.dia(c, hoje).tipo === 'folga').length, `${cs.filter(c => ['ferias', 'afastado'].includes(ESC.dia(c, hoje).tipo)).length} em férias ou afastado(s)`],
+    ['Faltas no período', `<span class="${faltas.some(r => r.tipo === 'falta') ? 'desce' : ''}">${faltas.filter(r => r.tipo === 'falta').length}</span>`, `${faltas.filter(r => r.tipo !== 'falta').length} atestado(s) ou abonada(s)`],
+    ['Freelancers no período', fls.length, reais(fls.reduce((a, x) => a + Number(x.valor || 0), 0))],
+    ['Alertas da escala', `<span class="${regras.length + buracos.length ? 'desce' : ''}">${regras.length + buracos.length}</span>`, `${buracos.length} dia(s) com falta de gente`]
   ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
-  $('alertas').innerHTML = regras.length ? `<div class="aviso perigo"><b>Ajuste a escala:</b> ${regras.map(a => `${esc(a.c.nome)}: ${esc(a.x)}`).join(' · ')}</div>` : '';
+
+  const avisos = [];
+  if (semConfig.length) avisos.push(`<div class="aviso">Falta informar abertura e fechamento de <b>${semConfig.map(u => esc(u.nome)).join(', ')}</b> por dia da semana. <a href="#" data-abrir="escala_config">Configurar</a></div>`);
+  if (semPadrao.length) avisos.push(`<div class="aviso">${semPadrao.length} colaborador(es) sem padrão de folgas (por enquanto: folga no domingo): ${semPadrao.slice(0, 6).map(c => esc(curto(c.nome))).join(', ')}${semPadrao.length > 6 ? '…' : ''}. <a href="#" data-abrir="escala_config">Definir folgas</a></div>`);
+  if (regras.length) avisos.push(`<div class="aviso perigo"><b>Ajuste a escala:</b> ${regras.map(esc).join(' · ')}</div>`);
+  if (buracos.length) avisos.push(`<div class="aviso perigo"><b>Falta gente:</b> ${buracos.slice(0, 6).map(x => `${esc(x.u.nome)} ${ESC.dm(x.d)} ${ESC.textoBuracos(x.cob.buracos)}`).join(' · ')}${buracos.length > 6 ? ` e mais ${buracos.length - 6}` : ''}</div>`);
+  $('alertas').innerHTML = avisos.join('');
+
   $('conteudo').innerHTML = unidades.map(u => {
-    const us = cs.filter(c => c.unidade === u.id); if (!us.length) return '';
-    return `<section class="cartao" style="margin-top:10px"><div class="cartao-cab"><h2>${esc(u.nome)}</h2>${etqEmpresa(UNIDADE_EMPRESA[u.id])}<span class="dir sub">${us.length} pessoa(s)</span></div>
-      <div class="rolagem"><table class="tabela esc"><thead><tr><th>Colaborador</th>${ds.map(d => { const w = new Date(d + 'T12:00').getDay();
-        return `<th class="dia${FERIADOS[d] ? ' fer' : w === 0 ? ' dom' : ''}" title="${esc(FERIADOS[d] || '')}">${d.slice(8)}<small>${SEM[w]}</small></th>`; }).join('')}</tr></thead><tbody>
-      ${us.map(c => { const al = alertasDe(c).filter(x => !x.feriado);
-        return `<tr><td><b>${esc(c.nome.split(' ').slice(0, 2).join(' '))}</b> <small class="sub">${esc(CARGOS[c.cargo])}</small>${al.length ? ` <span class="etiqueta perigo" title="${esc(al.join(' · '))}">!</span>` : ''}</td>
-        ${ds.map(d => { const t = FOLHA.turnoNoDia(c, d), w = new Date(d + 'T12:00').getDay();
-          return `<td class="dia${FERIADOS[d] ? ' fer' : w === 0 ? ' dom' : ''}">${t ? `<span class="turno t-${t}" data-c="${c.id}" data-d="${d}" title="${esc((TURNOS[t] || [t === 'FER' ? 'Férias' : 'Afastado'])[0])} ${esc(TURNOS[t]?.[1] || '')}">${t === 'FER' ? 'Fér' : t === 'AF' ? 'Af' : t}</span>` : ''}</td>`; }).join('')}</tr>`; }).join('')}</tbody>
-      <tfoot><tr><td>Trabalhando</td>${ds.map(d => `<td class="dia">${us.filter(c => trabalha(FOLHA.turnoNoDia(c, d))).length}</td>`).join('')}</tr></tfoot></table></div>
+    const us = cs.filter(c => c.unidade === u.id);
+    const fu = fls.filter(x => ESC.unCod(x.unidade_id) === u.id), flIds = [...new Set(fu.map(x => x.freelancer_id))];
+    if (!us.length && !fu.length) return '';
+    const fh = ESC.funcionamento(u.id, ESC.dow(hoje));
+    const th = d => { const w = ESC.dow(d); return `dia${FERIADOS[d] ? ' fer' : w === 0 ? ' dom' : ''}${d === hoje ? ' hoje' : ''}`; };
+    const cobs = ds.map(d => ESC.cobertura(u.id, d));
+    return `<section class="cartao" style="margin-top:10px"><div class="cartao-cab"><h2>${esc(u.nome)}</h2>${etqEmpresa(UNIDADE_EMPRESA[u.id])}
+      <span class="sub">${fh ? (fh.aberta ? `hoje ${ESC.hm(fh.abre)}–${ESC.hm(fh.fecha)} · mínimo ${fh.minimo}` : 'fechada hoje') : 'horário não configurado'}</span>
+      <span class="dir sub">${us.length} pessoa(s)${flIds.length ? ` + ${flIds.length} freela` : ''} <button type="button" class="btn btn-mini" data-novofl="${u.id}">+ Freelancer</button></span></div>
+      <div class="rolagem"><table class="tabela esc"><thead><tr><th>Colaborador</th>${ds.map(d => `<th class="${th(d)}" title="${esc(FERIADOS[d] || '')}">${d.slice(8)}<small>${ESC.SEM[ESC.dow(d)]}</small></th>`).join('')}</tr></thead><tbody>
+      ${us.map(c => { const al = ESC.alertas(c, inicio, DIAS);
+        return `<tr><td class="nome"><b>${esc(curto(c.nome))}</b> <small class="sub">${esc(nomeCargo(c))}</small>${al.length ? ` <span class="etiqueta perigo" title="${esc(al.join(' · '))}">!</span>` : ''}${!ESC.padraoDe(c.id) ? ' <span class="etiqueta pendente" title="Sem padrão de folgas: defina na Configuração">sem padrão</span>' : ''}</td>
+        ${ds.map(d => `<td class="${th(d)}">${chip(c, d)}</td>`).join('')}</tr>`; }).join('')}
+      ${flIds.map(id => `<tr class="freela"><td class="nome"><b>★ ${esc(curto(ESC.freelancer(id).nome))}</b> <small class="sub">freelancer</small></td>${ds.map(d => `<td class="${th(d)}">${fu.filter(x => x.freelancer_id === id && x.data === d).map(x =>
+        `<span class="turno t-fl" data-fd="${x.id}" role="button" tabindex="0" title="${esc(`${ESC.hm(x.entrada)}–${ESC.hm(x.saida)} · ${ESC.MOTIVOS[x.motivo]}${x.cobre_colaborador_id ? ' · cobre ' + colab(x.cobre_colaborador_id).nome : ''} · ${reais(x.valor)} · ${ESC.SITUACOES[x.situacao]}`)}">★${ESC.hm(x.entrada).slice(0, 2)}</span>`).join('')}</td>`).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><td>Trabalhando</td>${cobs.map((cob, i) => cob.fechada ? `<td class="dia">–</td>` : `<td class="dia${cob.buracos.length ? ' buraco' : ''}"${cob.buracos.length ? ` title="${esc('Abaixo do mínimo: ' + ESC.textoBuracos(cob.buracos))}"` : ''}>${cob.n}</td>`).join('')}</tr></tfoot></table></div>
       ${feriadosTrab.filter(a => a.c.unidade === u.id).length ? `<div class="aviso" style="margin:8px 12px">Feriado trabalhado: ${feriadosTrab.filter(a => a.c.unidade === u.id).map(a =>
-        `${esc(a.c.nome.split(' ')[0])} em ${dataBR(a.x.feriado + 'T12:00').slice(0, 5)} ${LANCAMENTOS.some(l => l.colab === a.c.id && l.evento === '011' && l.obs.includes(a.x.feriado)) ? '<span class="etiqueta completa">HE lançada</span>'
-          : `<button type="button" class="btn btn-mini" data-he="${a.c.id}|${a.x.feriado}">Lançar HE 100%</button>`}`).join(' · ')}</div>` : ''}
-      <div class="legenda">${Object.entries(TURNOS).map(([k, [n, h]]) => `<span><span class="turno t-${k}">${k}</span> ${n} ${h}</span>`).join('')}<span><span class="turno t-FER">Fér</span> Férias</span></div></section>`;
-  }).join('') || '<div class="vazio">Nenhum colaborador com esses filtros.</div>';
+        `${esc(a.c.nome.split(' ')[0])} em ${ESC.dm(a.d)} ${LANCAMENTOS.some(l => l.colab === a.c.id && l.evento === '011' && l.obs.includes(a.d)) ? '<span class="etiqueta completa">HE lançada</span>'
+          : `<button type="button" class="btn btn-mini" data-he="${a.c.id}|${a.d}">Lançar HE 100%</button>`}`).join(' · ')}</div>` : ''}
+      <div class="legenda">${ESC.turnos().map(t => `<span><span class="turno ${clsSigla(t.codigo)}">${esc(t.codigo)}</span> ${esc(t.nome)} ${ESC.hm(t.entrada)}–${ESC.hm(t.saida)}</span>`).join('')}
+        <span><span class="turno t-F">F</span> Folga</span><span><span class="turno t-FA">FA</span> Falta</span><span><span class="turno t-AT">AT</span> Atestado</span><span><span class="turno t-AB">AB</span> Abonada</span>
+        <span><span class="turno t-FER">Fér</span> Férias</span><span><span class="turno t-fl">★</span> Freelancer</span><span><span class="turno t-x dia-mudado">&nbsp;</span> alterado no dia</span></div></section>`;
+  }).join('') || '<div class="vazio">Nenhum colaborador com esses filtros. Os colaboradores vêm do cadastro <a href="#" data-abrir="colaboradores">Colaboradores</a>.</div>';
+}
+
+/* ---------- Clique no dia: turno, folga, falta, atestado, outra unidade, freelancer ---------- */
+function editarDia(c, d) {
+  if (folhaFechada(d)) return janela('Folha fechada', `<p>A folha de ${nomeComp(d.slice(0, 7))} já foi fechada. Reabra a folha antes de mudar a escala deste mês (falta desconta no holerite).</p>`, 'Entendi', () => {});
+  const r = ESC.dia(c, d), p = ESC.padrao(c, d), ex = ESC.excecao(c.id, d);
+  const foto = ex ? { ...ex } : null;
+  const atualTipo = r.tipo === 'turno' ? 't:' + r.turno : r.tipo;
+  const opcoes = [...ESC.turnos().map(t => ['t:' + t.codigo, `${t.codigo} · ${t.nome} ${ESC.hm(t.entrada)}–${ESC.hm(t.saida)}`]),
+    ['folga', 'Folga'], ['falta', 'Falta (desconta na folha)'], ['atestado', 'Atestado'], ['abonada', 'Falta abonada']];
+  const turnoP = p.tipo === 'turno' ? `${p.turno} ${ESC.horario(p)}` : ESC.NOME[p.tipo];
+  const fls = ESC.freelancers().filter(f => f.ativo);
+  const corpo = `<p class="sub" style="margin:0 0 6px">${ESC.SEMANA[ESC.dow(d)]}, ${dataBR(d + 'T12:00')}${FERIADOS[d] ? ' · feriado: ' + esc(FERIADOS[d]) : ''} · pelo padrão: <b>${esc(turnoP)}</b></p>
+    <div class="opcoes-dia" role="radiogroup">${opcoes.map(([k, n]) => `<label><input type="radio" name="tipo" value="${k}"${k === atualTipo ? ' checked' : ''}> ${esc(n)}</label>`).join('')}</div>
+    <div class="form-grade" style="margin-top:8px">
+      <label class="c6" data-so-turno>Trabalha em<select name="un" class="campo">${ESC.unidadesEscala().map(u => `<option value="${u.id}"${u.id === (r.unidade || c.unidade) ? ' selected' : ''}>${esc(u.nome)}${u.id === c.unidade ? ' (a dele)' : ''}</option>`).join('')}</select></label>
+      <label class="c6">Observação<input name="obs" class="campo" maxlength="200" value="${esc(ex?.obs || '')}" placeholder="Ex.: trocou com a Ana; atestado de 1 dia"></label>
+      <label class="c12 marcar" data-so-ausencia><input type="checkbox" name="cobrir"> Chamar freelancer para cobrir este dia</label>
+      <label class="c6" data-so-cobrir>Freelancer<select name="fl" class="campo"><option value="">— escolha —</option>${fls.map(f => `<option value="${f.id}">${esc(f.nome)}${f.funcao ? ' · ' + esc(f.funcao) : ''}</option>`).join('')}</select></label>
+      <label class="c6" data-so-cobrir>ou novo (nome)<input name="flNovo" class="campo" maxlength="80"></label>
+      <label class="c3" data-so-cobrir>Entrada<input name="flE" type="time" class="campo" value="${p.tipo === 'turno' ? ESC.hm(ESC.turno(p.turno)?.entrada) : '11:00'}"></label>
+      <label class="c3" data-so-cobrir>Saída<input name="flS" type="time" class="campo" value="${p.tipo === 'turno' ? ESC.hm(ESC.turno(p.turno)?.saida) : '15:00'}"></label>
+      <label class="c6" data-so-cobrir>Valor (R$)<input name="flV" class="campo" inputmode="decimal"></label></div>
+    <div class="form-nota">Falta desconta o dia e o DSR no holerite sozinha (não precisa lançar). Atestado e abonada não descontam.
+      ${ex ? ' <button type="button" class="btn btn-mini" data-voltar>Voltar ao padrão</button>' : ''}</div>`;
+  const v = janela(`${c.nome}`, corpo, 'Salvar', async f => {
+    const k = f.tipo.value; if (!k) return 'Escolha o que acontece neste dia.';
+    const agora = ESC.excecao(c.id, d);
+    if (!foto && agora) return 'Alguém mudou este dia em outra tela enquanto a janela estava aberta. Nada foi gravado: feche e confira.';
+    if (foto) { const m = mudouDesde(foto, agora, ['tipo', 'turno', 'unidade_id', 'obs', 'atualizado_em'], 'Este dia'); if (m) return m; }
+    if (folhaFechada(d)) return 'A folha deste mês foi fechada agora em outra tela. Nada foi gravado.';
+    const dados = k.startsWith('t:') ? { tipo: 'turno', turno: k.slice(2), unidade_id: f.un.value === c.unidade ? null : ESC.unId(f.un.value) } : { tipo: k, turno: null, unidade_id: null };
+    dados.obs = f.obs.value.trim();
+    // Igual ao padrão e sem observação: não precisa de exceção
+    const igual = (dados.tipo === 'turno' ? p.tipo === 'turno' && p.turno === dados.turno && !dados.unidade_id : p.tipo === dados.tipo) && !dados.obs;
+    const cobrir = f.cobrir.checked && ['folga', 'falta', 'atestado', 'abonada'].includes(dados.tipo);
+    if (cobrir && !f.fl.value && !f.flNovo.value.trim()) return 'Escolha o freelancer (ou digite o nome de um novo) ou desmarque "Chamar freelancer".';
+    let erro = igual ? (foto ? await ESC.apagar('escala_dias', foto) : '') : await ESC.salvar('escala_dias', { colaborador_id: c.id, data: d, ...dados }, foto);
+    if (erro || !cobrir) return erro;
+    let fl = f.fl.value;
+    const valor = f.flV.value.trim() ? Number(f.flV.value.replace(/\./g, '').replace(',', '.')) : Number(ESC.freelancer(fl).diaria || 0);
+    if (!fl) { fl = ESC.novoId(); erro = await ESC.salvar('freelancers', { id: fl, nome: f.flNovo.value.trim(), funcao: nomeCargo(c), diaria: valor || 0, ativo: true }); if (erro) return 'O dia foi gravado, mas o freelancer não: ' + erro; }
+    erro = await ESC.salvar('freela_diarias', { freelancer_id: fl, unidade_id: ESC.unId(c.unidade), data: d, entrada: f.flE.value || '11:00', saida: f.flS.value || '15:00',
+      funcao: nomeCargo(c).slice(0, 40), motivo: dados.tipo === 'folga' ? 'folga' : 'falta', cobre_colaborador_id: c.id, valor: valor || 0, situacao: 'combinada' });
+    return erro ? 'O dia foi gravado, mas a diária do freelancer não: ' + erro : '';
+  });
+  const f = v.querySelector('form');
+  const ver = () => { const k = f.tipo.value || '', aus = ['folga', 'falta', 'atestado', 'abonada'].includes(k);
+    v.querySelectorAll('[data-so-turno]').forEach(e => e.classList.toggle('oculto', !k.startsWith('t:')));
+    v.querySelectorAll('[data-so-ausencia]').forEach(e => e.classList.toggle('oculto', !aus));
+    v.querySelectorAll('[data-so-cobrir]').forEach(e => e.classList.toggle('oculto', !(aus && f.cobrir.checked))); };
+  f.addEventListener('change', ver);
+  f.fl.onchange = () => { const x = ESC.freelancer(f.fl.value); if (x.diaria && !f.flV.value) f.flV.value = numero(x.diaria, 2); };
+  ver();
+  v.querySelector('[data-voltar]')?.addEventListener('click', async () => {
+    const erro = await ESC.apagar('escala_dias', foto); if (erro) v.querySelector('#fMsg').textContent = erro; else v.remove(); });
 }
 
 $('conteudo').onclick = e => {
   const he = e.target.closest('[data-he]');
   if (he) { const [cId, d] = he.dataset.he.split('|'), c = colab(cId), comp = d.slice(0, 7);
-    if (FECHAMENTOS_FOLHA.some(f => f.comp === comp && !f.reabertaEm)) return janela('Folha fechada', `<p>A folha de ${nomeComp(comp)} já foi fechada. Reabra antes de lançar.</p>`, 'Entendi', () => {});
+    if (folhaFechada(d)) return janela('Folha fechada', `<p>A folha de ${nomeComp(comp)} já foi fechada. Reabra antes de lançar.</p>`, 'Entendi', () => {});
     return janela(`Hora extra no feriado · ${c.nome}`, `<p>${esc(FERIADOS[d])} (${dataBR(d + 'T12:00')}).</p>
       <div class="form-grade"><label class="c4">Horas<input name="h" class="campo" inputmode="decimal" value="7,33"></label></div>
       <div class="form-nota">Entra em Lançamentos de ${nomeComp(comp)} como hora extra 100% e o holerite recalcula sozinho. Se for dar folga compensatória, não lance.</div>`, 'Lançar', f => {
@@ -104,16 +209,21 @@ $('conteudo').onclick = e => {
         if (LANCAMENTOS.some(l => l.colab === cId && l.evento === '011' && l.obs.includes(d))) { desenhar(); return 'Esta hora extra já foi lançada em outra tela.'; }
         LANCAMENTOS.push({ id: 'l' + Date.now(), comp, colab: cId, evento: '011', qtd: h, valor: 0, obs: `Feriado ${d}`, criadoEm: hojeISO() });
         desenhar(); avisarMudanca('lancamentos'); }); }
-  const t = e.target.closest('.turno[data-c]'); if (!t) return;
-  const atual = FOLHA.turnoNoDia(colab(t.dataset.c), t.dataset.d); if (['FER', 'AF'].includes(atual)) return;
-  const prox = CICLO[(CICLO.indexOf(atual) + 1) % CICLO.length];
-  (ESCALA[t.dataset.c] ||= {})[t.dataset.d] = prox; desenhar(); avisarMudanca('escala');
+  const nf = e.target.closest('[data-novofl]');
+  if (nf) return ESC.janelaDiaria(null, { unidade: nf.dataset.novofl, data: hojeISO() < inicio ? inicio : hojeISO() });
+  const fd = e.target.closest('[data-fd]');
+  if (fd) return ESC.janelaDiaria(ESC.diarias().find(x => x.id === fd.dataset.fd));
+  const t = e.target.closest('.turno[data-c]'); if (t) editarDia(colab(t.dataset.c), t.dataset.d);
 };
-$('semAnt').onclick = () => { inicio = FOLHA.somaDias(inicio, -7); desenhar(); };
-$('semProx').onclick = () => { inicio = FOLHA.somaDias(inicio, 7); desenhar(); };
+$('conteudo').onkeydown = e => { if (e.key === 'Enter' && e.target.matches('[role="button"]')) e.target.click(); };
+$('semAnt').onclick = () => { inicio = ESC.somaDias(inicio, -7); desenhar(); };
+$('semProx').onclick = () => { inicio = ESC.somaDias(inicio, 7); desenhar(); };
+$('btnHoje').onclick = () => { inicio = segunda(hojeISO()); desenhar(); };
 $('btnExportar').onclick = () => exportarCSV(`escala-${inicio}`, ['Empresa', 'Unidade', 'Colaborador', 'Cargo', ...datas().map(d => dataBR(d + 'T12:00'))],
-  COLABORADORES.filter(c => c.ativo && noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade })).map(c => [nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.nome, CARGOS[c.cargo], ...datas().map(d => FOLHA.turnoNoDia(c, d))]));
-vigiarDados(['escala', 'ferias', 'colaboradores', 'lancamentos'], desenhar);
+  COLABORADORES.filter(c => c.ativo && noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade })).map(c => [nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.nome, nomeCargo(c),
+    ...datas().map(d => { const r = ESC.dia(c, d); return r.tipo === 'turno' ? `${r.turno} ${ESC.horario(r)}${r.unidade !== c.unidade ? ' (' + nomeUnidade(r.unidade) + ')' : ''}` : ESC.NOME[r.tipo] || ''; })]));
+ESC.aoGravar = desenhar;
+vigiarDados(['colaboradores', 'escala_turnos', 'escala_funcionamento', 'escala_padrao', 'escala_dias', 'feriados', 'freelancers', 'freela_diarias', 'ferias', 'lancamentos', 'fechamentos_folha', 'unidades'], desenhar);
 desenhar();
 </script>
 </body>
