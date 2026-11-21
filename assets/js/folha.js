@@ -55,7 +55,10 @@ const FOLHA = (() => {
     add('001', `${dias} dias`, c.salario / 30 * dias);
     const lancs = LANCAMENTOS.filter(l => l.comp === comp && l.colab === c.id);
     let he = 0, faltas = 0;
-    lancs.forEach(l => { const v = valorLancamento(c, l); const e = evento(l.evento);
+    // Consumo interno (110): uma linha só no holerite com a soma do mês; o detalhe fica em RH › Consumo interno
+    const consumos = lancs.filter(l => l.evento === '110');
+    if (consumos.length) add('110', `${consumos.length} consumo${consumos.length > 1 ? 's' : ''}`, consumos.reduce((s, l) => s + valorLancamento(c, l), 0));
+    lancs.filter(l => l.evento !== '110').forEach(l => { const v = valorLancamento(c, l); const e = evento(l.evento);
       add(l.evento, l.qtd ? `${numero(l.qtd, 1)} ${['104'].includes(l.evento) ? 'd' : 'h'}` : '', v);
       if (['010', '011', '020'].includes(l.evento)) he += v; if (l.evento === '104') faltas += l.qtd; });
     if (he) add('015', '4/26', he / 26 * 4);                          // DSR sobre horas extras (exemplo: 4 domingos, 26 dias úteis)

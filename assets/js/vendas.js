@@ -87,7 +87,8 @@ const VENDA = (() => {
     mexerEstoque(v, 1);
     COMANDAS.filter(c => c.unidade === v.unidade && c.status === 'aberta' && (v.comandas || []).includes(c.numero)).forEach(c => { c.status = 'paga'; c.venda = v.id; });
     if (t === 'convenio') { CONSUMOS_PJ.push({ id: 'k' + v.id, cliente: v.pj, unidade: v.unidade, empresa: v.empresa, data: v.data, refeicoes: 1, valor: total(v), comanda: (v.comandas || []).join(', ') || '—', venda: v.id }); tabelas.push('consumos_pj'); }
-    if (t === 'funcionario') { LANCAMENTOS.push({ id: 'l' + v.id, comp: v.data.slice(0, 7), colab: v.colab, evento: '110', qtd: 0, valor: total(v), obs: `Consumo na loja · ${nomeUnidade(v.unidade)} ${dataBR(v.data + 'T12:00')} ${v.hora}`, venda: v.id, criadoEm: v.data }); tabelas.push('lancamentos'); }
+    // Consumo de funcionário: desconto na folha (consumo.js decide o mês). Sem NFC-e, sem dinheiro no caixa, sem conta a receber.
+    if (t === 'funcionario') { CONSUMO.lancar({ colab: v.colab, data: v.data, hora: v.hora, unidade: v.unidade, valor: total(v), venda: v.id, origem: 'pdv' }); tabelas.push('lancamentos'); }
     return tabelas;
   }
 
@@ -166,7 +167,7 @@ const VENDA = (() => {
     ${v.itens.map((i, k) => `<div>${String(k + 1).padStart(3, '0')} ${esc(i.nome)}</div><div class="l"><span>${i.un === 'kg' ? numero(i.qtd, 3) + ' kg' : numero(i.qtd) + ' un'} × ${numero(i.preco, 2)}</span><span>${numero(i.qtd * i.preco, 2)}</span></div>`).join('')}<hr>
     ${v.desconto ? `<div class="l"><span>Desconto</span><span>-${numero(v.desconto, 2)}</span></div>` : ''}<div class="l"><b>${t === 'cortesia' ? 'VALOR (sem cobrança) R$' : 'VALOR R$'}</b><b>${numero(total(v), 2)}</b></div><hr>
     <div class="c">${t === 'convenio' && c ? `Convênio ${esc(c.nome)}<br>CNPJ ${fmtDoc(c.cnpj)}<br>Entra no consumo do período: NF-e e boleto no fechamento.`
-      : t === 'funcionario' ? `Funcionário(a): ${esc(col ? col.nome : '—')}<br>Desconto na folha de ${v.data.slice(5, 7)}/${v.data.slice(0, 4)} (consumo interno)<br><br>Assinatura: ________________________`
+      : t === 'funcionario' ? `Funcionário(a): ${esc(col ? col.nome : '—')}<br>Desconto na folha de ${(c => `${c.slice(5, 7)}/${c.slice(0, 4)}`)((LANCAMENTOS.find(l => l.venda === v.id) || { comp: v.data }).comp)} (consumo interno)<br><br>Assinatura: ________________________`
       : `Motivo: ${esc(v.motivoCortesia || '—')}`}</div><hr>
     <div class="c">${dataBR(v.data + 'T12:00')} ${v.hora} · Comanda(s) ${(v.comandas || []).join(', ') || '—'}<br>Operador: ${esc(v.operador)} · PDV ${v.pdv}</div></div>`;
   }

@@ -77,7 +77,8 @@
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=8"></script>
-<script src="../assets/js/vendas.js?v=3"></script>
+<script src="../assets/js/consumo.js?v=1"></script>
+<script src="../assets/js/vendas.js?v=4"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
 /* Frente de caixa. Regras (exemplo, a Gran Sabor e o contador confirmam):
@@ -297,7 +298,9 @@ function receber() {
 }
 const nomeSel = c => `${esc(c.nome)} · ${esc(nomeUnidade(c.unidade))}`;
 const comp = () => hojeISO().slice(0, 7);
-const consumoMes = id => LANCAMENTOS.filter(l => l.colab === id && l.evento === '110' && l.comp === comp()).reduce((a, l) => a + l.valor, 0);
+// Consumo do funcionário no mês em que vai descontar (limite, autorização e mês vêm do consumo.js)
+const infoConsumo = c => { const cp = CONSUMO.compDestino(hojeISO());
+  return !CONSUMO.autorizacao(c.id) ? ' · sem autorização de desconto' : ` · disponível ${reais(CONSUMO.disponivel(c, cp))}`; };
 // Convênio PJ: sem NFC-e (a NF-e sai no fechamento do período, com o boleto)
 function lancarConvenio() {
   const c = CLIENTES_PJ.find(x => x.id === venda.pj), f0 = foto();
@@ -310,10 +313,10 @@ function lancarFuncionario() {
   if (venda.pj) return erroEntrada('Tire o convênio (F7) antes de lançar como consumo de funcionário.');
   const f0 = foto(), pessoas = COLABORADORES.filter(c => c.ativo && c.situacao !== 'desligado').sort((a, b) => (b.unidade === loja) - (a.unidade === loja) || a.nome.localeCompare(b.nome));
   janela(`Consumo de funcionário · ${reais(totalVenda())}`, `<div class="form-grade"><label class="c12">Funcionário(a)<select name="colab" class="campo"><option value="">— escolha —</option>${pessoas.map(c =>
-    `<option value="${c.id}">${nomeSel(c)}${consumoMes(c.id) ? ` · já consumiu ${reais(consumoMes(c.id))} no mês` : ''}</option>`).join('')}</select></label></div>
-    <div class="form-nota">Sem NFC-e: ${VENDA.TIPOS.funcionario.porque} Aparece em RH › Lançamentos e no holerite. Peça a assinatura no comprovante.</div>`, 'Lançar na folha', f => {
+    `<option value="${c.id}">${nomeSel(c)}${infoConsumo(c)}</option>`).join('')}</select></label></div>
+    <div class="form-nota">Sem NFC-e, sem pagamento e sem conta a receber: ${VENDA.TIPOS.funcionario.porque} Desconta na folha de ${nomeComp(CONSUMO.compDestino(hojeISO()))}${CONSUMO.fechada(comp()) ? ' (a deste mês já foi fechada)' : ''}. Aparece em RH › Consumo interno e no holerite. Peça a assinatura no comprovante.</div>`, 'Lançar na folha', f => {
     if (!f.colab.value) return 'Escolha o funcionário.';
-    if (VENDA.folhaFechada(comp())) return 'A folha deste mês já foi fechada. Peça para o RH reabrir ou receba como venda.';
+    const b = CONSUMO.bloqueio(f.colab.value, totalVenda()); if (b) return b;
     return finalizar({ tipo: 'funcionario', colab: f.colab.value, pagamentos: [] }, f0);
   });
 }
@@ -344,7 +347,8 @@ function finalizar(extra, f0) {
   if (tipo === 'convenio') { const c = CLIENTES_PJ.find(x => x.id === venda.pj);
     if (!c || !c.ativo) return 'Este convênio foi desativado em outra tela.';
     if (abertoPJ(c.id) + total > c.limite) return `Limite do convênio estourado: disponível ${reais(c.limite - abertoPJ(c.id))}. Tire o convênio (F7) e receba como venda.`; }
-  if (tipo === 'funcionario' && VENDA.folhaFechada(comp())) return 'A folha deste mês foi fechada em outra tela. Nada foi lançado.';
+  // Confere de novo na hora (limite, autorização ou cadastro podem ter mudado em outra tela)
+  if (tipo === 'funcionario') { const b = CONSUMO.bloqueio(extra.colab, total); if (b) return b + ' Nada foi lançado.'; }
   const pagoTot = VENDA.r2(extra.pagamentos.reduce((a, p) => a + p.valor, 0));
   if (tipo === 'venda' && pagoTot + 0.001 < total) return 'Falta receber.';
   // Comanda paga em outro caixa enquanto esta venda estava aberta?
@@ -429,7 +433,7 @@ $('selPdv').onchange = () => { if (venda.itens.length) { $('selPdv').value = pdv
 aoTrocarUnidade(un => { if (LOJAS_PDV.includes(un) && !venda.itens.length) { loja = un; desenhar(); } });
 
 // Preço mudou no Cardápio com a venda aberta: atualiza e avisa (e confere de novo ao receber)
-vigiarDados(['vendas', 'caixas', 'comandas', 'taxas_contrato', 'produtos', 'clientes_pj', 'consumos_pj', 'colaboradores', 'lancamentos', 'fechamentos_folha'], () => {
+vigiarDados(['vendas', 'caixas', 'comandas', 'taxas_contrato', 'produtos', 'clientes_pj', 'consumos_pj', 'colaboradores', 'lancamentos', 'fechamentos_folha', 'autorizacoes_consumo', 'regra_consumo'], () => {
   const mud = venda.itens.filter(i => precoAgora(i.prod) !== undefined && precoAgora(i.prod) !== i.preco);
   if (mud.length) { avisoPreco = `Preço atualizado pelo Cardápio: ${mud.map(i => `${esc(i.nome)} ${reais(i.preco)} → ${reais(precoAgora(i.prod))}`).join(' · ')}.`; mud.forEach(i => i.preco = precoAgora(i.prod)); }
   desenhar();

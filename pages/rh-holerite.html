@@ -28,7 +28,7 @@
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=8"></script>
-<script src="../assets/js/folha.js?v=1"></script>
+<script src="../assets/js/folha.js?v=2"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
 /* Regras (exemplo, o contador confirma):
@@ -83,6 +83,12 @@ function desenhar() {
 }
 
 /* ---------- Holerite ---------- */
+// Detalhe do consumo interno (evento 110), para o funcionário conferir cada refeição descontada
+function consumosTxt(c) {
+  const ls = LANCAMENTOS.filter(l => l.evento === '110' && l.colab === c.id && l.comp === comp).sort((a, b) => (a.data || a.criadoEm || '').localeCompare(b.data || b.criadoEm || ''));
+  if (!ls.length) return '';
+  return `<div class="form-nota"><b>Consumo interno descontado (${ls.length}):</b> ${ls.map(l => `${esc(l.obs || 'Consumo')} ${reais(l.valor)}`).join(' · ')}. Detalhe em <a href="#" data-abrir="consumo_interno">RH › Consumo interno</a>.</div>`;
+}
 function holerite(c) {
   const h = FOLHA.holerite(c, comp), pro = h.itens.filter(i => i.tipo === 'provento'), des = h.itens.filter(i => i.tipo === 'desconto');
   const corpo = `<div class="sub">${esc(nomeEmpresa(c.empresa))} · ${esc(nomeUnidade(c.unidade))} · matrícula ${c.matricula} · ${esc(CARGOS[c.cargo])} · admissão ${dataBR(c.admissao + 'T12:00')}</div>
@@ -91,6 +97,7 @@ function holerite(c) {
     || '<tr><td colspan="4" class="vazio">Sem holerite neste mês (afastado ou ainda não admitido).</td></tr>'}</tbody>
     <tfoot><tr><td colspan="2">Totais</td><td class="num">${reais(h.bruto)}</td><td class="num">${reais(h.descontos)}</td></tr>
     <tr><td colspan="2"><b>Líquido a receber</b></td><td colspan="2" class="num"><b>${reais(h.liquido)}</b></td></tr></tfoot></table>
+    ${consumosTxt(c)}
     <div class="form-nota">Base INSS ${reais(h.baseInss)} · FGTS do mês ${reais(h.fgts)} · Tabelas de INSS e IRRF de exemplo (o contador confirma). Férias saem em recibo à parte.</div>`;
   janela(`Holerite ${nomeComp(comp)} · ${c.nome}`, corpo, 'Imprimir', () => {
     const w = window.open('', '_blank'); if (!w) return 'O navegador bloqueou a janela de impressão.';

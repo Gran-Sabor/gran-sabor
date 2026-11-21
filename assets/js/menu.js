@@ -46,6 +46,7 @@ const MENU = [
     { id: 'colaboradores',  nome: 'Colaboradores', arquivo: 'pages/rh-colaboradores.html' },
     { id: 'escala',         nome: 'Escala', arquivo: 'pages/rh-escala.html' },
     { id: 'lancamentos',    nome: 'Lançamentos do mês', arquivo: 'pages/rh-lancamentos.html' },
+    { id: 'consumo_interno', nome: 'Consumo interno', arquivo: 'pages/rh-consumo.html' },
     { id: 'adiantamento',   nome: 'Adiantamento salarial', arquivo: 'pages/rh-adiantamento.html' },
     { id: 'holerites',      nome: 'Folha e holerites', arquivo: 'pages/rh-holerite.html' },
     { id: 'decimo',         nome: '13º salário', arquivo: 'pages/rh-decimo.html' },

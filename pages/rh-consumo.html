@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consumo interno</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Consumo interno</h1><span class="sub">Refeição de funcionário · desconta no holerite · sem NFC-e, sem caixa, sem conta a receber</span>
+    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <span class="comp-nav"><button type="button" class="btn btn-ico" id="compAnt" aria-label="Mês anterior">‹</button><b id="compTxt"></b><button type="button" class="btn btn-ico" id="compProx" aria-label="Próximo mês">›</button></span>
+      <button type="button" class="btn" id="btnRegra">Limite</button>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn btn-pri" id="btnNovo">+ Lançar consumo</button></div></div>
+  <div id="filtros"></div>
+  <div id="aviso"></div>
+  <section class="kpis" id="kpis"></section>
+  <div class="grade-2 largo">
+    <section class="cartao"><div class="cartao-cab"><h2>Por colaborador</h2><span class="dir sub" id="contagem"></span></div>
+      <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+    <div class="coluna">
+      <section class="cartao"><div class="cartao-cab"><h2>Por empresa</h2></div><div id="porEmpresa"></div></section>
+      <section class="cartao"><div class="cartao-cab"><h2>Últimos consumos</h2></div><div id="ultimos"></div></section>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/menu.js?v=10"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=8"></script>
+<script src="../assets/js/folha.js?v=2"></script>
+<script src="../assets/js/consumo.js?v=1"></script>
+<script src="../assets/js/vendas.js?v=4"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script>
+/* Regras (exemplo; as contas ficam em consumo.js):
+   - Cada consumo é um lançamento do evento 110 na folha do colaborador. O PDV (botão Funcionário, F11)
+     lança sozinho; aqui o RH lança o que foi consumido fora do PDV (marmita, lanche da produção).
+   - Não é venda ao consumidor: não emite NFC-e, não entra dinheiro no caixa, não vira conta a receber.
+   - Sem autorização de desconto assinada (CLT art. 462) ou acima do limite do mês, não lança.
+   - Folha fechada: o consumo novo vai para o mês seguinte. Consumo de folha fechada não se mexe
+     (reabra a folha ou lance o acerto no mês seguinte). */
+let comp = COMPETENCIA_ATUAL;
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador, matrícula, loja… (atalho: /)' });
+const doFiltro = c => noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade }) && casaBusca([c.nome, c.matricula, CARGOS[c.cargo], nomeUnidade(c.unidade)].join(' '), filtro.busca);
+const num = v => Number(String(v || '').replace(/\./g, '').replace(',', '.'));
+const vendaDe = l => l.venda && VENDAS.find(v => v.id === l.venda);
+const lojaDe = l => l.unidade || vendaDe(l)?.unidade || '';
+const dataDe = l => l.data || vendaDe(l)?.data || '';
+const origemTxt = l => CONSUMO.origem(l) === 'pdv' ? '<span class="etiqueta">PDV</span>' : '<span class="etiqueta destaque">RH</span>';
+const barra = uso => `<span class="barra" style="display:block" title="${numero(uso * 100)}% do limite"><i style="width:${Math.min(100, uso * 100)}%;${uso >= 1 ? 'background:var(--perigo)' : uso >= .8 ? 'background:var(--alerta)' : ''}"></i></span>`;
+const autTxt = a => a ? `<span class="etiqueta completa" title="Autorização de desconto assinada">assinada ${dataBR(a.assinadaEm + 'T12:00')}</span>` : '<span class="etiqueta pendente" title="Sem autorização assinada o PDV não lança consumo">falta assinar</span>';
+
+function desenhar() {
+  $('compTxt').textContent = nomeComp(comp);
+  const fechada = CONSUMO.fechada(comp), destino = CONSUMO.compDestino(hojeISO());
+  $('aviso').innerHTML = fechada
+    ? `<div class="aviso">Folha de ${nomeComp(comp)} <b>fechada</b>: estes consumos já estão no holerite e não se mexem aqui. Consumo novo entra na folha de <b>${nomeComp(destino)}</b>.</div>`
+    : comp === COMPETENCIA_ATUAL && destino !== comp ? `<div class="aviso">Consumo lançado hoje entra na folha de <b>${nomeComp(destino)}</b>.</div>` : '';
+  const r = CONSUMO.resumo(comp, doFiltro);
+  const comConsumo = r.linhas.filter(x => x.qtd), perto = r.linhas.filter(x => x.qtd && x.uso >= .8), semAut = r.linhas.filter(x => x.colab.ativo && !x.autorizacao);
+  const doPdv = comConsumo.reduce((s, x) => s + x.lancamentos.filter(l => CONSUMO.origem(l) === 'pdv').length, 0);
+  $('kpis').innerHTML = [
+    ['Desconto na folha', reais(r.total), `${comConsumo.length} pessoa(s) em ${nomeComp(comp)}`],
+    ['Consumos', numero(comConsumo.reduce((s, x) => s + x.qtd, 0)), `${doPdv} pelo PDV · ${comConsumo.reduce((s, x) => s + x.qtd, 0) - doPdv} pelo RH`],
+    ['Perto do limite', numero(perto.length), perto.length ? 'usaram 80% ou mais' : 'ninguém acima de 80%'],
+    ['Sem autorização', numero(semAut.length), semAut.length ? 'PDV não lança para eles' : 'todos assinaram'],
+    ['Entrou no caixa', reais(0), 'não é venda: sem cobrança']
+  ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  $('contagem').textContent = `${r.linhas.length} colaborador(es)`;
+  const ordem = [...r.linhas].sort((a, b) => b.total - a.total || a.colab.nome.localeCompare(b.colab.nome));
+  const grupos = {}; ordem.forEach(x => (grupos[x.colab.empresa] ||= []).push(x));
+  $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th class="so-largo">Autorização</th><th class="num so-largo">Consumos</th><th class="num">Desconto</th><th class="num so-largo">Limite</th><th class="so-largo">Uso</th><th class="num">Disponível</th></tr></thead><tbody>
+    ${EMPRESAS.filter(e => grupos[e.id]).map(e => `<tr class="grupo"><td colspan="7">${esc(e.nome)} <span class="sub">${grupos[e.id].length}</span></td></tr>` + grupos[e.id].map(x =>
+      `<tr data-id="${x.colab.id}" tabindex="0"><td><b>${esc(x.colab.nome)}</b> <small class="sub so-largo">${esc(nomeUnidade(x.colab.unidade))}</small>${x.autorizacao ? '' : ' <small class="desce" style="display:block" title="Sem autorização de desconto assinada">falta assinar a autorização</small>'}</td>
+        <td class="so-largo">${autTxt(x.autorizacao)}</td><td class="num so-largo">${x.qtd || '—'}</td><td class="num ${x.total ? 'desce' : ''}">${x.total ? '−' + reais(x.total) : '—'}</td>
+        <td class="num so-largo">${reais(x.limite)}</td><td class="so-largo">${barra(x.uso)}</td><td class="num">${reais(x.disponivel)}</td></tr>`).join('')).join('')
+    || '<tr><td colspan="7" class="vazio">Ninguém com esses filtros.</td></tr>'}</tbody>`;
+  $('porEmpresa').innerHTML = EMPRESAS.map(e => { const t = r.porEmpresa[e.id];
+    return `<div class="lista-linha"><div>${etqEmpresa(e.id)}<small>${t.qtd} consumo(s) · ${t.pessoas} pessoa(s)</small></div><span class="dir desce">−${reais(t.total)}</span></div>`; }).join('');
+  const ult = comConsumo.flatMap(x => x.lancamentos.map(l => ({ l, c: x.colab }))).sort((a, b) => (dataDe(b.l) + (b.l.hora || '')).localeCompare(dataDe(a.l) + (a.l.hora || ''))).slice(0, 8);
+  $('ultimos').innerHTML = ult.map(({ l, c }) => `<div class="lista-linha"><div><b>${esc(c.nome.split(' ')[0])}</b> ${origemTxt(l)}<small>${dataDe(l) ? dataBR(dataDe(l) + 'T12:00') : ''} · ${esc(nomeUnidade(lojaDe(l)))}</small></div><span class="dir">${reais(l.valor)}</span></div>`).join('')
+    || '<div class="vazio">Nenhum consumo neste mês.</div>';
+}
+
+/* ---------- Detalhe de um colaborador ---------- */
+function detalhe(c) {
+  const ls = CONSUMO.doMes(c.id, comp).sort((a, b) => (dataDe(a) + (a.hora || '')).localeCompare(dataDe(b) + (b.hora || '')));
+  const a = CONSUMO.autorizacao(c.id), fechada = CONSUMO.fechada(comp), tot = CONSUMO.total(c.id, comp);
+  const v = janela(`Consumo ${nomeComp(comp)} · ${c.nome}`, `
+    <div class="sub">${esc(nomeEmpresa(c.empresa))} · ${esc(nomeUnidade(c.unidade))} · matrícula ${c.matricula} · ${esc(CARGOS[c.cargo])}</div>
+    <table class="tabela"><thead><tr><th>Data</th><th>Loja</th><th>Origem</th><th>Descrição</th><th class="num">Valor</th><th></th></tr></thead><tbody>
+    ${ls.map(l => `<tr data-l="${l.id}"><td>${dataDe(l) ? dataBR(dataDe(l) + 'T12:00') : '—'} ${esc(l.hora || '')}</td><td>${esc(nomeUnidade(lojaDe(l)))}</td><td>${origemTxt(l)}</td><td class="sub">${esc(l.obs)}</td>
+      <td class="num">${reais(l.valor)}</td><td>${fechada ? '' : `<button type="button" class="btn btn-mini" data-cancelar>${CONSUMO.origem(l) === 'pdv' ? 'Cancelar venda' : 'Excluir'}</button>`}</td></tr>`).join('')
+      || '<tr><td colspan="6" class="vazio">Nenhum consumo neste mês.</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="4">Desconto no holerite de ${nomeComp(comp)}</td><td class="num"><b>${reais(tot)}</b></td><td></td></tr></tfoot></table>
+    <div class="form-grade">
+      <label class="c6">Autorização de desconto assinada em<input name="assinada" type="date" class="campo" value="${a ? a.assinadaEm : ''}"></label>
+      <label class="c6">Limite próprio por mês (R$)<input name="limite" class="campo" inputmode="decimal" placeholder="padrão: ${reais(CONSUMO.limitePadrao(c))}" value="${a && a.limite != null ? numero(a.limite, 2) : ''}"></label>
+    </div>
+    <div class="form-nota">Sem a data da autorização (CLT art. 462) o PDV não lança consumo para ${esc(c.nome.split(' ')[0])}. Apague a data para revogar. Limite em branco = regra geral (${numero(REGRA_CONSUMO.pctSalario)}% do salário, até ${reais(REGRA_CONSUMO.teto)}). Guarde o papel assinado na pasta do funcionário.</div>`, 'Salvar autorização', f => {
+    const foto = a ? { ...a } : null, agora = CONSUMO.autorizacao(c.id);
+    if (JSON.stringify(foto) !== JSON.stringify(agora ? { ...agora } : null)) return 'A autorização foi alterada em outra tela. Nada foi salvo: feche e confira de novo.';
+    const data = f.assinada.value, lim = f.limite.value.trim() ? num(f.limite.value) : null;
+    if (lim != null && !(lim >= 0)) return 'Limite inválido.';
+    if (data && data > hojeISO()) return 'A data da assinatura não pode ser no futuro.';
+    if (!data) { if (agora) agora.revogadaEm = hojeISO(); }
+    else if (agora) Object.assign(agora, { assinadaEm: data, limite: lim });
+    else AUTORIZACOES_CONSUMO.push({ id: 'au' + c.id + Date.now().toString(36), colab: c.id, assinadaEm: data, limite: lim, revogadaEm: null });
+    desenhar(); avisarMudanca('autorizacoes_consumo');
+  });
+  v.querySelector('tbody').onclick = e => {
+    const b = e.target.closest('[data-cancelar]'); if (!b) return;
+    const l = LANCAMENTOS.find(x => x.id === b.closest('tr').dataset.l); v.remove();
+    if (l) cancelar(l, c); else desenhar();
+  };
+}
+
+// Cancela um consumo: do PDV cancela a venda inteira (devolve estoque e tira da folha); do RH só exclui o lançamento
+function cancelar(l, c) {
+  const pdv = CONSUMO.origem(l) === 'pdv', foto = { ...l };
+  janela(pdv ? 'Cancelar consumo do PDV' : 'Excluir consumo', `<p>${pdv ? 'Cancelar' : 'Excluir'} o consumo de <b>${esc(c.nome)}</b> de ${reais(l.valor)} (${esc(l.obs)})?</p>
+    ${pdv ? '<label>Justificativa (mín. 15 letras)<input name="m" class="campo" maxlength="160"></label><div class="form-nota">Cancela a venda no PDV, devolve o estoque e tira o desconto da folha.</div>' : ''}`, pdv ? 'Cancelar consumo' : 'Excluir', f => {
+    const agora = LANCAMENTOS.find(x => x.id === l.id), m = mudouDesde(foto, agora, ['colab', 'valor', 'comp'], 'Este consumo'); if (m) { desenhar(); return m; }
+    if (CONSUMO.fechada(l.comp)) { desenhar(); return 'A folha deste mês foi fechada em outra tela. Nada foi feito.'; }
+    if (pdv) { const v = vendaDe(l); if (!v) return 'A venda deste consumo não foi encontrada.';
+      const erro = VENDA.cancelar(v, f.m.value); if (erro) return erro; }
+    else { LANCAMENTOS.splice(LANCAMENTOS.indexOf(agora), 1); avisarMudanca('lancamentos'); }
+    desenhar();
+  });
+}
+
+/* ---------- Lançar consumo pelo RH (fora do PDV) ---------- */
+function novo() {
+  const pessoas = COLABORADORES.filter(c => c.ativo && doFiltro(c)).sort((a, b) => a.nome.localeCompare(b.nome));
+  const lojas = UNIDADES.filter(u => u.id !== 'todas');
+  const v = janela('Lançar consumo interno', `
+    <div class="form-grade">
+      <label class="c12">Colaborador<select name="colab" class="campo"><option value="">— escolha —</option>${pessoas.map(c => `<option value="${c.id}">${esc(c.nome)} · ${esc(nomeUnidade(c.unidade))}</option>`).join('')}</select></label>
+      <label class="c4">Data<input name="data" type="date" class="campo" value="${hojeISO()}" max="${hojeISO()}"></label>
+      <label class="c4">Onde consumiu<select name="unidade" class="campo">${lojas.map(u => `<option value="${u.id}">${esc(u.nome)}</option>`).join('')}</select></label>
+      <label class="c4">Valor (R$)<input name="valor" class="campo" inputmode="decimal"></label>
+      <label class="c12">Descrição<input name="obs" class="campo" maxlength="80" placeholder="Ex.: marmita para levar, lanche da produção"></label>
+    </div><div class="form-nota" id="calc"></div>`, 'Lançar na folha', f => {
+    const valor = num(f.valor.value), data = f.data.value;
+    if (!f.colab.value) return 'Escolha o colaborador.';
+    if (!data || data > hojeISO()) return 'Informe a data (hoje ou antes).';
+    if (f.obs.value.trim().length < 3) return 'Escreva a descrição.';
+    const b = CONSUMO.bloqueio(f.colab.value, valor, data); if (b) return b;   // relido agora: limite e autorização de outra tela valem
+    const l = CONSUMO.lancar({ colab: f.colab.value, data, unidade: f.unidade.value, valor, obs: `${f.obs.value.trim()} · ${nomeUnidade(f.unidade.value)} ${dataBR(data + 'T12:00')}`, origem: 'manual' });
+    comp = l.comp; desenhar(); avisarMudanca('lancamentos');
+  });
+  const f = v.querySelector('form');
+  const calc = () => { const c = COLABORADORES.find(x => x.id === f.colab.value);
+    if (c && !f._mudouLoja) f.unidade.value = c.unidade;
+    const cp = CONSUMO.compDestino(f.data.value || hojeISO());
+    $('calc').innerHTML = !c ? 'Não gera cobrança nem entrada no caixa: só desconta no holerite.'
+      : `${CONSUMO.autorizacao(c.id) ? '' : '<b class="desce">Sem autorização de desconto assinada.</b> '}Desconta no holerite de ${nomeComp(cp)}${cp !== (f.data.value || '').slice(0, 7) ? ' (a folha do mês da data já foi fechada)' : ''} · disponível ${reais(CONSUMO.disponivel(c, cp))} de ${reais(CONSUMO.limite(c))}.`; };
+  f.unidade.addEventListener('change', () => f._mudouLoja = true);
+  f.addEventListener('input', calc); f.addEventListener('change', calc); calc();
+}
+
+/* ---------- Regra geral do limite ---------- */
+function regra() {
+  const foto = { ...REGRA_CONSUMO };
+  janela('Limite mensal de consumo', `<div class="form-grade">
+      <label class="c6">% do salário<input name="pct" class="campo" inputmode="decimal" value="${numero(REGRA_CONSUMO.pctSalario, 1)}"></label>
+      <label class="c6">Teto por mês (R$)<input name="teto" class="campo" inputmode="decimal" value="${numero(REGRA_CONSUMO.teto, 2)}"></label></div>
+    <div class="form-nota">O limite de cada pessoa é o menor dos dois (exemplo: o contador confirma). Quem tem limite próprio na autorização não muda. O PDV passa a usar o novo limite na hora.</div>`, 'Salvar', f => {
+    if (JSON.stringify(foto) !== JSON.stringify({ ...REGRA_CONSUMO })) return 'O limite foi mudado em outra tela. Nada foi salvo: feche e confira.';
+    const p = num(f.pct.value), t = num(f.teto.value);
+    if (!(p > 0 && p <= 100) || !(t > 0)) return 'Informe % entre 0 e 100 e um teto maior que zero.';
+    Object.assign(REGRA_CONSUMO, { pctSalario: p, teto: t }); desenhar(); avisarMudanca('regra_consumo');
+  });
+}
+
+const mudaComp = d => { const [a, m] = comp.split('-').map(Number), x = new Date(a, m - 1 + d, 1); comp = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`; desenhar(); };
+$('compAnt').onclick = () => mudaComp(-1); $('compProx').onclick = () => mudaComp(1);
+$('btnNovo').onclick = novo; $('btnRegra').onclick = regra;
+$('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) detalhe(COLABORADORES.find(c => c.id === tr.dataset.id)); };
+$('tab').onkeydown = e => { if (e.key === 'Enter') e.target.closest('tr[data-id]')?.click(); };
+$('btnExportar').onclick = () => exportarCSV(`consumo-interno-${comp}`, ['Competência', 'Matrícula', 'Colaborador', 'Empresa', 'Unidade do colaborador', 'Data', 'Onde consumiu', 'Origem', 'Descrição', 'Valor'],
+  CONSUMO.resumo(comp, doFiltro).linhas.flatMap(x => x.lancamentos.map(l => [nomeComp(comp), x.colab.matricula, x.colab.nome, nomeEmpresa(x.colab.empresa), nomeUnidade(x.colab.unidade),
+    dataDe(l) ? dataBR(dataDe(l) + 'T12:00') : '', nomeUnidade(lojaDe(l)), CONSUMO.origem(l) === 'pdv' ? 'PDV' : 'RH', l.obs, numero(l.valor, 2)])));
+vigiarDados(['lancamentos', 'colaboradores', 'fechamentos_folha', 'vendas', 'autorizacoes_consumo', 'regra_consumo'], desenhar);
+desenhar();
+</script>
+</body>
+</html>
