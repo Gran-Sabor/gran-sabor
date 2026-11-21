@@ -83,7 +83,7 @@ const ESC = (() => {
     if (c.situacao === 'ferias' || FERIAS.some(f => f.colab === c.id && iso >= f.inicio && iso <= somaDias(f.inicio, f.dias - 1))) return { tipo: 'ferias' };
     if (c.situacao === 'afastado') return { tipo: 'afastado' };
     const ex = excecao(c.id, iso);
-    if (ex) return ex.tipo === 'turno' ? { tipo: 'turno', turno: ex.turno, unidade: ex.unidade_id ? unCod(ex.unidade_id) : c.unidade, origem: 'dia', ex }
+    if (ex) return ex.tipo === 'turno' ? { tipo: 'turno', turno: ex.turno, entrada: ex.entrada || null, saida: ex.saida || null, unidade: ex.unidade_id ? unCod(ex.unidade_id) : c.unidade, origem: 'dia', ex }
       : { tipo: ex.tipo, origem: 'dia', ex };
     return padrao(c, iso);
   }
@@ -91,7 +91,9 @@ const ESC = (() => {
     const d = dow(iso), f = funcionamento(c.unidade, d);
     if (f && !f.aberta) return { tipo: 'fechada', origem: 'padrao' };
     const p = padraoDe(c.id) || { regime: 'semanal', folgas: [], domingo: 'folga', semPadrao: true };
-    const trab = () => ({ tipo: 'turno', turno: (d === 6 && p.turno_sabado) || (d === 0 && p.turno_domingo) || c.turno, unidade: c.unidade, origem: 'padrao', semPadrao: p.semPadrao });
+    // horário próprio do padrão (entrada/saída) vale nos dias sem turno diferente de sábado/domingo
+    const trab = () => { const tf = (d === 6 && p.turno_sabado) || (d === 0 && p.turno_domingo);
+      return { tipo: 'turno', turno: tf || c.turno, entrada: !tf && p.entrada ? p.entrada : null, saida: !tf && p.saida ? p.saida : null, unidade: c.unidade, origem: 'padrao', semPadrao: p.semPadrao }; };
     const folga = { tipo: 'folga', origem: 'padrao', semPadrao: p.semPadrao };
     if (p.regime === 'ciclo' && p.ciclo_ref && p.ciclo_trabalho && p.ciclo_folga)
       return mod(difDias(iso, p.ciclo_ref), p.ciclo_trabalho + p.ciclo_folga) < p.ciclo_folga ? folga : trab();
@@ -106,8 +108,11 @@ const ESC = (() => {
   const trabalha = r => r.tipo === 'turno';
   const SIGLA = { folga: 'F', falta: 'FA', atestado: 'AT', abonada: 'AB', ferias: 'Fér', afastado: 'Af', fechada: '–', fora: '' };
   const NOME = { turno: 'Trabalha', folga: 'Folga', falta: 'Falta (desconta)', atestado: 'Atestado', abonada: 'Falta abonada', ferias: 'Férias', afastado: 'Afastado', fechada: 'Unidade fechada', fora: 'Fora do contrato' };
-  const sigla = r => r.tipo === 'turno' ? r.turno : SIGLA[r.tipo] ?? '';
-  const horario = r => { const t = r.tipo === 'turno' && turno(r.turno); return t ? `${hm(t.entrada)}–${hm(t.saida)}` : ''; };
+  // Entrada e saída do dia: horário digitado (livre) ou o do turno
+  const horas = r => { if (r.tipo !== 'turno') return null; if (r.entrada && r.saida) return { entrada: r.entrada, saida: r.saida, livre: true };
+    const t = turno(r.turno); return t ? { entrada: t.entrada, saida: t.saida, livre: false } : null; };
+  const sigla = r => r.tipo === 'turno' ? (horas(r)?.livre ? hm(r.entrada) : r.turno || '?') : SIGLA[r.tipo] ?? '';
+  const horario = r => { const h = horas(r); return h ? `${hm(h.entrada)}–${hm(h.saida)}` : ''; };
 
   /* ---------- Cobertura: quantas pessoas ao mesmo tempo, de meia em meia hora ---------- */
   function cobertura(un, iso) {
@@ -117,7 +122,7 @@ const ESC = (() => {
     const base = { n: pessoas.length + extras.length, pessoas, extras, f, buracos: [], minimo: f?.minimo ?? null };
     if (!f) return { ...base, semConfig: true };
     if (!f.aberta) return { ...base, fechada: true };
-    const faixas = [...pessoas.map(p => { const t = turno(p.r.turno); return t && faixa(t.entrada, t.saida); }), ...extras.map(x => faixa(x.entrada, x.saida))].filter(Boolean);
+    const faixas = [...pessoas.map(p => { const h = horas(p.r); return h && faixa(h.entrada, h.saida); }), ...extras.map(x => faixa(x.entrada, x.saida))].filter(Boolean);
     const [a, b] = faixa(f.abre, f.fecha); let atual = null;
     for (let m = a; m < b; m += 30) {
       const q = faixas.filter(([i, s]) => (m >= i && m < s) || (m + 1440 >= i && m + 1440 < s)).length;
@@ -239,7 +244,7 @@ const ESC = (() => {
 
   const api = { REAL, SEM, SEMANA, NOME, somaDias, difDias, dow, hm, dm, faixa, hhmm, unCod, unId, unidadesEscala,
     turnos, turno, funcionamento, padraoDe, excecao, feriados, freelancers, freelancer, diarias, valeDiaria,
-    dia, padrao, trabalha, sigla, horario, cobertura, textoBuracos, faltasEntre, faltasNoMes, alertas,
+    dia, padrao, trabalha, sigla, horas, horario, cobertura, textoBuracos, faltasEntre, faltasNoMes, alertas,
     lista: L, salvar, apagar, avisar, salvarColaborador, novoId, garantirPagar, contaDe, gerarPagamento, aoGravar: null };
   return api;
 })();

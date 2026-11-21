@@ -100,7 +100,7 @@ function abaFolgas() {
   const grupos = unidades().map(u => [u, cs.filter(c => c.unidade === u.id)]).filter(([, l]) => l.length);
   return `<section class="cartao"><div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Colaborador</th><th>Turno padrão</th><th>Folgas</th><th>Sábado / domingo</th><th>Próximos 14 dias</th></tr></thead><tbody>
     ${grupos.map(([u, l]) => `<tr class="grupo"><td colspan="5">${esc(u.nome)} · ${esc(nomeEmpresa(UNIDADE_EMPRESA[u.id]))} <span class="sub">${l.length}</span></td></tr>` + l.map(c => { const p = ESC.padraoDe(c.id);
-      return `<tr data-colab="${c.id}" tabindex="0"><td><b>${esc(c.nome)}</b> <small class="sub">${esc(nomeCargo(c))}</small></td><td>${esc(c.turno)} <small class="sub">${esc(TURNOS[c.turno]?.[1] || '')}</small></td>
+      return `<tr data-colab="${c.id}" tabindex="0"><td><b>${esc(c.nome)}</b> <small class="sub">${esc(nomeCargo(c))}</small></td><td>${p?.entrada ? `<b>${ESC.hm(p.entrada)}–${ESC.hm(p.saida)}</b> <small class="sub">próprio</small>` : `${esc(c.turno)} <small class="sub">${esc(TURNOS[c.turno]?.[1] || '')}</small>`}</td>
         <td>${textoPadrao(c, p)}</td><td><small>${p?.turno_sabado ? 'sáb ' + esc(p.turno_sabado) : ''}${p?.turno_domingo ? ' dom ' + esc(p.turno_domingo) : ''}</small></td>
         <td><div class="previa" style="margin:0">${Array.from({ length: 14 }, (_, i) => ESC.somaDias(hojeISO(), i)).map(d => { const r = ESC.padrao(c, d), s = ESC.sigla(r);
           return `<span class="${r.tipo === 'turno' ? '' : 'f'}" title="${ESC.SEM[ESC.dow(d)]} ${ESC.dm(d)}">${esc(s)}</span>`; }).join('')}</div></td></tr>`; }).join('')).join('')
@@ -120,6 +120,9 @@ function editarFolgas(c) {
     <label class="c4" data-ciclo>Trabalha (dias)<input name="ct" class="campo" inputmode="numeric" value="${x.ciclo_trabalho || 5}"></label>
     <label class="c4" data-ciclo>Folga (dias)<input name="cf" class="campo" inputmode="numeric" value="${x.ciclo_folga || 1}"></label>
     <label class="c4" data-ciclo>Um dia de FOLGA<input type="date" name="cref" class="campo" value="${x.ciclo_ref || hojeISO()}"></label>
+    <label class="c3">Entrada própria<input type="time" name="pe" class="campo" value="${ESC.hm(x.entrada)}"></label>
+    <label class="c3">Saída própria<input type="time" name="ps" class="campo" value="${ESC.hm(x.saida)}"></label>
+    <div class="c6 form-nota" style="align-self:end">Vazio = horário do turno. Preenchido = este horário vale em todos os dias de trabalho.</div>
     <label class="c6">Turno no sábado (se diferente)<select name="tsab" class="campo">${opTurnos(x.turno_sabado, '— o mesmo —')}</select></label>
     <label class="c6">Turno no domingo (se diferente)<select name="tdom" class="campo">${opTurnos(x.turno_domingo, '— o mesmo —')}</select></label></div>
     <div class="previa" id="previa"></div>
@@ -130,11 +133,13 @@ function editarFolgas(c) {
     return { colaborador_id: c.id, regime, folgas: regime === 'semanal' ? [...f.querySelectorAll('[name=fg]:checked')].map(i => Number(i.value)) : [],
       domingo: regime === 'semanal' ? f.domingo.value : 'folga', domingo_ref: regime === 'semanal' && ['alternado', 'dois_um'].includes(f.domingo.value) ? f.dref.value || null : null,
       ciclo_trabalho: regime === 'ciclo' ? Number(f.ct.value) : null, ciclo_folga: regime === 'ciclo' ? Number(f.cf.value) : null, ciclo_ref: regime === 'ciclo' ? f.cref.value || null : null,
-      turno_sabado: f.tsab.value || null, turno_domingo: f.tdom.value || null };
+      turno_sabado: f.tsab.value || null, turno_domingo: f.tdom.value || null, entrada: f.pe.value || null, saida: f.ps.value || null };
   };
   const v = janela(`Folgas · ${c.nome}`, corpo, 'Salvar', async f => {
     const d = ler(f);
     if (d.regime === 'ciclo' && (!(d.ciclo_trabalho >= 1 && d.ciclo_trabalho <= 13) || !(d.ciclo_folga >= 1 && d.ciclo_folga <= 6) || !d.ciclo_ref)) return 'Ciclo: trabalha de 1 a 13 dias, folga de 1 a 6, e informe um dia de folga.';
+    if (!!d.entrada !== !!d.saida) return 'Horário próprio: informe entrada e saída (ou deixe os dois vazios).';
+    if (d.entrada && d.entrada === d.saida) return 'Entrada e saída iguais.';
     if (d.domingo_ref && ESC.dow(d.domingo_ref) !== 0) return 'A referência precisa ser um DOMINGO em que a pessoa folga.';
     if (['alternado', 'dois_um'].includes(d.domingo) && !d.domingo_ref) return 'Informe um domingo de folga como referência.';
     const m = (foto ? mudouDesde(foto, ESC.padraoDe(c.id), ['atualizado_em'], 'O padrão deste colaborador') : (ESC.padraoDe(c.id) ? 'Alguém definiu as folgas deste colaborador em outra tela agora. Nada foi gravado.' : ''))

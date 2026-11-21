@@ -22,6 +22,7 @@
   .turno.t-AT { background: #f6dfea; color: #8a2a5a; border-color: transparent; } .turno.t-AB { background: #e3f1ea; color: #2f7d4f; border-color: transparent; }
   .turno.t-FER, .turno.t-AF { cursor: default; background: var(--alerta-suave); color: var(--alerta); border-color: transparent; font-size: 10px; }
   .turno.t-fech { cursor: default; border: 0; background: none; color: var(--texto-3); }
+  .turno.livre { font-size: 9.5px; font-weight: 600; }
   .turno.t-fl { background: #ede7fb; color: #5b3fa8; border-color: transparent; font-size: 10px; }
   .turno.dia-mudado { box-shadow: 0 0 0 1.5px var(--texto-2); }
   .turno.outra { outline: 1.5px dotted var(--texto-2); outline-offset: 1px; }
@@ -81,10 +82,10 @@ const clsSigla = s => ({ F: 't-F', FA: 't-FA', AT: 't-AT', AB: 't-AB', 'Fér': '
 function chip(c, d) {
   const r = ESC.dia(c, d), s = ESC.sigla(r);
   if (!s) return '';
-  const tit = [ESC.NOME[r.tipo], r.tipo === 'turno' ? `${(TURNOS[r.turno] || [r.turno])[0]} ${ESC.horario(r)}` : '', r.unidade && r.unidade !== c.unidade ? 'em ' + nomeUnidade(r.unidade) : '',
+  const tit = [ESC.NOME[r.tipo], r.tipo === 'turno' ? `${ESC.horas(r)?.livre ? 'Horário' : (TURNOS[r.turno] || [r.turno])[0]} ${ESC.horario(r)}` : '', r.unidade && r.unidade !== c.unidade ? 'em ' + nomeUnidade(r.unidade) : '',
     r.ex?.obs || '', r.origem === 'dia' ? '(alterado no dia)' : ''].filter(Boolean).join(' · ');
   const clicavel = !['ferias', 'afastado', 'fora'].includes(r.tipo);
-  return `<span class="turno ${clsSigla(s)}${r.origem === 'dia' ? ' dia-mudado' : ''}${r.unidade && r.unidade !== c.unidade ? ' outra' : ''}"${clicavel ? ` data-c="${c.id}" data-d="${d}" role="button" tabindex="0"` : ''} title="${esc(tit)}">${esc(s)}</span>`;
+  return `<span class="turno ${clsSigla(s)}${ESC.horas(r)?.livre ? ' livre' : ''}${r.origem === 'dia' ? ' dia-mudado' : ''}${r.unidade && r.unidade !== c.unidade ? ' outra' : ''}"${clicavel ? ` data-c="${c.id}" data-d="${d}" role="button" tabindex="0"` : ''} title="${esc(tit)}">${esc(s)}</span>`;
 }
 
 function desenhar() {
@@ -147,21 +148,23 @@ function editarDia(c, d) {
   if (folhaFechada(d)) return janela('Folha fechada', `<p>A folha de ${nomeComp(d.slice(0, 7))} já foi fechada. Reabra a folha antes de mudar a escala deste mês (falta desconta no holerite).</p>`, 'Entendi', () => {});
   const r = ESC.dia(c, d), p = ESC.padrao(c, d), ex = ESC.excecao(c.id, d);
   const foto = ex ? { ...ex } : null;
-  const atualTipo = r.tipo === 'turno' ? 't:' + r.turno : r.tipo;
-  const opcoes = [...ESC.turnos().map(t => ['t:' + t.codigo, `${t.codigo} · ${t.nome} ${ESC.hm(t.entrada)}–${ESC.hm(t.saida)}`]),
+  const atualTipo = r.tipo === 'turno' ? 't:' + (r.turno || '') : r.tipo, hr = ESC.horas(r) || ESC.horas(p) || {};
+  const opcoes = [...ESC.turnos().map(t => ['t:' + t.codigo, `${t.codigo} · ${t.nome} ${ESC.hm(t.entrada)}–${ESC.hm(t.saida)}`]), ['t:', 'Outro horário'],
     ['folga', 'Folga'], ['falta', 'Falta (desconta na folha)'], ['atestado', 'Atestado'], ['abonada', 'Falta abonada']];
-  const turnoP = p.tipo === 'turno' ? `${p.turno} ${ESC.horario(p)}` : ESC.NOME[p.tipo];
+  const turnoP = p.tipo === 'turno' ? `${p.entrada ? '' : p.turno + ' '}${ESC.horario(p)}` : ESC.NOME[p.tipo];
   const fls = ESC.freelancers().filter(f => f.ativo);
   const corpo = `<p class="sub" style="margin:0 0 6px">${ESC.SEMANA[ESC.dow(d)]}, ${dataBR(d + 'T12:00')}${FERIADOS[d] ? ' · feriado: ' + esc(FERIADOS[d]) : ''} · pelo padrão: <b>${esc(turnoP)}</b></p>
     <div class="opcoes-dia" role="radiogroup">${opcoes.map(([k, n]) => `<label><input type="radio" name="tipo" value="${k}"${k === atualTipo ? ' checked' : ''}> ${esc(n)}</label>`).join('')}</div>
     <div class="form-grade" style="margin-top:8px">
       <label class="c6" data-so-turno>Trabalha em<select name="un" class="campo">${ESC.unidadesEscala().map(u => `<option value="${u.id}"${u.id === (r.unidade || c.unidade) ? ' selected' : ''}>${esc(u.nome)}${u.id === c.unidade ? ' (a dele)' : ''}</option>`).join('')}</select></label>
+      <label class="c3" data-so-turno>Entrada<input name="ent" type="time" class="campo" value="${ESC.hm(hr.entrada)}"></label>
+      <label class="c3" data-so-turno>Saída<input name="sai" type="time" class="campo" value="${ESC.hm(hr.saida)}"></label>
       <label class="c6">Observação<input name="obs" class="campo" maxlength="200" value="${esc(ex?.obs || '')}" placeholder="Ex.: trocou com a Ana; atestado de 1 dia"></label>
       <label class="c12 marcar" data-so-ausencia><input type="checkbox" name="cobrir"> Chamar freelancer para cobrir este dia</label>
       <label class="c6" data-so-cobrir>Freelancer<select name="fl" class="campo"><option value="">— escolha —</option>${fls.map(f => `<option value="${f.id}">${esc(f.nome)}${f.funcao ? ' · ' + esc(f.funcao) : ''}</option>`).join('')}</select></label>
       <label class="c6" data-so-cobrir>ou novo (nome)<input name="flNovo" class="campo" maxlength="80"></label>
-      <label class="c3" data-so-cobrir>Entrada<input name="flE" type="time" class="campo" value="${p.tipo === 'turno' ? ESC.hm(ESC.turno(p.turno)?.entrada) : '11:00'}"></label>
-      <label class="c3" data-so-cobrir>Saída<input name="flS" type="time" class="campo" value="${p.tipo === 'turno' ? ESC.hm(ESC.turno(p.turno)?.saida) : '15:00'}"></label>
+      <label class="c3" data-so-cobrir>Entrada<input name="flE" type="time" class="campo" value="${ESC.hm(ESC.horas(p)?.entrada) || '11:00'}"></label>
+      <label class="c3" data-so-cobrir>Saída<input name="flS" type="time" class="campo" value="${ESC.hm(ESC.horas(p)?.saida) || '15:00'}"></label>
       <label class="c6" data-so-cobrir>Valor (R$)<input name="flV" class="campo" inputmode="decimal"></label></div>
     <div class="form-nota">Falta desconta o dia e o DSR no holerite sozinha (não precisa lançar). Atestado e abonada não descontam.
       ${ex ? ' <button type="button" class="btn btn-mini" data-voltar>Voltar ao padrão</button>' : ''}</div>`;
@@ -169,12 +172,22 @@ function editarDia(c, d) {
     const k = f.tipo.value; if (!k) return 'Escolha o que acontece neste dia.';
     const agora = ESC.excecao(c.id, d);
     if (!foto && agora) return 'Alguém mudou este dia em outra tela enquanto a janela estava aberta. Nada foi gravado: feche e confira.';
-    if (foto) { const m = mudouDesde(foto, agora, ['tipo', 'turno', 'unidade_id', 'obs', 'atualizado_em'], 'Este dia'); if (m) return m; }
+    if (foto) { const m = mudouDesde(foto, agora, ['tipo', 'turno', 'entrada', 'saida', 'unidade_id', 'obs', 'atualizado_em'], 'Este dia'); if (m) return m; }
     if (folhaFechada(d)) return 'A folha deste mês foi fechada agora em outra tela. Nada foi gravado.';
-    const dados = k.startsWith('t:') ? { tipo: 'turno', turno: k.slice(2), unidade_id: f.un.value === c.unidade ? null : ESC.unId(f.un.value) } : { tipo: k, turno: null, unidade_id: null };
+    let dados = { tipo: k, turno: null, entrada: null, saida: null, unidade_id: null };
+    if (k.startsWith('t:')) {
+      // Entrada e saída livres: igual ao turno escolhido = guarda só o turno; diferente (ou "Outro horário") = guarda o horário digitado
+      const t = ESC.turno(k.slice(2)), e1 = f.ent.value, s1 = f.sai.value;
+      if (!e1 || !s1) return 'Informe entrada e saída.';
+      if (e1 === s1) return 'Entrada e saída iguais.';
+      const doTurno = t && ESC.hm(t.entrada) === e1 && ESC.hm(t.saida) === s1;
+      dados = { tipo: 'turno', turno: t ? t.codigo : null, entrada: doTurno ? null : e1, saida: doTurno ? null : s1, unidade_id: f.un.value === c.unidade ? null : ESC.unId(f.un.value) };
+    }
     dados.obs = f.obs.value.trim();
     // Igual ao padrão e sem observação: não precisa de exceção
-    const igual = (dados.tipo === 'turno' ? p.tipo === 'turno' && p.turno === dados.turno && !dados.unidade_id : p.tipo === dados.tipo) && !dados.obs;
+    const hp = ESC.horas(p), hd = ESC.horas(dados);
+    const igual = (dados.tipo === 'turno' ? p.tipo === 'turno' && hp && hd && ESC.hm(hp.entrada) === ESC.hm(hd.entrada) && ESC.hm(hp.saida) === ESC.hm(hd.saida) && (p.turno === dados.turno || !dados.turno) && !dados.unidade_id
+      : p.tipo === dados.tipo) && !dados.obs;
     const cobrir = f.cobrir.checked && ['folga', 'falta', 'atestado', 'abonada'].includes(dados.tipo);
     if (cobrir && !f.fl.value && !f.flNovo.value.trim()) return 'Escolha o freelancer (ou digite o nome de um novo) ou desmarque "Chamar freelancer".';
     let erro = igual ? (foto ? await ESC.apagar('escala_dias', foto) : '') : await ESC.salvar('escala_dias', { colaborador_id: c.id, data: d, ...dados }, foto);
@@ -192,6 +205,9 @@ function editarDia(c, d) {
     v.querySelectorAll('[data-so-ausencia]').forEach(e => e.classList.toggle('oculto', !aus));
     v.querySelectorAll('[data-so-cobrir]').forEach(e => e.classList.toggle('oculto', !(aus && f.cobrir.checked))); };
   f.addEventListener('change', ver);
+  // escolheu um turno: preenche entrada e saída com o horário dele (dá para mudar)
+  f.querySelectorAll('[name=tipo]').forEach(x => x.addEventListener('change', () => { const t = x.checked && ESC.turno(x.value.slice(2));
+    if (t) { f.ent.value = ESC.hm(t.entrada); f.sai.value = ESC.hm(t.saida); } else if (x.checked && x.value === 't:') f.ent.focus(); }));
   f.fl.onchange = () => { const x = ESC.freelancer(f.fl.value); if (x.diaria && !f.flV.value) f.flV.value = numero(x.diaria, 2); };
   ver();
   v.querySelector('[data-voltar]')?.addEventListener('click', async () => {
@@ -221,7 +237,7 @@ $('semProx').onclick = () => { inicio = ESC.somaDias(inicio, 7); desenhar(); };
 $('btnHoje').onclick = () => { inicio = segunda(hojeISO()); desenhar(); };
 $('btnExportar').onclick = () => exportarCSV(`escala-${inicio}`, ['Empresa', 'Unidade', 'Colaborador', 'Cargo', ...datas().map(d => dataBR(d + 'T12:00'))],
   COLABORADORES.filter(c => c.ativo && noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade })).map(c => [nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.nome, nomeCargo(c),
-    ...datas().map(d => { const r = ESC.dia(c, d); return r.tipo === 'turno' ? `${r.turno} ${ESC.horario(r)}${r.unidade !== c.unidade ? ' (' + nomeUnidade(r.unidade) + ')' : ''}` : ESC.NOME[r.tipo] || ''; })]));
+    ...datas().map(d => { const r = ESC.dia(c, d); return r.tipo === 'turno' ? `${ESC.horas(r)?.livre ? '' : r.turno + ' '}${ESC.horario(r)}${r.unidade !== c.unidade ? ' (' + nomeUnidade(r.unidade) + ')' : ''}` : ESC.NOME[r.tipo] || ''; })]));
 ESC.aoGravar = desenhar;
 vigiarDados(['colaboradores', 'escala_turnos', 'escala_funcionamento', 'escala_padrao', 'escala_dias', 'feriados', 'freelancers', 'freela_diarias', 'ferias', 'lancamentos', 'fechamentos_folha', 'unidades'], desenhar);
 desenhar();
