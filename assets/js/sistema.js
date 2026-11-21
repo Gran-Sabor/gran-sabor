@@ -29,7 +29,7 @@ async function iniciar() {
   $('btnSair').onclick = sair;
   if (!MODO_DEMO) { $('avatar').onclick = $('usuarioNome').onclick = trocarSenha; $('usuarioNome').title = 'Trocar minha senha'; }
 
-  if (!MODO_DEMO) await Promise.all([atualizarUnidades(), carregarProdutos(), PDV_BANCO.carregar()]);
+  if (!MODO_DEMO) await Promise.all([atualizarUnidades(), carregarProdutos(), carregarRH(), PDV_BANCO.carregar()]);
   montarUnidades();
   montarMenu();
   abas = lembrar('abas', [{ id: 'inicio' }]).filter(a => acharTela(a.id));
@@ -95,6 +95,39 @@ async function carregarProdutos() {
   const { data, error } = await db.from('produtos').select(COLUNAS_PRODUTOS).order('categoria').order('nome');
   if (error) { console.warn('Produtos ainda não estão no banco:', error.message); return; }
   (raiz.__gsDados || (raiz.__gsDados = {})).PRODUTOS_BANCO = data;
+}
+/* ---------- Colaboradores, turnos e feriados do banco ----------
+   As telas de RH (folha, holerite, férias, PDV...) usam COLABORADORES, TURNOS e FERIADOS. Com o banco,
+   a casca monta essas listas a partir das tabelas e as refaz NO MESMO OBJETO sempre que o banco muda
+   (Realtime): todas as abas veem o valor novo na hora. Sem as tabelas, as telas seguem com o exemplo. */
+const colaboradorDoBanco = (r, cod) => ({ id: r.id, matricula: r.matricula, nome: r.nome, cpf: r.cpf || '', cargo: r.cargo, unidade: cod,
+  empresa: UNIDADE_EMPRESA[cod] || '', admissao: r.admissao || '2000-01-01', semAdmissao: !r.admissao, aniversario: r.aniversario || '',
+  demissao: r.demissao || '', salario: Number(r.salario), vt: Number(r.vt), optanteVT: !!r.optante_vt, dependentes: r.dependentes || 0,
+  turno: r.turno, situacao: r.situacao, pix: r.pix || '', jornada: '44h semanais', ativo: r.situacao !== 'desligado', atualizado_em: r.atualizado_em, doBanco: true });
+// Onde moram os dados comuns das abas (o mesmo lugar que tela.js · dadoComum usa)
+function raizDados() {
+  let raiz = window;
+  try { while (raiz.parent !== raiz && raiz.parent.location.origin === location.origin) raiz = raiz.parent; } catch {}
+  return raiz.__gsDados || (raiz.__gsDados = {});
+}
+function montarRH() {
+  const g = raizDados();
+  const L = t => dadosBanco.lista(t);
+  const cod = Object.fromEntries(L('unidades').map(u => [u.id, u.codigo]));
+  const cs = L('colaboradores').map(r => colaboradorDoBanco(r, cod[r.unidade_id]));
+  (g.COLABORADORES ||= []).splice(0, g.COLABORADORES.length, ...cs);
+  const tur = g.TURNOS || (g.TURNOS = {}); Object.keys(tur).forEach(k => delete tur[k]);
+  L('escala_turnos').filter(t => t.ativo).forEach(t => tur[t.codigo] = [t.nome, `${t.entrada.slice(0, 5)}–${t.saida.slice(0, 5)}`]);
+  tur.F = ['Folga', ''];
+  const fer = g.FERIADOS || (g.FERIADOS = {}); Object.keys(fer).forEach(k => delete fer[k]);
+  L('feriados').forEach(f => fer[f.data] = f.nome);
+}
+async function carregarRH() {
+  try { await dadosBanco.garantir('unidades', ...TABELAS_RH); }
+  catch (e) { console.warn('RH ainda não está no banco:', e.message); return; }
+  raizDados().RH_BANCO = true;
+  montarRH();
+  dadosBanco.aoMudar(t => { if (['colaboradores', 'escala_turnos', 'feriados', 'unidades'].includes(t)) montarRH(); });
 }
 function montarUnidades() {
   const s = $('unidade');

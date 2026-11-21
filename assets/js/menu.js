@@ -45,7 +45,10 @@ const MENU = [
   { grupo: 'Pessoas e RH', icone: 'pessoas', itens: [
     { id: 'colaboradores',  nome: 'Colaboradores', arquivo: 'pages/rh-colaboradores.html' },
     { id: 'escala',         nome: 'Escala', arquivo: 'pages/rh-escala.html' },
+    { id: 'escala_config',  nome: 'Configuração da escala', arquivo: 'pages/rh-escala-config.html' },
+    { id: 'faltas_freelas', nome: 'Faltas e freelancers', arquivo: 'pages/rh-faltas-freelas.html' },
     { id: 'lancamentos',    nome: 'Lançamentos do mês', arquivo: 'pages/rh-lancamentos.html' },
+    { id: 'consumo_interno', nome: 'Consumo interno', arquivo: 'pages/rh-consumo.html' },
     { id: 'adiantamento',   nome: 'Adiantamento salarial', arquivo: 'pages/rh-adiantamento.html' },
     { id: 'holerites',      nome: 'Folha e holerites', arquivo: 'pages/rh-holerite.html' },
     { id: 'decimo',         nome: '13º salário', arquivo: 'pages/rh-decimo.html' },
@@ -90,6 +93,10 @@ const UNIDADES = [
   { id: 'central',  nome: 'Central de carnes' },
   { id: 'escritorio', nome: 'Escritório' }
 ];
+
+// Unidade → empresa (CNPJ que registra). Exemplo até as empresas reais entrarem no cadastro de unidades.
+// Fica aqui (e não em exemplo.js) porque a casca também precisa dela para montar os colaboradores do banco.
+const UNIDADE_EMPRESA = { loja1: 'emp1', central: 'emp1', escritorio: 'emp1', loja2: 'emp2', loja3: 'emp3' };
 
 // Depois do login, a casca guarda as unidades do banco; aqui elas substituem a lista padrão
 try {
