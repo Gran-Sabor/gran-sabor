@@ -6,6 +6,10 @@
 <title>Início</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+<style>
+  .so-cel { display: none; }
+  @media (max-width: 600px) { .so-cel { display: block; } #tabCaixas th, #tabCaixas td { padding-left: 8px; padding-right: 8px; } .caixas-agora .cartao-cab { flex-wrap: wrap; } }
+</style>
 </head>
 <body>
 <div class="tela">
@@ -17,6 +21,11 @@
   </div>
 
   <section class="kpis" id="kpis" aria-label="Indicadores principais"></section>
+
+  <section class="cartao caixas-agora" style="margin-bottom:10px">
+    <div class="cartao-cab"><h2>Caixas agora</h2><span class="sub" id="caixasResumo"></span><a class="dir" href="#" data-abrir="fechamento_cx">Abertura e fechamento</a></div>
+    <div class="rolagem"><table class="tabela" id="tabCaixas"></table></div>
+  </section>
 
   <div class="grade-2">
     <div class="coluna">
@@ -78,6 +87,54 @@ function atencao(LOJAS) {
   if (cort.length) r.push({ nv: 'alerta', t: `${cort.reduce((a, c) => a + c.conferencia.cortesias.qtd, 0)} cortesia(s) nos caixas fechados`, s: cort.map(c => `${nomeUnidade(c.unidade)} ${dataBR(c.fechadoEm.slice(0, 10) + 'T12:00').slice(0, 5)} ${reais(c.conferencia.cortesias.valor)}`).join(' · '), tela: 'fechamento_cx' });
   return r.length ? r : [{ nv: 'info', t: 'Nada pendente', s: 'Notas, caixas e estoque em dia', tela: 'vendas_dia' }];
 }
+/* ---------- Caixas agora: cada PDV de cada loja, separado por empresa ----------
+   Mostra o caixa aberto (de qualquer dia: aberto de ontem fica em vermelho) ou, se não há,
+   o último caixa de hoje. Vendas, sangrias, suprimentos e o dinheiro esperado na gaveta saem
+   de VENDA.resumoCaixa, a mesma conta do PDV e do fechamento. */
+const etqEmp = id => { const e = EMPRESAS.find(x => x.id === id); return e ? `<span class="etiqueta emp" style="--c:${e.cor}">${esc(e.nome)}</span>` : ''; };
+const hm = s => s ? s.slice(11, 16) : '';
+function caixasAgora(un) {
+  const hoje = hojeISO();
+  return LOJAS_INI.filter(l => un === 'todas' || l === un).flatMap(loja => {
+    const daLoja = CAIXAS.filter(c => c.unidade === loja);
+    const pdvs = [...new Set([1, ...daLoja.filter(c => !c.fechadoEm || c.abertoEm.slice(0, 10) === hoje).map(c => c.pdv)])].sort((a, b) => a - b);
+    return pdvs.map(pdv => {
+      const doPdv = daLoja.filter(c => c.pdv === pdv);
+      const cx = doPdv.find(c => !c.fechadoEm) || doPdv.filter(c => c.abertoEm.slice(0, 10) === hoje).sort((a, b) => a.abertoEm.localeCompare(b.abertoEm)).pop() || null;
+      return { loja, pdv, empresa: UNIDADE_EMPRESA[loja], cx, r: cx ? VENDA.resumoCaixa(cx) : null };
+    });
+  });
+}
+function desenharCaixas(un) {
+  const hoje = hojeISO(), linhas = caixasAgora(un);
+  const sec = document.querySelector('.caixas-agora');
+  sec.hidden = !LOJAS_INI.includes(un) && un !== 'todas';   // central e escritório não têm caixa
+  if (sec.hidden) return;
+  const abertos = linhas.filter(l => l.cx && !l.cx.fechadoEm);
+  const somaA = k => VENDA.r2(abertos.reduce((a, l) => a + l.r[k], 0));
+  $('caixasResumo').innerHTML = `${abertos.length} de ${linhas.length} aberto(s) · ${reais(somaA('dinheiroGaveta'))} nas gavetas`;
+  const situacao = ({ cx, r }) => !cx ? '<span class="sub">não abriu hoje</span>'
+    : !cx.fechadoEm ? (cx.abertoEm.slice(0, 10) < hoje ? `<span class="etiqueta perigo">aberto desde ${dataBR(cx.abertoEm.slice(0, 10) + 'T12:00').slice(0, 5)}</span>` : '<span class="etiqueta completa">aberto</span>')
+      + (r.pendentes ? ` <span class="etiqueta perigo" title="NFC-e em contingência">${r.pendentes} nota(s) pendente(s)</span>` : '')
+    : `<span class="etiqueta">fechado ${hm(cx.fechadoEm)}</span>${cx.conferencia && cx.conferencia.diferenca ? ` <span class="etiqueta perigo" title="Diferença na conferência">${reais(cx.conferencia.diferenca)}</span>` : ''}`;
+  const formas = r => VENDA.FORMAS.filter(f => r.porForma[f.id]).map(f => `${f.nome}: ${reais(r.porForma[f.id])}`).join(' · ');
+  const linha = l => { const { cx, r } = l, fechado = cx && cx.fechadoEm;
+    return `<tr data-abrir="fechamento_cx" style="cursor:pointer${fechado || !cx ? ';color:var(--texto-2)' : ''}">
+      <td>${esc(nomeUnidade(l.loja))} · PDV ${l.pdv}${cx ? `<small class="sub so-cel">${esc(cx.operador)} · ${hm(cx.abertoEm)}</small>` : ''}</td><td>${situacao(l)}</td>
+      <td class="so-largo">${cx ? esc(cx.operador) : '—'}</td><td class="so-largo">${cx ? hm(cx.abertoEm) : '—'}</td>
+      <td class="num so-largo">${cx ? reais(cx.fundo) : '—'}</td>
+      <td class="num" title="${cx ? esc(formas(r)) : ''}">${cx ? `${reais(r.total)} <small class="sub so-largo">${r.vendas}</small>` : '—'}</td>
+      <td class="num so-largo">${cx && r.sangrias ? '−' + reais(r.sangrias) : '—'}</td><td class="num so-largo">${cx && r.suprimentos ? '+' + reais(r.suprimentos) : '—'}</td>
+      <td class="num"><b style="font-weight:600">${!cx ? '—' : fechado && cx.conferencia ? reais(cx.conferencia.contado.din) : reais(r.dinheiroGaveta)}</b></td></tr>`; };
+  const porEmp = EMPRESAS.map(e => ({ e, ls: linhas.filter(l => l.empresa === e.id) })).filter(g => g.ls.length);
+  $('tabCaixas').innerHTML = `<thead><tr><th>Loja · PDV</th><th>Situação</th><th class="so-largo">Operador(a)</th><th class="so-largo">Abriu</th><th class="num so-largo">Fundo de troco</th>
+    <th class="num">Vendas</th><th class="num so-largo">Sangrias</th><th class="num so-largo">Suprimentos</th><th class="num" title="Fundo + dinheiro recebido − troco + suprimentos − sangrias (caixa fechado: o contado)">Na gaveta</th></tr></thead>
+    <tbody>${porEmp.map(g => (porEmp.length > 1 ? `<tr><td colspan="9" style="background:var(--superficie-2);padding:4px 12px">${etqEmp(g.e.id)}</td></tr>` : '') + g.ls.map(linha).join('')).join('')}</tbody>
+    ${linhas.length > 1 ? `<tfoot><tr><td>Abertos agora</td><td>${abertos.length} caixa(s)</td><td class="so-largo"></td><td class="so-largo"></td><td class="num so-largo">${reais(abertos.reduce((a, l) => a + l.cx.fundo, 0))}</td>
+      <td class="num">${reais(somaA('total'))} <small class="sub so-largo">${abertos.reduce((a, l) => a + l.r.vendas, 0)}</small></td><td class="num so-largo">${somaA('sangrias') ? '−' + reais(somaA('sangrias')) : '—'}</td>
+      <td class="num so-largo">${somaA('suprimentos') ? '+' + reais(somaA('suprimentos')) : '—'}</td><td class="num">${reais(somaA('dinheiroGaveta'))}</td></tr></tfoot>` : ''}`;
+}
+
 const pagar7 = () => CONTAS_PAGAR.filter(c => !c.pagoEm && c.vencimento <= diasDaqui(7)).sort((a, b) => a.vencimento.localeCompare(b.vencimento));
 
 const somar = (lst, k) => lst.reduce((a, x) => a + x[k], 0);
@@ -107,6 +164,8 @@ function desenhar(un) {
      <div class="kpi"><div class="kpi-tit">A pagar até hoje</div><div class="kpi-valor">${reais(pagarHoje)}</div><div class="kpi-ctx">${esc(u.nome)}</div></div>`;
 
   const todas = Object.entries(LOJAS), total = somar(Object.values(LOJAS), 'fat');
+  desenharCaixas(un);
+
   $('tabUnidades').innerHTML = `<thead><tr><th>Unidade</th><th class="num">Faturamento</th><th class="num">Kg</th><th class="num">Clientes</th>
     <th class="num">Ticket médio</th><th class="num">CMV</th><th>Participação</th></tr></thead><tbody>${todas.map(([id, l]) =>
     `<tr${un !== 'todas' && un !== id ? ' style="opacity:.45"' : ''}><td>${esc(l.nome)}</td><td class="num">${reais(l.fat)}</td><td class="num">${numero(l.kg, 1)}</td>

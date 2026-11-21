@@ -27,6 +27,9 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
   `assets/js/escala.js` (ESC) é a regra da escala num lugar só (dia de cada pessoa, cobertura mínima, faltas, pagamento de freelancer);
   a folha desconta falta direto da escala (`ESC.faltasNoMes`), sem lançamento. `UNIDADE_EMPRESA` mora em menu.js.
   Colaboradores reais entram pela tela (Novo ou "Importar planilha"), nunca pelo repositório.
+- PDV no banco: `caixas` e `vendas` (registro inteiro em `dados` jsonb, colunas de busca calculadas). `assets/js/caixas-banco.js`
+  (na casca) carrega CAIXAS/VENDAS antes das abas, grava o que as telas mudaram (ao ouvir `avisarMudanca('caixas'|'vendas')`)
+  com conferência e aplica o Realtime no mesmo objeto. Um PDV só tem um caixa aberto (índice único). Início mostra "Caixas agora".
 - Banco: Supabase (projeto `sayplpvhnoeytfnkbvpm`, São Paulo). Migrações em `supabase/migrations/`,
   aplicadas pelo GitHub Actions no merge (segredos SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_ID, SUPABASE_DB_PASSWORD).
 
