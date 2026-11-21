@@ -29,7 +29,7 @@ async function iniciar() {
   $('btnSair').onclick = sair;
   if (!MODO_DEMO) { $('avatar').onclick = $('usuarioNome').onclick = trocarSenha; $('usuarioNome').title = 'Trocar minha senha'; }
 
-  if (!MODO_DEMO) await Promise.all([atualizarUnidades(), carregarProdutos()]);
+  if (!MODO_DEMO) await Promise.all([atualizarUnidades(), carregarProdutos(), PDV_BANCO.carregar()]);
   montarUnidades();
   montarMenu();
   abas = lembrar('abas', [{ id: 'inicio' }]).filter(a => acharTela(a.id));

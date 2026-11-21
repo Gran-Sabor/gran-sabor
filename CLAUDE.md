@@ -21,6 +21,9 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
   (um gatilho por tabela sobe a versão a cada gravação); `assets/js/financeiro.js` converte, grava e importa (fluxo de caixa xlsx,
   extrato OFX/CSV). Gravação com conferência: `update ... eq('atualizado_em', foto)`; se não voltou linha, alguém mudou antes.
   Tabela nova que precisa ser ao vivo: gatilho `subir_versao` + linha em `dados_versao` + entrada em `TABELAS_BANCO`.
+- PDV no banco: `caixas` e `vendas` (registro inteiro em `dados` jsonb, colunas de busca calculadas). `assets/js/caixas-banco.js`
+  (na casca) carrega CAIXAS/VENDAS antes das abas, grava o que as telas mudaram (ao ouvir `avisarMudanca('caixas'|'vendas')`)
+  com conferência e aplica o Realtime no mesmo objeto. Um PDV só tem um caixa aberto (índice único). Início mostra "Caixas agora".
 - Banco: Supabase (projeto `sayplpvhnoeytfnkbvpm`, São Paulo). Migrações em `supabase/migrations/`,
   aplicadas pelo GitHub Actions no merge (segredos SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_ID, SUPABASE_DB_PASSWORD).
 

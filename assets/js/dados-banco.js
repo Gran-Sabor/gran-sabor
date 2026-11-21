@@ -26,6 +26,7 @@ window.dadosBanco = (() => {
     const cfg = TABELAS_BANCO[tabela];
     const pagina = (de, contar) => { let q = db.from(tabela).select('*', contar ? { count: 'exact' } : undefined);
       if (desde) q = q.gte('atualizado_em', desde);
+      if (cfg.filtro) q = cfg.filtro(q);   // ex.: só os últimos dias (tabelas que crescem todo dia)
       return q.order(cfg.ordem).order('id').range(de, de + POR_VEZ - 1); };
     const { data, error, count } = await pagina(0, true);
     if (error) throw error;
