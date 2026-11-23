@@ -23,9 +23,14 @@ const TABELAS_BANCO = {
   feriados: { ordem: 'data' },
   freelancers: { ordem: 'nome' },
   freela_diarias: { ordem: 'data' },
-  rescisoes: { ordem: 'data_saida' }   // desligamentos (as verbas são recalculadas por rescisao.js)
+  rescisoes: { ordem: 'data_saida' },   // desligamentos (as verbas são recalculadas por rescisao.js)
+  // Férias e contrato de experiência (prazos e avisos: prazos-rh.js)
+  ferias: { ordem: 'inicio' },
+  contratos_experiencia: { ordem: 'inicio' }
 };
 const TABELAS_RH = ['colaboradores', 'escala_turnos', 'escala_funcionamento', 'escala_padrao', 'escala_dias', 'feriados', 'freelancers', 'freela_diarias'];
+// Lidas à parte: se a migração ainda não foi publicada, o resto do RH segue no banco
+const TABELAS_PRAZOS = ['ferias', 'contratos_experiencia'];
 
 window.dadosBanco = (() => {
   const listas = {}, estado = {}, ouvintes = [];

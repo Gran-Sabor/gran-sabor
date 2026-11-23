@@ -60,6 +60,9 @@
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=9"></script>
 <script src="../assets/js/vendas.js?v=4"></script>
+<script src="../assets/js/folha.js?v=3"></script>
+<script src="../assets/js/escala.js?v=1"></script>
+<script src="../assets/js/prazos-rh.js?v=1"></script>
 <script>
 /* Tudo calculado na hora a partir das vendas do PDV, do estoque e das contas (dados de exemplo
    até o banco ser ligado). Mudou em outra aba, o Início se redesenha sozinho. */
@@ -85,7 +88,26 @@ function atencao(LOJAS) {
   // Cortesias e degustações (decisão do caixa): a Fernanda vê no fechamento de cada caixa
   const cort = CAIXAS.filter(c => c.conferencia && c.conferencia.cortesias && c.conferencia.cortesias.qtd && c.fechadoEm >= diasDaqui(-1));
   if (cort.length) r.push({ nv: 'alerta', t: `${cort.reduce((a, c) => a + c.conferencia.cortesias.qtd, 0)} cortesia(s) nos caixas fechados`, s: cort.map(c => `${nomeUnidade(c.unidade)} ${dataBR(c.fechadoEm.slice(0, 10) + 'T12:00').slice(0, 5)} ${reais(c.conferencia.cortesias.valor)}`).join(' · '), tela: 'fechamento_cx' });
-  return r.length ? r : [{ nv: 'info', t: 'Nada pendente', s: 'Notas, caixas e estoque em dia', tela: 'vendas_dia' }];
+  // Prazos do RH (férias e contrato de experiência), da unidade escolhida no topo
+  r.push(...resumoRH(PRAZOS.avisos(c => unAtual === 'todas' || c.unidade === unAtual)));
+  return r.length ? r : [{ nv: 'info', t: 'Nada pendente', s: 'Notas, caixas, estoque e prazos do RH em dia', tela: 'vendas_dia' }];
+}
+/* ---------- Prazos do RH: uma linha por tipo (os detalhes ficam nas telas Férias e Contrato de experiência) ---------- */
+const NV_RH = { perigo: 'perigo', alerta: 'alerta', info: 'info' };
+function resumoRH(avs) {
+  const grupos = [
+    ['experiencia', n => `${n} contrato(s) de experiência para decidir`, 'experiencia'],
+    ['ferias', n => `${n} férias para programar`, 'ferias'],
+    ['aviso_ferias', n => `${n} aviso(s) de férias para entregar`, 'ferias'],
+    ['pagar_ferias', n => `${n} recibo(s) de férias para pagar`, 'ferias']];
+  return grupos.map(([tipo, titulo, tela]) => { const g = avs.filter(a => a.tipo === tipo); if (!g.length) return null;
+    const pior = g.some(a => a.nivel === 'perigo') ? 'perigo' : 'alerta';
+    return { nv: NV_RH[pior], t: titulo(g.length), s: g.slice(0, 3).map(a => `${colab(a.colab).nome} (${tipo === 'ferias' ? 'começar até ' : ''}${dataBR(a.data + 'T12:00').slice(0, 5)})`).join(', ') + (g.length > 3 ? ` e mais ${g.length - 3}` : ''), tela }; }).filter(Boolean);
+}
+// O sino do topo mostra os prazos do RH de todas as unidades (popup uma vez por dia quando há algo vencendo)
+function avisarSino() {
+  const lista = PRAZOS.avisos().map(a => ({ nivel: a.nivel, titulo: a.titulo, texto: a.texto, tela: a.tela }));
+  try { casca().postMessage({ tipo: 'alertas', origem: 'rh', lista }, location.origin); } catch {}
 }
 /* ---------- Caixas agora: cada PDV de cada loja, separado por empresa ----------
    Mostra o caixa aberto (de qualquer dia: aberto de ontem fica em vermelho) ou, se não há,
@@ -204,9 +226,11 @@ function desenhar(un) {
 }
 
 let unAtual = unidadeAtual();
-desenhar(unAtual);
+desenhar(unAtual); avisarSino();
 aoTrocarUnidade(un => { unAtual = un; desenhar(un); });
-vigiarDados(['vendas', 'caixas', 'estoque', 'contas_pagar', 'consumos_pj', 'fechamentos_pj', 'produtos', 'fichas', 'insumos'], () => desenhar(unAtual));
+vigiarDados(['vendas', 'caixas', 'estoque', 'contas_pagar', 'consumos_pj', 'fechamentos_pj', 'produtos', 'fichas', 'insumos',
+  'colaboradores', 'ferias', 'contratos_experiencia', 'escala_dias', 'lancamentos', 'unidades'], () => { desenhar(unAtual); avisarSino(); });
+if (PRAZOS.NO_BANCO) PRAZOS.garantir().then(() => { desenhar(unAtual); avisarSino(); }).catch(e => console.warn(e));
 </script>
 </body>
 </html>
