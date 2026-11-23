@@ -3,65 +3,225 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Insumos</title>
+<title>Insumos e matéria-prima</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/estilo.css?v=11">
 </head>
 <body>
-<script src="../assets/js/menu.js?v=14"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=15"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=10"></script>
-<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=11"></script>
+<script src="../assets/js/cadastro.js?v=6"></script>
+<script src="../assets/js/financeiro.js?v=3"></script>
 <script>
-/* Insumos = o que se compra (carnes, hortifrúti, mercearia...). O custo médio
-   alimenta a ficha técnica; o estoque mínimo gera alerta e sugestão de compra. */
-const CATS = ['Carnes', 'Hortifrúti', 'Mercearia', 'Bebidas', 'Embalagens', 'Gás', 'Limpeza'];
-const UNS = [['kg', 'kg'], ['un', 'unidade'], ['l', 'litro'], ['cx', 'caixa'], ['pct', 'pacote']];
-const nomeForn = id => (FORNECEDORES.find(f => f.id === id) || {}).nome || '—';
-// Categoria financeira do insumo: a nota (XML) divide o contas a pagar por ela, item a item
-const catsDespesa = () => CATEGORIAS.filter(c => c.tipo === 'despesa');
-const nomeCatFin = id => { const c = CATEGORIAS.find(k => k.id === id); return c ? `${c.codigo} ${c.nome}` : ''; };
-montarCadastro({
-  titulo: 'Insumos', sub: 'Itens comprados · custo médio alimenta a ficha técnica e o CMV',
-  novoRotulo: 'Novo insumo', tituloLista: 'Insumos por categoria', porUnidade: false,
-  dados: INSUMOS, tabela: 'insumos', depende: ['fornecedores', 'notas_entrada', 'categorias'],
-  escopo: l => ({ empresa: (FORNECEDORES.find(f => f.id === l.fornecedor) || {}).empresas }),
-  agrupar: l => l.categoria,
-  colunas: [
-    { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
-    { campo: 'nome', titulo: 'Insumo', fmt: v => `<b>${esc(v)}</b>` },
-    { campo: 'un', titulo: 'Un.' },
-    { campo: 'custo', titulo: 'Custo médio', num: true, fmt: v => reais(v) },
-    { campo: 'min', titulo: 'Estoque mínimo', num: true, fmt: (v, l) => `${numero(v)} ${l.un}` },
-    { campo: 'catFin', titulo: 'Categoria financeira', fmt: v => nomeCatFin(v) ? esc(nomeCatFin(v)) : '<span class="etiqueta pendente">falta</span>' },
-    { campo: 'fornecedor', titulo: 'Fornecedor padrão', fmt: v => esc(nomeForn(v)) },
-    { campo: 'ativo', titulo: 'Ativo', fmt: sim }
-  ],
-  kpis: v => {
-    const carnes = v.filter(i => i.categoria === 'Carnes');
-    return [
-      ['Insumos', v.length, `${new Set(v.map(i => i.categoria)).size} categorias`],
-      ['Carnes', carnes.length, carnes.length ? `custo médio ${reais(carnes.reduce((a, i) => a + i.custo, 0) / carnes.length)}/kg` : ''],
-      ['Sem fornecedor padrão', v.filter(i => !i.fornecedor).length, 'complete para a sugestão de compra'],
-      ['Sem categoria financeira', v.filter(i => !i.catFin).length, 'obrigatória: leva a compra para a DRE']
-    ];
-  },
-  campos: [
-    { campo: 'nome', titulo: 'Nome', obrig: true, larg: 'c8', max: 80 },
-    { campo: 'codigo', titulo: 'Código', larg: 'c4', max: 12 },
-    { campo: 'categoria', titulo: 'Categoria', tipo: 'select', opcoes: CATS.map(c => [c, c]), larg: 'c4' },
-    { campo: 'un', titulo: 'Unidade de estoque', tipo: 'select', opcoes: UNS, larg: 'c4' },
-    { campo: 'catFin', titulo: 'Categoria financeira (DRE)', obrig: true, tipo: 'select', vazio: 'Escolha…', opcoes: () => catsDespesa().map(c => [c.id, `${c.codigo} ${c.nome}`]), larg: 'c12' },
-    { campo: 'custo', titulo: 'Custo médio (R$)', tipo: 'dinheiro', larg: 'c4' },
-    { campo: 'min', titulo: 'Estoque mínimo', tipo: 'numero', larg: 'c4' },
-    { campo: 'fornecedor', titulo: 'Fornecedor padrão', tipo: 'select', vazio: '—', opcoes: () => FORNECEDORES.map(f => [f.id, f.nome]), larg: 'c5' },
-    { campo: 'ncm', titulo: 'NCM', larg: 'c3', max: 8, dica: 'vem do XML' },
-    { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c4' }
-  ],
-  novo: () => ({ categoria: 'Mercearia', un: 'kg', ativo: true }),
-  rodapeForm: () => 'O custo médio será atualizado sozinho a cada nota de entrada (XML).'
-});
+/* Insumos e matéria-prima = o que se COMPRA (carnes, hortifrúti, mercearia, bebida de revenda, embalagem, limpeza...).
+   O que se VENDE fica em "Produtos de venda (cardápio)".
+   - Código automático e sequencial (I0001, I0002...), bloqueado. Nada se apaga: desmarque "Ativo".
+   - Categoria financeira obrigatória: a nota (XML) divide o contas a pagar por ela, item a item.
+   - "Controla estoque": matéria-prima sim; despesa (limpeza, gás) normalmente não, mas pode.
+   - Códigos de fornecedor: o mesmo insumo interno (ex.: I0006 Arroz) recebe o código de barras e o código
+     de cada fornecedor/marca; a leitura do XML acha o insumo por eles e mostra quem fornece cada insumo. */
+const UNS = [['kg', 'kg'], ['g', 'grama'], ['l', 'litro'], ['ml', 'ml'], ['un', 'unidade'], ['cx', 'caixa'], ['pct', 'pacote'], ['fd', 'fardo']];
+const SO_DIG = s => String(s || '').replace(/\D/g, '');
+
+(async () => {
+  const REAL = await FIN.usar() && await FIN.garantir('categorias_produto', 'insumos', 'insumo_codigos').then(() => true).catch(() => false);
+  const catsFin = () => REAL ? FIN.categorias() : CATEGORIAS;
+  const nomeCatFin = id => { const c = catsFin().find(k => k.id === id); return c ? `${c.codigo} ${c.nome}` : ''; };
+  // Lista da categoria financeira: despesas, por código (a escolhida aparece mesmo se inativa)
+  const opcoesFin = item => catsFin().filter(c => c.tipo === 'despesa' && (c.ativo !== false || c.id === item.catFin))
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true })).map(c => [c.id, `${c.codigo} ${c.nome}`]);
+  const colFin = { campo: 'catFin', titulo: 'Categoria financeira', fmt: v => nomeCatFin(v) ? esc(nomeCatFin(v)) : '<span class="etiqueta pendente">falta</span>' };
+  const campoFin = { campo: 'catFin', titulo: 'Categoria financeira (DRE)', obrig: true, tipo: 'select', vazio: 'Escolha…', opcoes: opcoesFin, larg: 'c12' };
+
+  if (!REAL) {
+    // Modo demonstração: dados de exemplo em memória
+    const CATS = ['Carnes', 'Hortifrúti', 'Mercearia', 'Bebidas', 'Embalagens', 'Gás', 'Limpeza'];
+    const nomeForn = id => (FORNECEDORES.find(f => f.id === id) || {}).nome || '—';
+    const proximo = () => 'I' + String(Math.max(0, ...INSUMOS.map(i => Number(String(i.codigo).replace(/\D/g, '')) || 0)) + 1).padStart(2, '0');
+    montarCadastro({
+      titulo: 'Insumos e matéria-prima', sub: 'O que se compra · custo médio alimenta a ficha técnica e o CMV',
+      novoRotulo: 'Novo insumo', tituloLista: 'Insumos por categoria', porUnidade: false,
+      dados: INSUMOS, tabela: 'insumos', depende: ['fornecedores', 'notas_entrada', 'categorias'],
+      escopo: l => ({ empresa: (FORNECEDORES.find(f => f.id === l.fornecedor) || {}).empresas }),
+      agrupar: l => l.categoria,
+      colunas: [
+        { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
+        { campo: 'nome', titulo: 'Insumo', fmt: v => `<b>${esc(v)}</b>` },
+        { campo: 'un', titulo: 'Un.' },
+        { campo: 'custo', titulo: 'Custo médio', num: true, fmt: v => reais(v) },
+        { campo: 'min', titulo: 'Estoque mínimo', num: true, fmt: (v, l) => `${numero(v)} ${l.un}` },
+        colFin,
+        { campo: 'fornecedor', titulo: 'Fornecedor padrão', fmt: v => esc(nomeForn(v)) },
+        { campo: 'ativo', titulo: 'Ativo', fmt: sim }
+      ],
+      kpis: v => [
+        ['Insumos', v.length, `${new Set(v.map(i => i.categoria)).size} categorias`],
+        ['Sem fornecedor padrão', v.filter(i => !i.fornecedor).length, 'complete para a sugestão de compra'],
+        ['Sem categoria financeira', v.filter(i => !i.catFin).length, 'obrigatória: leva a compra para a DRE']
+      ],
+      campos: [
+        { campo: 'nome', titulo: 'Nome', obrig: true, larg: 'c8', max: 80 },
+        { campo: 'codigo', titulo: 'Código (automático)', larg: 'c4', somenteLeitura: 'sempre' },
+        { campo: 'categoria', titulo: 'Categoria', tipo: 'select', opcoes: CATS.map(c => [c, c]), larg: 'c4' },
+        { campo: 'un', titulo: 'Unidade de estoque', tipo: 'select', opcoes: UNS, larg: 'c4' },
+        campoFin,
+        { campo: 'custo', titulo: 'Custo médio (R$)', tipo: 'dinheiro', larg: 'c4' },
+        { campo: 'min', titulo: 'Estoque mínimo', tipo: 'numero', larg: 'c4' },
+        { campo: 'fornecedor', titulo: 'Fornecedor padrão', tipo: 'select', vazio: '—', opcoes: () => FORNECEDORES.map(f => [f.id, f.nome]), larg: 'c5' },
+        { campo: 'ncm', titulo: 'NCM', larg: 'c3', max: 8, dica: 'vem do XML' },
+        { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c4' }
+      ],
+      novo: () => ({ codigo: proximo(), categoria: 'Mercearia', un: 'kg', ativo: true }),
+      validar: (d, item) => { if (!item.id) d.codigo = proximo(); else d.codigo = item.codigo; return ''; },
+      rodapeForm: () => 'Código automático e sequencial. Insumo não se apaga: desmarque "Ativo". O custo médio será atualizado sozinho a cada nota de entrada (XML).'
+    });
+    return;
+  }
+
+  /* ---------- Com o banco ---------- */
+  janela.nota = 'Grava no banco';
+  const CATS = () => FIN.L('categorias_produto');
+  const codigos = id => FIN.L('insumo_codigos').filter(c => c.insumo_id === id);
+  const opcoesCat = item => CATS().filter(c => (c.uso !== 'venda' && c.ativo) || c.id === item.categoriaId)
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map(c => [c.id, c.nome]);
+  const fornecedoresDe = i => [...new Set(codigos(i.id).filter(c => c.ativo).map(c => c.fornecedor_nome))];
+
+  // Códigos de fornecedor do insumo aberto (lista dentro do formulário, ao vivo)
+  let aberto = null;
+  const listaCodigos = item => {
+    if (!item.id) return '<div class="sub-tit">Códigos de fornecedor</div><p class="sub">Salve o insumo para ligar o código de barras e o código de cada fornecedor.</p>';
+    const cs = codigos(item.id).sort((a, b) => (b.ativo - a.ativo) || a.fornecedor_nome.localeCompare(b.fornecedor_nome, 'pt-BR'));
+    return `<div class="sub-tit">Códigos de fornecedor <span class="sub">o mesmo ${esc(item.nome)} de várias marcas e fornecedores: todos alimentam o código ${esc(item.codigo)}</span></div>
+      <table class="tabela clicavel"><thead><tr><th>Fornecedor</th><th>Código de barras</th><th>Código na nota</th><th class="so-largo">Marca / descrição</th><th class="num">Embalagem</th><th>Ativo</th></tr></thead><tbody>
+      ${cs.map(c => `<tr data-codigo="${c.id}" tabindex="0"${c.ativo ? '' : ' class="inativa"'}><td>${esc(c.fornecedor_nome)}${c.fornecedor_cnpj ? `<br><small class="sub mono">${esc(fmtDoc(c.fornecedor_cnpj))}</small>` : ''}</td>
+        <td class="mono">${esc(c.codigo_barras || '—')}</td><td class="mono">${esc(c.codigo_fornecedor || '—')}</td>
+        <td class="so-largo">${esc([c.marca, c.descricao].filter(Boolean).join(' · ') || '—')}</td>
+        <td class="num">1 ${esc(c.unidade_compra)} = ${numero(Number(c.fator), 3)} ${esc(item.un)}</td><td>${sim(c.ativo)}</td></tr>`).join('')
+        || '<tr><td colspan="6" class="vazio">Nenhum código ligado ainda.</td></tr>'}</tbody></table>
+      <div class="form-grade"><div class="c12"><button type="button" class="btn btn-mini" data-novo-codigo>+ Ligar código de fornecedor</button></div></div>`;
+  };
+  const redesenharCodigos = () => { if (aberto && document.body.contains(aberto.v)) {
+    const item = INSUMOS.find(i => i.id === aberto.item.id) || aberto.item; aberto.v.querySelector('#extraForm').innerHTML = listaCodigos(item); } };
+  vigiarDados(['insumo_codigos', 'insumos'], redesenharCodigos);
+
+  function editarCodigo(ins, c) {
+    const novo = !c; c = c || { fornecedor_nome: '', unidade_compra: ins.un, fator: 1, ativo: true };
+    const foto = c.atualizado_em;
+    janela(novo ? `Ligar código · ${ins.codigo} ${ins.nome}` : `Código de fornecedor · ${ins.nome}`, `
+      <div class="form-grade">
+        <label class="c8">Fornecedor *<input name="fornecedor_nome" class="campo" maxlength="120" value="${esc(c.fornecedor_nome)}" list="listaForn"></label>
+        <label class="c4">CNPJ do fornecedor<input name="fornecedor_cnpj" class="campo" inputmode="numeric" maxlength="18" value="${esc(c.fornecedor_cnpj ? fmtDoc(c.fornecedor_cnpj) : '')}"></label>
+        <datalist id="listaForn">${[...new Set(FIN.L('insumo_codigos').map(x => x.fornecedor_nome))].map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+        <label class="c6">Código de barras (EAN)<input name="codigo_barras" class="campo mono" inputmode="numeric" maxlength="14" value="${esc(c.codigo_barras || '')}" placeholder="789…"></label>
+        <label class="c6">Código do produto na nota do fornecedor<input name="codigo_fornecedor" class="campo mono" maxlength="60" value="${esc(c.codigo_fornecedor || '')}" placeholder="cProd do XML"></label>
+        <label class="c4">Marca<input name="marca" class="campo" maxlength="60" value="${esc(c.marca || '')}"></label>
+        <label class="c8">Descrição como vem na nota<input name="descricao" class="campo" maxlength="120" value="${esc(c.descricao || '')}"></label>
+        <label class="c4">Unidade da nota<input name="unidade_compra" class="campo" maxlength="10" value="${esc(c.unidade_compra)}" placeholder="fd, cx, kg"></label>
+        <label class="c4">Quantos ${esc(ins.un)} vêm em 1 unidade da nota *<input name="fator" class="campo" inputmode="decimal" value="${numero(Number(c.fator), 3)}"></label>
+        <label class="c4 marcar"><input type="checkbox" name="ativo"${c.ativo ? ' checked' : ''}> Ativo</label>
+      </div>
+      <div class="form-nota">Informe o código de barras, o código do fornecedor ou os dois. Na entrada da nota (XML) o item com esse código cai sozinho no insumo ${esc(ins.codigo)}, já convertido para ${esc(ins.un)}. Não se apaga: desmarque "Ativo".</div>`, 'Salvar', async fm => {
+      const reg = { fornecedor_nome: fm.fornecedor_nome.value.trim(), fornecedor_cnpj: SO_DIG(fm.fornecedor_cnpj.value) || null,
+        codigo_barras: SO_DIG(fm.codigo_barras.value) || null, codigo_fornecedor: fm.codigo_fornecedor.value.trim() || null,
+        marca: fm.marca.value.trim() || null, descricao: fm.descricao.value.trim() || null, unidade_compra: fm.unidade_compra.value.trim() || ins.un,
+        fator: Number(fm.fator.value.replace(/\./g, '').replace(',', '.')), ativo: fm.ativo.checked };
+      if (!reg.fornecedor_nome) return 'Informe o fornecedor.';
+      if (reg.fornecedor_cnpj && reg.fornecedor_cnpj.length !== 14) return 'CNPJ com 14 números.';
+      if (!reg.codigo_barras && !reg.codigo_fornecedor) return 'Informe o código de barras ou o código do fornecedor.';
+      if (reg.codigo_barras && !/^\d{8,14}$/.test(reg.codigo_barras)) return 'Código de barras com 8 a 14 números.';
+      if (!(reg.fator > 0)) return 'Informe quantos ' + ins.un + ' vêm em 1 unidade da nota (ex.: 10).';
+      // O mesmo código não pode apontar para dois insumos
+      const outro = reg.ativo && FIN.L('insumo_codigos').find(x => x.ativo && x.id !== c.id && (
+        (reg.codigo_barras && x.codigo_barras === reg.codigo_barras) ||
+        (reg.codigo_fornecedor && x.codigo_fornecedor && normalizar(x.codigo_fornecedor) === normalizar(reg.codigo_fornecedor)
+          && (x.fornecedor_cnpj || normalizar(x.fornecedor_nome)) === (reg.fornecedor_cnpj || normalizar(reg.fornecedor_nome)))));
+      if (outro) { const i = INSUMOS.find(k => k.id === outro.insumo_id) || {}; return `Esse código já está ligado ao insumo ${i.codigo || ''} ${i.nome || ''}. Desative lá antes.`; }
+      if (novo) {
+        const { error } = await db.from('insumo_codigos').insert({ ...reg, insumo_id: ins.id });
+        if (error) return /duplicate|unique/i.test(error.message) ? 'Esse código já está ligado a outro insumo.' : 'Não foi possível gravar: ' + error.message;
+      } else {
+        const { data, error } = await db.from('insumo_codigos').update(reg).eq('id', c.id).eq('atualizado_em', foto).select('id');
+        if (error) return /duplicate|unique/i.test(error.message) ? 'Esse código já está ligado a outro insumo.' : 'Não foi possível gravar: ' + error.message;
+        if (!data.length) { await FIN.gravou('insumo_codigos'); return 'Este código mudou em outra tela enquanto a janela estava aberta. Nada foi feito: feche e confira.'; }
+      }
+      await FIN.gravou('insumo_codigos'); redesenharCodigos();
+    });
+  }
+
+  montarCadastro({
+    titulo: 'Insumos e matéria-prima', sub: 'O que se compra dos fornecedores · código automático · custo médio alimenta a ficha técnica e o CMV',
+    novoRotulo: 'Novo insumo', tituloLista: 'Insumos por categoria', porUnidade: false,
+    dados: INSUMOS, tabela: 'insumos', depende: ['categorias_produto', 'insumo_codigos', 'categorias_financeiras'],
+    agrupar: l => l.categoria,
+    ordenar: (a, b) => a.categoria.localeCompare(b.categoria, 'pt-BR') || a.codigo.localeCompare(b.codigo),
+    tituloItem: i => `${i.codigo} · ${i.nome}`,
+    buscaExtra: i => codigos(i.id).map(c => [c.codigo_barras, c.codigo_fornecedor, c.marca, c.descricao, c.fornecedor_nome].join(' ')).join(' '),
+    colunas: [
+      { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
+      { campo: 'nome', titulo: 'Insumo', fmt: v => `<b>${esc(v)}</b>` },
+      { campo: 'un', titulo: 'Un.' },
+      { campo: 'custo', titulo: 'Custo médio', num: true, fmt: v => reais(v) },
+      { campo: 'min', titulo: 'Estoque mínimo', num: true, fmt: (v, l) => l.controlaEstoque ? `${numero(v)} ${l.un}` : '<span class="sub">sem estoque</span>' },
+      colFin,
+      { campo: 'id', titulo: 'Fornecedores', fmt: (v, l) => { const fs = fornecedoresDe(l); return fs.length ? esc(fs.slice(0, 2).join(', ')) + (fs.length > 2 ? ` <span class="sub">+${fs.length - 2}</span>` : '') : '<span class="sub">—</span>'; } },
+      { campo: 'ativo', titulo: 'Ativo', fmt: sim }
+    ],
+    kpis: (v, todos) => [
+      ['Insumos ativos', todos.filter(i => i.ativo).length, `${new Set(todos.filter(i => i.ativo).map(i => i.categoria)).size} categorias · ${todos.filter(i => !i.ativo).length} inativo(s)`],
+      ['Controlam estoque', todos.filter(i => i.ativo && i.controlaEstoque).length, 'entram na posição de estoque'],
+      ['Sem código de fornecedor', todos.filter(i => i.ativo && !codigos(i.id).some(c => c.ativo)).length, 'ligue para o XML achar o insumo sozinho'],
+      ['Códigos ligados', FIN.L('insumo_codigos').filter(c => c.ativo).length, `${new Set(FIN.L('insumo_codigos').filter(c => c.ativo).map(c => c.fornecedor_cnpj || c.fornecedor_nome)).size} fornecedor(es)`]
+    ],
+    campos: [
+      { campo: 'nome', titulo: 'Nome', obrig: true, larg: 'c8', max: 80 },
+      { campo: 'codigo', titulo: 'Código (automático)', larg: 'c4', somenteLeitura: 'sempre' },
+      { campo: 'categoriaId', titulo: 'Categoria', obrig: true, tipo: 'select', vazio: 'Escolha…', opcoes: opcoesCat, larg: 'c4' },
+      { campo: 'un', titulo: 'Unidade de estoque', tipo: 'select', opcoes: UNS, larg: 'c4' },
+      { campo: 'controlaEstoque', titulo: 'Controla estoque', tipo: 'check', larg: 'c4' },
+      campoFin,
+      { campo: 'custo', titulo: 'Custo médio (R$)', tipo: 'dinheiro', larg: 'c4' },
+      { campo: 'min', titulo: 'Estoque mínimo', tipo: 'numero', larg: 'c4' },
+      { campo: 'ncm', titulo: 'NCM', larg: 'c2', max: 8, dica: 'vem do XML' },
+      { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c2' }
+    ],
+    novo: () => ({ codigo: 'automático', un: 'kg', custo: 0, min: 0, controlaEstoque: true, ativo: true }),
+    validar: (d, item, lst) => {
+      if (lst.some(i => i.id !== item.id && normalizar(i.nome).trim() === normalizar(d.nome).trim())) return 'Já existe um insumo com esse nome.';
+      if (d.ncm && !/^\d{1,8}$/.test(d.ncm)) return 'NCM só com números (até 8).';
+      if ((d.custo ?? 0) < 0 || (d.min ?? 0) < 0) return 'Custo e estoque mínimo não podem ser negativos.';
+      return '';
+    },
+    rodapeForm: () => 'O código é automático e sequencial e não muda. Insumo não se apaga: desmarque "Ativo". Despesa (limpeza, gás) normalmente não controla estoque, mas pode. O custo médio passa a ser atualizado sozinho a cada nota de entrada (XML).',
+    extraForm: listaCodigos,
+    depoisForm: (v, item) => {
+      aberto = { v, item };
+      v.addEventListener('click', e => {
+        if (e.target.closest('[data-novo-codigo]')) editarCodigo(INSUMOS.find(i => i.id === item.id) || item);
+        const tr = e.target.closest('tr[data-codigo]'); if (tr) editarCodigo(INSUMOS.find(i => i.id === item.id) || item, FIN.L('insumo_codigos').find(c => c.id === tr.dataset.codigo));
+      });
+    },
+    salvar: async (d, item) => {
+      const reg = { nome: d.nome, categoria_produto_id: d.categoriaId, unidade: d.un, controla_estoque: d.controlaEstoque, categoria_financeira_id: d.catFin,
+        custo_medio: d.custo ?? 0, estoque_minimo: d.min ?? 0, ncm: d.ncm || null, ativo: d.ativo };
+      const dup = m => /insumos_nome/.test(m) ? 'Já existe um insumo com esse nome.' : 'Não foi possível gravar: ' + m;
+      if (!item) {
+        // o banco dá o código (o último + 1)
+        const { error } = await db.from('insumos').insert(reg);
+        if (error) return dup(error.message);
+      } else {
+        const { data, error } = await db.from('insumos').update(reg).eq('id', item.id).eq('atualizado_em', item.atualizado_em).select('id');
+        if (error) return dup(error.message);
+        if (!data.length) { await FIN.gravou('insumos'); return 'Este insumo mudou em outra tela enquanto o formulário estava aberto. Nada foi feito: feche e confira.'; }
+      }
+      await FIN.gravou('insumos', 'categorias_produto');
+    }
+  });
+})();
 </script>
 </body>
 </html>

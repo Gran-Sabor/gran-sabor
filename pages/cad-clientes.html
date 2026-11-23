@@ -8,11 +8,11 @@
 <link rel="stylesheet" href="../assets/css/estilo.css?v=11">
 </head>
 <body>
-<script src="../assets/js/menu.js?v=14"></script>
+<script src="../assets/js/menu.js?v=15"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=10"></script>
-<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=11"></script>
+<script src="../assets/js/cadastro.js?v=6"></script>
 <script>
 /* Convênios PJ: empresas clientes que consomem no período e pagam no fechamento.
    Cada convênio é atendido por uma unidade (e portanto por uma das 3 empresas). */
@@ -21,6 +21,7 @@ montarCadastro({
   novoRotulo: 'Novo convênio', tituloLista: 'Convênios PJ',
   buscaDica: 'Nome, CNPJ, unidade… (atalho: /)',
   dados: CLIENTES_PJ, tabela: 'clientes_pj',
+  aviso: COM_BANCO ? '<div class="aviso">Os exemplos foram tirados. O cadastro de clientes e convênios ainda não grava no banco: o que for incluído aqui some ao recarregar. Ele entra no banco num próximo pacote.</div>' : '',
   escopo: l => ({ empresa: l.empresa, unidade: l.unidade }),
   colunas: [
     { campo: 'nome', titulo: 'Cliente', fmt: v => `<b>${esc(v)}</b>` },

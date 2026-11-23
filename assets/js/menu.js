@@ -72,8 +72,9 @@ const MENU = [
   ]},
   { grupo: 'Cadastros', icone: 'cadastros', itens: [
     { id: 'unidades',       nome: 'Empresas e unidades', arquivo: 'pages/unidades.html' },
-    { id: 'produtos',       nome: 'Cardápio e produtos', arquivo: 'pages/cad-produtos.html' },
-    { id: 'insumos',        nome: 'Insumos', arquivo: 'pages/cad-insumos.html' },
+    { id: 'produtos',       nome: 'Produtos de venda (cardápio)', arquivo: 'pages/cad-produtos.html' },
+    { id: 'insumos',        nome: 'Insumos e matéria-prima', arquivo: 'pages/cad-insumos.html' },
+    { id: 'categorias_produto', nome: 'Categorias de produto', arquivo: 'pages/cad-categorias-produto.html' },
     { id: 'fornecedores',   nome: 'Fornecedores', arquivo: 'pages/cad-fornecedores.html' },
     { id: 'clientes',       nome: 'Clientes e convênios', arquivo: 'pages/cad-clientes.html' },
     { id: 'plano_contas',   nome: 'Categorias financeiras', arquivo: 'pages/cad-categorias.html' },
