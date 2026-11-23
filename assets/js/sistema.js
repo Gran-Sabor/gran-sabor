@@ -29,7 +29,7 @@ async function iniciar() {
   $('btnSair').onclick = sair;
   if (!MODO_DEMO) { $('avatar').onclick = $('usuarioNome').onclick = trocarSenha; $('usuarioNome').title = 'Trocar minha senha'; }
 
-  if (!MODO_DEMO) await Promise.all([atualizarUnidades(), carregarProdutos(), carregarRH(), PDV_BANCO.carregar()]);
+  if (!MODO_DEMO) await Promise.all([atualizarUnidades(), carregarProdutos(), carregarRH(), carregarInsumos(), PDV_BANCO.carregar()]);
   montarUnidades();
   montarMenu();
   abas = lembrar('abas', [{ id: 'inicio' }]).filter(a => acharTela(a.id));
@@ -135,6 +135,23 @@ async function carregarRH() {
   catch (e) { console.warn('Férias e experiência ainda não estão no banco:', e.message); }
   montarRH();
   dadosBanco.aoMudar(t => { if (['colaboradores', 'escala_turnos', 'feriados', 'unidades', 'ferias'].includes(t)) montarRH(); });
+}
+/* ---------- Insumos (matéria-prima) do banco ----------
+   As telas de compra, estoque e ficha técnica usam INSUMOS. Com o banco, a casca monta a lista a partir
+   da tabela insumos e a refaz NO MESMO OBJETO a cada mudança (Realtime). Sem a tabela, fica o exemplo. */
+const insumoDoBanco = r => ({ id: r.id, codigo: r.codigo, nome: r.nome, categoria: r.categoria, categoriaId: r.categoria_produto_id, un: r.unidade,
+  custo: Number(r.custo_medio), min: Number(r.estoque_minimo), catFin: r.categoria_financeira_id, controlaEstoque: !!r.controla_estoque,
+  fornecedor: '', ncm: r.ncm || '', ativo: !!r.ativo, atualizado_em: r.atualizado_em, doBanco: true });
+function montarInsumos() {
+  const g = raizDados();
+  (g.INSUMOS ||= []).splice(0, g.INSUMOS.length, ...dadosBanco.lista('insumos').map(insumoDoBanco));
+}
+async function carregarInsumos() {
+  try { await dadosBanco.garantir('categorias_produto', 'insumos', 'insumo_codigos'); }
+  catch (e) { console.warn('Insumos ainda não estão no banco:', e.message); return; }
+  raizDados().INSUMOS_BANCO = true;
+  montarInsumos();
+  dadosBanco.aoMudar(t => { if (t === 'insumos') montarInsumos(); });
 }
 function montarUnidades() {
   const s = $('unidade');

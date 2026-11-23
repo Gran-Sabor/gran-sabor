@@ -56,7 +56,7 @@ function montarCadastro(cfg) {
     const secoes = [...new Set(cfg.campos.map(c => c.secao || ''))];
     const campo = c => {
       const v = item[c.campo];
-      const attrs = `name="${c.campo}" class="campo"${c.max ? ` maxlength="${c.max}"` : ''}${c.dica ? ` placeholder="${esc(c.dica)}"` : ''}${c.somenteLeitura && !novo ? ' readonly' : ''}`;
+      const attrs = `name="${c.campo}" class="campo"${c.max ? ` maxlength="${c.max}"` : ''}${c.dica ? ` placeholder="${esc(c.dica)}"` : ''}${c.somenteLeitura && (!novo || c.somenteLeitura === 'sempre') ? ' readonly' : ''}`;
       let el;
       if (c.tipo === 'check') return `<label class="${c.larg || 'c3'} marcar"><input type="checkbox" name="${c.campo}"${v ? ' checked' : ''}> ${esc(c.titulo)}</label>`;
       if (c.tipo === 'select') { const ops = typeof c.opcoes === 'function' ? c.opcoes(item) : c.opcoes;
@@ -74,7 +74,7 @@ function montarCadastro(cfg) {
       <div class="janela-cab"><h2>${novo ? esc(cfg.novoRotulo || 'Novo') : esc(cfg.tituloItem ? cfg.tituloItem(item) : item.nome)}</h2>
         <button type="button" class="btn btn-ico" data-fechar aria-label="Fechar">${icone('fechar')}</button></div>
       <div class="form">${secoes.map(s => `<fieldset>${s ? `<legend>${esc(s)}</legend>` : ''}<div class="form-grade">${cfg.campos.filter(c => (c.secao || '') === s).map(campo).join('')}</div></fieldset>`).join('')}
-        ${cfg.rodapeForm ? `<div class="form-nota">${cfg.rodapeForm(item)}</div>` : ''}
+        ${cfg.rodapeForm ? `<div class="form-nota">${cfg.rodapeForm(item)}</div>` : ''}${cfg.extraForm ? `<div id="extraForm">${cfg.extraForm(item)}</div>` : ''}
         <div class="login-msg" id="fMsg" role="alert"></div></div>
       <div class="janela-rodape"><span class="sub">${cfg.salvar ? 'Grava no banco' : 'Exemplo: as alterações somem ao recarregar'}</span>
         <button type="button" class="btn" data-fechar>Cancelar</button><button type="submit" class="btn btn-pri">Salvar</button></div></form>`;
@@ -114,6 +114,7 @@ function montarCadastro(cfg) {
     };
     document.addEventListener('keydown', tecla);
     document.body.appendChild(v);
+    if (cfg.depoisForm) cfg.depoisForm(v, item);
     f.querySelector('input:not([readonly]),select')?.focus();
   }
 

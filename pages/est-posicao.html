@@ -28,11 +28,11 @@
   </div>
 </div>
 
-<script src="../assets/js/menu.js?v=10"></script>
+<script src="../assets/js/menu.js?v=15"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=10"></script>
-<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=11"></script>
+<script src="../assets/js/cadastro.js?v=6"></script>
 <script>
 /* Regras (exemplo, a confirmar com a Gran Sabor):
    - Cada local (central e lojas) tem saldo próprio; o valor é saldo × custo médio.
@@ -53,7 +53,7 @@ const textoBusca = i => [i.nome, i.codigo, i.categoria].join(' ');
 
 function linhasVisiveis() {
   const locais = locaisVisiveis();
-  return INSUMOS.filter(i => casaBusca(textoBusca(i), filtro.busca)).filter(i =>
+  return INSUMOS.filter(i => i.controlaEstoque !== false && i.ativo !== false && casaBusca(textoBusca(i), filtro.busca)).filter(i =>
     aba === 'todos' || (aba === 'minimo' ? locais.some(l => abaixo(saldo(i.id, l))) : transitoPara(i.id, locais) > 0));
 }
 

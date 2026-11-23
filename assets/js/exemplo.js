@@ -11,6 +11,8 @@
 // (contas, notas, estoque, transferências, vendas, comandas, lançamentos da folha) começam vazios:
 // a tela mostra só o que foi lançado de verdade. Sem banco (modo demonstração), seguem os exemplos.
 const COM_BANCO = (() => { try { const d = casca().__gsDados || {}; return Array.isArray(d.PRODUTOS_BANCO) || d.RH_BANCO === true; } catch { return false; } })();
+// Insumos reais no banco (a casca monta INSUMOS a partir da tabela): fichas de exemplo, que usam insumos fictícios, saem
+const INSUMOS_DO_BANCO = (() => { try { return (casca().__gsDados || {}).INSUMOS_BANCO === true; } catch { return false; } })();
 function lancamento(nome, criar) {
   return dadoComum(nome, () => { const v = criar(); return COM_BANCO ? (Array.isArray(v) ? [] : {}) : v; });
 }
@@ -69,7 +71,7 @@ const CENTROS = dadoComum('CENTROS', () => [
 ].map(([unidade, setor, nome], i) => ({ id: unidade + '.' + setor, codigo: `${String(i + 1).padStart(2, '0')}`, unidade, empresa: UNIDADE_EMPRESA[unidade], setor, nome, ativo: true })));
 
 /* ---------- Fornecedores ---------- */
-const FORNECEDORES = dadoComum('FORNECEDORES', () => [
+const FORNECEDORES = lancamento('FORNECEDORES', () => [
   ['f1', 'Frigorífico Exemplo Sul',     '12345678000195', 'Carnes',     'SP', 'boleto 14 dias', ['emp1']],
   ['f2', 'Distribuidora Verde Fresco',  '23456789000107', 'Hortifrúti', 'SP', 'pix na entrega', ['emp1', 'emp2', 'emp3']],
   ['f3', 'Atacado Mercearia Central',   '34567890000110', 'Mercearia',  'SP', 'boleto 28 dias', ['emp1', 'emp2', 'emp3']],
@@ -173,7 +175,7 @@ const CONTAS_PAGAR = lancamento('CONTAS_PAGAR', () => (() => {
 
 /* ---------- Clientes PJ (convênios) e consumo ---------- */
 // fechamento: 'quinzenal' (1-15 e 16-fim) ou 'mensal'; prazo: dias para vencer o boleto
-const CLIENTES_PJ = dadoComum('CLIENTES_PJ', () => [
+const CLIENTES_PJ = lancamento('CLIENTES_PJ', () => [
   ['c1', 'Construtora Exemplo Ltda',      '10111222000130', 'loja1', 'quinzenal', 10, 25],
   ['c2', 'Clínica Modelo de Saúde',       '20222333000141', 'loja1', 'quinzenal', 15, 12],
   ['c3', 'Transportadora Fictícia S/A',   '30333444000152', 'loja2', 'quinzenal', 10, 30],
@@ -283,7 +285,7 @@ const ESTOQUE = lancamento('ESTOQUE', () => (() => {
 /* ---------- Fichas técnicas (receitas de produção) ----------
    itens: [insumo, quantidade bruta, fator de correção (perda na limpeza/preparo)]
    rende: quanto sai pronto (kg) · porcao: gramas de referência */
-const FICHAS = dadoComum('FICHAS', () => [
+const FICHAS = dadoComum('FICHAS', () => INSUMOS_DO_BANCO ? [] : [
   ['fc01', 'Arroz branco',            'Guarnições', 12,  150, 35, [['i06', 5, 1], ['i08', 0.2, 1], ['i13', 0.3, 1.1]], 'Refogar a cebola no óleo, juntar o arroz lavado e água na proporção 1:2. Cozinhar tampado.'],
   ['fc02', 'Feijão carioca temperado','Guarnições', 10,  150, 90, [['i07', 4, 1], ['i04', 0.8, 1], ['i13', 0.3, 1.1]], 'Deixar de molho 8 h, cozinhar na pressão 30 min e temperar com linguiça e cebola refogadas.'],
   ['fc03', 'Picanha na brasa',        'Carnes',     7.5, 120, 40, [['i01', 10, 1.15]], 'Limpar a capa de gordura em excesso, porcionar em bifes de 2 cm, sal grosso e brasa forte.'],
@@ -316,7 +318,7 @@ const produtoDoBanco = r => {
   const precosUn = {}, precos = {};
   (r.produto_precos || []).forEach(x => { const un = x.unidades?.codigo; if (!un) return; precosUn[un] = Number(x.preco); if (UNIDADE_EMPRESA[un]) precos[UNIDADE_EMPRESA[un]] = Number(x.preco); });
   return { id: r.id, codigo: r.codigo, nome: r.nome, grupo: r.categoria, un: r.vende_por, perda: 0, comp: [], precos, precosUn,
-    convenio: !!r.convenio, ativo: !!r.ativo, catFin: r.categoria_financeira_id || null, atualizadoEm: r.atualizado_em, doBanco: true };
+    convenio: !!r.convenio, ativo: !!r.ativo, catFin: r.categoria_financeira_id || null, ...('controla_estoque' in r ? { controlaEstoque: !!r.controla_estoque } : {}), atualizadoEm: r.atualizado_em, doBanco: true };
 };
 // Categoria financeira (receita) da venda de um produto: a do cadastro ou o padrão.
 // É a única conta disso: DRE, relatórios e telas chamam esta função.

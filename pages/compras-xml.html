@@ -27,11 +27,11 @@
   </div>
 </div>
 
-<script src="../assets/js/menu.js?v=10"></script>
+<script src="../assets/js/menu.js?v=15"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=10"></script>
-<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=11"></script>
+<script src="../assets/js/cadastro.js?v=6"></script>
 <script>
 // Mesma lista de todas as abas. O nome do fornecedor vem sempre do cadastro (se mudar lá, muda aqui)
 const notas = NOTAS_ENTRADA;
@@ -126,7 +126,7 @@ function conferir(nf) {
     }, v => {
       const f = v.querySelector('form');
       const mostrar = () => { const d = divisaoPorCategoria(nf, f);
-        v.querySelector('#divCat').innerHTML = `<table class="tabela"><tbody>${d.map(([cat, val]) => { const k = CATEGORIAS.find(x => x.id === cat);
+        v.querySelector('#divCat').innerHTML = `<table class="tabela"><tbody>${d.map(([cat, val]) => { const k = CATEGORIAS.find(x => x.id === cat) || (window.FIN ? FIN.categorias().find(x => x.id === cat) : null);
           return `<tr><td>${k ? esc(k.codigo + ' ' + k.nome) : '<span class="etiqueta perigo">sem categoria</span>'}</td><td class="num">${reais(val)}</td></tr>`; }).join('')}</tbody></table>`; };
       f.addEventListener('change', mostrar); mostrar();
     });

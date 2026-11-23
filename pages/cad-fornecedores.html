@@ -8,11 +8,11 @@
 <link rel="stylesheet" href="../assets/css/estilo.css?v=11">
 </head>
 <body>
-<script src="../assets/js/menu.js?v=10"></script>
+<script src="../assets/js/menu.js?v=15"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=10"></script>
-<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=11"></script>
+<script src="../assets/js/cadastro.js?v=6"></script>
 <script>
 const CATS = ['Carnes', 'Hortifrúti', 'Mercearia', 'Bebidas', 'Embalagens', 'Gás', 'Serviços', 'Manutenção', 'Outros'];
 montarCadastro({
@@ -20,6 +20,7 @@ montarCadastro({
   novoRotulo: 'Novo fornecedor', tituloLista: 'Fornecedores', porUnidade: false,
   buscaDica: 'Buscar por nome, CNPJ, categoria… (atalho: /)',
   dados: FORNECEDORES, tabela: 'fornecedores',
+  aviso: COM_BANCO ? '<div class="aviso">Os exemplos foram tirados. O cadastro de fornecedores ainda não grava no banco: o que for incluído aqui some ao recarregar. Ele entra no banco num próximo pacote.</div>' : '',
   escopo: l => ({ empresa: l.empresas }),
   colunas: [
     { campo: 'nome', titulo: 'Fornecedor', fmt: v => `<b>${esc(v)}</b>` },

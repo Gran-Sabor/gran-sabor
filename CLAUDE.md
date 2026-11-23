@@ -21,6 +21,11 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
   (um gatilho por tabela sobe a versão a cada gravação); `assets/js/financeiro.js` converte, grava e importa (fluxo de caixa xlsx,
   extrato OFX/CSV). Gravação com conferência: `update ... eq('atualizado_em', foto)`; se não voltou linha, alguém mudou antes.
   Tabela nova que precisa ser ao vivo: gatilho `subir_versao` + linha em `dados_versao` + entrada em `TABELAS_BANCO`.
+- Produto × insumo: `produtos` = só o que se VENDE (cardápio, código da Saipos); `insumos` = o que se COMPRA (matéria-prima,
+  revenda, embalagem, limpeza), código automático `I0001` bloqueado. `categorias_produto` (código sequencial próprio, uso
+  venda/compra/ambos, `revisada` para a Fernanda) agrupa os dois; o texto `categoria` é mantido pelo banco (gatilho) e renomear
+  propaga. `insumo_codigos`: código de barras / código de cada fornecedor (marca) → um insumo interno, com fator de embalagem;
+  o XML acha o insumo por ele. A casca (`carregarInsumos`) monta `INSUMOS` a partir do banco. Nada disso se apaga: inativa.
 - RH e escala no banco: `colaboradores`, `escala_turnos`, `escala_funcionamento` (abre/fecha/mínimo por unidade e dia da semana),
   `escala_padrao` (folgas), `escala_dias` (troca, folga, falta, atestado), `feriados`, `freelancers`, `freela_diarias`.
   A casca (`carregarRH` em sistema.js) monta `COLABORADORES`, `TURNOS` e `FERIADOS` a partir do banco e refaz no mesmo objeto a cada mudança.

@@ -30,11 +30,11 @@
   </div>
 </div>
 
-<script src="../assets/js/menu.js?v=10"></script>
+<script src="../assets/js/menu.js?v=15"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=10"></script>
-<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=11"></script>
+<script src="../assets/js/cadastro.js?v=6"></script>
 <script>
 /* Regras (exemplo):
    - A ficha é a receita padrão da Gran Sabor, igual nas 3 empresas.
@@ -44,7 +44,7 @@
    - O filtro de empresa mostra o preço e a margem dos produtos daquela empresa. */
 // Mesmas fichas de todas as abas: mudou aqui, o cardápio recalcula a margem sozinho
 const fichas = FICHAS;
-let atual = fichas[0].id, produzir = null;
+let atual = fichas[0]?.id, produzir = null;   // sem fichas ainda (banco começa vazio): nenhuma selecionada
 const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, unidade: false, placeholder: 'Preparo, grupo ou insumo… (atalho: /)' });
 const qtd = (v, i) => `${numero(v, insumo(i).un === 'kg' ? 2 : 1)} ${insumo(i).un}`;
 const textoBusca = f => [f.nome, f.codigo, f.grupo, f.itens.map(i => insumo(i.insumo).nome).join(' ')].join(' ');

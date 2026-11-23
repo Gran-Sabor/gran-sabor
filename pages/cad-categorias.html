@@ -11,13 +11,13 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="../assets/js/config.js?v=2"></script>
 <script src="../assets/js/banco.js?v=1"></script>
-<script src="../assets/js/menu.js?v=10"></script>
+<script src="../assets/js/menu.js?v=15"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=10"></script>
-<script src="../assets/js/cadastro.js?v=5"></script>
-<script src="../assets/js/financeiro.js?v=2"></script>
-<script src="../assets/js/plano-dre.js?v=1"></script>
+<script src="../assets/js/exemplo.js?v=11"></script>
+<script src="../assets/js/cadastro.js?v=6"></script>
+<script src="../assets/js/financeiro.js?v=3"></script>
+<script src="../assets/js/plano-dre.js?v=2"></script>
 <script>
 /* Categorias financeiras (plano de contas gerencial). Valem para as 3 empresas;
    o resultado (DRE) sai separado por empresa porque cada lançamento tem empresa.
@@ -37,10 +37,17 @@ const ordemCod = (a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-
   const lista = REAL ? FIN.categorias() : CATEGORIAS;
   const usoDe = REAL ? id => FIN.L('contas_pagar').filter(c => c.categoria_id === id).length + FIN.L('contas_receber').filter(c => c.categoria_id === id).length : () => 0;
   if (REAL) FIN.garantir('contas_pagar', 'contas_receber').then(() => avisarMudanca('categorias_financeiras')).catch(() => {});
+  // Grupos têm cadastro próprio (Cadastros › Grupos financeiros); sem a tabela ainda, o grupo segue como texto
+  const GRUPOS = REAL && await FIN.garantir('grupos_financeiros').then(() => true).catch(() => false);
+  const grupos = () => FIN.L('grupos_financeiros').slice().sort((a, b) => a.numero - b.numero);
+  const grupoDe = id => grupos().find(g => g.id === id);
+  // código automático e sequencial: o último do grupo + 1 (ex.: 5.16 → 5.17); o banco confere de novo ao gravar
+  const proximoCodigo = n => { const ult = Math.max(0, ...lista.filter(x => String(x.codigo).split('.')[0] === String(n)).map(x => Number(String(x.codigo).split('.')[1]) || 0));
+    return `${n}.${String(ult + 1).padStart(2, '0')}`; };
   montarCadastro({
     titulo: 'Categorias financeiras', sub: 'Plano de contas gerencial · usado em contas a pagar, a receber e no resultado',
     novoRotulo: 'Nova categoria', tituloLista: 'Categorias por grupo', porUnidade: false,
-    dados: lista, tabela: REAL ? 'categorias_financeiras' : 'categorias', depende: REAL ? ['contas_pagar', 'contas_receber'] : [],
+    dados: lista, tabela: REAL ? 'categorias_financeiras' : 'categorias', depende: REAL ? ['contas_pagar', 'contas_receber', 'grupos_financeiros'] : [],
     aviso: REAL ? '' : (db ? '<div class="aviso">A tabela de categorias ainda não está no banco: a lista abaixo é de exemplo.</div>' : ''),
     ordenar: ordemCod,
     agrupar: l => REAL ? `${String(l.codigo).split('.')[0]} · ${l.grupo} · ${linhaDre(l.dre)}` : linhaDre(l.dre),
@@ -62,22 +69,34 @@ const ordemCod = (a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-
       ['Do escritório', v.filter(c => c.alocacao === 'escritorio').length, 'rateadas entre as lojas']
     ],
     campos: [
-      { campo: 'codigo', titulo: 'Código', obrig: true, larg: 'c3', max: 6, dica: 'ex.: 5.05', somenteLeitura: true },
-      { campo: 'nome', titulo: 'Nome', obrig: true, larg: 'c9', max: REAL ? 80 : 60 },
-      ...(REAL ? [{ campo: 'grupo', titulo: 'Grupo (bloco do fluxo de caixa)', obrig: true, larg: 'c6', max: 60, dica: 'ex.: Despesas fixas' }] : []),
+      ...(GRUPOS ? [] : [{ campo: 'codigo', titulo: 'Código', obrig: true, larg: 'c3', max: 6, dica: 'ex.: 5.05', somenteLeitura: true }]),
+      { campo: 'nome', titulo: 'Nome', obrig: true, larg: GRUPOS ? 'c12' : 'c9', max: REAL ? 80 : 60 },
+      ...(GRUPOS ? [{ campo: 'grupo_id', titulo: 'Grupo', obrig: true, tipo: 'select', vazio: 'Escolha o grupo…', larg: 'c6',
+          opcoes: item => grupos().filter(g => g.ativo || g.id === item.grupo_id).map(g => [g.id, `${g.numero} · ${g.nome}`]) }]
+        : REAL ? [{ campo: 'grupo', titulo: 'Grupo (bloco do fluxo de caixa)', obrig: true, larg: 'c6', max: 60, dica: 'ex.: Despesas fixas' }] : []),
       { campo: 'tipo', titulo: 'Tipo', tipo: 'select', opcoes: Object.entries(TIPO), larg: 'c3' },
       { campo: 'natureza', titulo: 'Natureza', tipo: 'select', opcoes: Object.entries(NAT), larg: 'c3' },
       { campo: 'dre', titulo: 'Linha do resultado (DRE)', tipo: 'select', opcoes: LINHAS_DRE.map(x => [x, x]), larg: 'c4' },
       { campo: 'alocacao', titulo: 'Alocação', tipo: 'select', opcoes: Object.entries(ALOC), larg: 'c4' },
       { campo: 'ativo', titulo: 'Ativa', tipo: 'check', larg: 'c2' }
     ],
-    novo: () => ({ tipo: 'despesa', natureza: 'variavel', dre: 'Despesas', alocacao: 'unidade', grupo: '', ativo: true }),
-    validar: (d, item, lista) => !(REAL ? /^\d{1,2}\.\d{2,3}$/ : /^\d\.\d{2}$/).test(d.codigo || item.codigo) ? 'Código no formato 0.00 (ex.: 5.05).'
+    novo: () => ({ tipo: 'despesa', natureza: 'variavel', dre: 'Despesas', alocacao: 'unidade', grupo: '', grupo_id: '', ativo: true }),
+    tituloItem: c => `${c.codigo} · ${c.nome}`,
+    rodapeForm: () => GRUPOS ? 'O código é automático: o último do grupo + 1. Categoria não se apaga: desmarque "Ativa". Trocar o grupo dá a ela o próximo código do grupo novo. Os lançamentos acompanham a categoria (contas, resumos e DRE). Os grupos ficam em Cadastros › Grupos financeiros.' : '',
+    validar: (d, item, lista) => {
+      if (GRUPOS) {
+        const g = grupoDe(d.grupo_id); if (!g) return 'Escolha o grupo.';
+        if (!item.id) d.codigo = proximoCodigo(g.numero);
+        d.grupo = g.nome;
+      }
+      return !(REAL ? /^\d{1,2}\.\d{2,3}$/ : /^\d\.\d{2}$/).test(d.codigo || item.codigo) ? 'Código no formato 0.00 (ex.: 5.05).'
       : !item.id && lista.some(c => c.codigo === d.codigo) ? 'Já existe uma categoria com esse código.'
-      : REAL && lista.some(c => c.id !== item.id && c.tipo === d.tipo && normalizar(c.grupo) === normalizar(d.grupo) && normalizar(c.nome) === normalizar(d.nome)) ? 'Já existe uma categoria com esse nome nesse grupo.' : '',
+      : REAL && lista.some(c => c.id !== item.id && c.tipo === d.tipo && normalizar(c.grupo) === normalizar(d.grupo) && normalizar(c.nome) === normalizar(d.nome)) ? 'Já existe uma categoria com esse nome nesse grupo.' : '';
+    },
     gerarId: d => d.codigo,
     salvar: REAL ? async (d, item) => {
-      const reg = { nome: d.nome, grupo: d.grupo, tipo: d.tipo, natureza: d.natureza, dre: d.dre, alocacao: d.alocacao || 'unidade', ativo: d.ativo };
+      // com grupos: o banco acerta o nome do grupo e, se o grupo mudou, o código (próximo livre no grupo novo)
+      const reg = { nome: d.nome, grupo: d.grupo, tipo: d.tipo, natureza: d.natureza, dre: d.dre, alocacao: d.alocacao || 'unidade', ativo: d.ativo, ...(GRUPOS ? { grupo_id: d.grupo_id } : {}) };
       if (!item) {
         const { error } = await db.from('categorias_financeiras').insert({ ...reg, codigo: d.codigo });
         if (error) return 'Não foi possível gravar: ' + error.message;

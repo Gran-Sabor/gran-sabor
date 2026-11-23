@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cardápio e produtos</title>
+<title>Produtos de venda (cardápio)</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/estilo.css?v=11">
 <style>
@@ -15,7 +15,7 @@
 </head>
 <body>
 <div class="tela">
-  <div class="tela-cab"><h1>Cardápio e produtos</h1><span class="sub">O que se vende · custo vem da ficha técnica · preço e margem por empresa</span>
+  <div class="tela-cab"><h1>Produtos de venda (cardápio)</h1><span class="sub">Só o que se vende no caixa · o que se compra fica em Insumos e matéria-prima · preço e margem por empresa</span>
     <div class="dir"><span class="etiqueta exemplo" id="etqExemplo" title="Dados fictícios: nada é gravado">exemplo</span>
       <button type="button" class="btn oculto" id="btnImportar" title="Planilha de produtos exportada do PDV (Saipos): .xlsx ou .csv">Importar planilha</button>
       <input type="file" id="arqImportar" accept=".xlsx,.xls,.csv" class="oculto">
@@ -33,11 +33,11 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="../assets/js/config.js?v=2"></script>
 <script src="../assets/js/banco.js?v=1"></script>
-<script src="../assets/js/menu.js?v=10"></script>
+<script src="../assets/js/menu.js?v=15"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=10"></script>
-<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=11"></script>
+<script src="../assets/js/cadastro.js?v=6"></script>
 <script>
 /* Regras (números de imposto e cartão ainda de exemplo, a confirmar com a Gran Sabor e o contador):
    - Custo = composição (fichas técnicas e insumos de revenda) + perda/sobra do buffet.
@@ -56,10 +56,14 @@ const COLUNAS = '*, produto_precos(preco, unidades(codigo))';
 const catsReceita = () => { try { return (casca().dadosBanco?.lista('categorias_financeiras') || []).filter(c => c.tipo === 'receita' && c.ativo !== false)
   .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true })); } catch { return []; } };
 const catsFin = () => { try { return casca().dadosBanco?.lista('categorias_financeiras') || []; } catch { return []; } };
+// No cadastro do produto aparecem as de receita (o normal) e também as de despesa (ex.: item de revenda ou consumo)
+const catsProduto = p => catsFin().filter(c => c.ativo !== false || c.id === p.catFin).sort((a, b) => (a.tipo === b.tipo ? 0 : a.tipo === 'receita' ? -1 : 1) || a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true }));
+// Categorias de produto (cadastro próprio, código sequencial): as de venda aparecem aqui
+const catsProd = () => { try { return casca().dadosBanco?.lista('categorias_produto') || []; } catch { return []; } };
 const catPadraoId = p => (catsReceita().find(c => c.codigo === CATEGORIA_VENDA_PADRAO(p)) || {}).id || null;
 const catFinTxt = p => { const c = categoriaDaVenda(p, catsFin()); return `<br><small class="sub" title="Categoria financeira: linha da DRE onde a venda entra">${esc(c.codigo)} ${esc(c.nome)}</small>${p.catFin ? '' : ' <span class="etiqueta pendente" title="Escolha a categoria financeira no cadastro">sem categoria</span>'}`; };
 const strip = h => String(h).replace(/<[^>]*>/g, ' ');
-if (REAL) { try { casca().dadosBanco?.garantir('categorias_financeiras').then(() => desenhar()).catch(() => {}); } catch {} }
+if (REAL) { try { casca().dadosBanco?.garantir('categorias_financeiras').then(() => desenhar()).catch(() => {}); casca().dadosBanco?.garantir('categorias_produto').then(() => desenhar()).catch(() => {}); } catch {} }
 let lojas = [];                                 // lojas do banco: { id, codigo, nome }
 const semCusto = p => !p.comp.length;
 
@@ -239,23 +243,27 @@ function editarBanco(p) {
   const foto = p ? { atualizadoEm: p.atualizadoEm, precosUn: JSON.stringify(p.precosUn) } : null;
   p = p || { codigo: '', nome: '', grupo: selCat.value || '', un: 'un', convenio: false, ativo: true, precosUn: {} };
   const cats = [...new Set(produtos.map(x => x.grupo))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  // Categoria vem do cadastro "Categorias de produto" (as de venda, ativas; a atual aparece mesmo se inativa)
+  const cp = catsProd().filter(c => (c.ativo && c.uso !== 'compra') || normalizar(c.nome) === normalizar(p.grupo)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   janela(novo ? 'Novo produto' : `Editar · ${p.nome}`, `
     <div class="form-grade">
       <label class="c6">Produto *<input name="nome" class="campo" maxlength="80" value="${esc(p.nome)}"></label>
       <label class="c2">Código *<input name="codigo" class="campo" maxlength="20" value="${esc(p.codigo)}" title="Código do produto no PDV (Saipos)"${novo ? '' : ' readonly'}></label>
-      <label class="c2">Categoria *<input name="categoria" class="campo" maxlength="60" list="listaCat" value="${esc(p.grupo)}"></label>
+      ${cp.length ? `<label class="c2">Categoria *<select name="categoria" class="campo"><option value="">Escolha…</option>${cp.map(c => `<option value="${esc(c.nome)}"${normalizar(c.nome) === normalizar(p.grupo) ? ' selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></label>`
+        : `<label class="c2">Categoria *<input name="categoria" class="campo" maxlength="60" list="listaCat" value="${esc(p.grupo)}"></label>`}
       <label class="c2">Vende por<select name="un" class="campo"><option value="un"${p.un === 'un' ? ' selected' : ''}>unidade</option><option value="kg"${p.un === 'kg' ? ' selected' : ''}>kg (balança)</option></select></label>
       <datalist id="listaCat">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
       <label class="c3 marcar"><input type="checkbox" name="convenio"${p.convenio ? ' checked' : ''}> Preço de convênio PJ</label>
       <label class="c3 marcar"><input type="checkbox" name="ativo"${p.ativo ? ' checked' : ''}> Ativo</label>
-      <label class="c6">Categoria financeira (DRE) *<select name="catFin" class="campo"><option value="">Escolha…</option>
-        ${catsReceita().map(c => `<option value="${c.id}"${c.id === p.catFin ? ' selected' : ''}>${esc(c.codigo)} ${esc(c.nome)}</option>`).join('')}</select></label>
+      <label class="c3 marcar" title="Item de revenda que entra no estoque (ex.: bebida em lata)"><input type="checkbox" name="estoque"${p.controlaEstoque ? ' checked' : ''}> Controla estoque</label>
+      <label class="c9">Categoria financeira (DRE) *<select name="catFin" class="campo"><option value="">Escolha…</option>
+        ${['receita', 'despesa'].map(t => `<optgroup label="${t === 'receita' ? 'Receitas' : 'Despesas'}">${catsProduto(p).filter(c => c.tipo === t).map(c => `<option value="${c.id}"${c.id === p.catFin ? ' selected' : ''}>${esc(c.codigo)} ${esc(c.nome)}</option>`).join('')}</optgroup>`).join('')}</select></label>
     </div>
     <div class="sub-tit">Preço por loja <span class="sub">vazio = não vende nessa loja${p.un === 'kg' ? ' · preço do kg' : ''}</span></div>
     <table class="tabela"><thead><tr><th>Loja</th><th class="num" style="width:140px">Preço</th></tr></thead><tbody>
     ${lojas.map(l => `<tr><td>${esc(l.nome)} <span class="sub">${esc(nomeEmpresa(UNIDADE_EMPRESA[l.codigo]))}</span></td>
       <td><input class="campo" data-loja="${l.id}" inputmode="decimal" value="${p.precosUn[l.codigo] ? numero(p.precosUn[l.codigo], 2) : ''}"></td></tr>`).join('')}</tbody></table>
-    <div class="form-nota">Custo e margem aparecem quando o produto for ligado à ficha técnica. Produto não se apaga: desmarque "Ativo".</div>`, 'Salvar', async fm => {
+    <div class="form-nota">Custo e margem aparecem quando o produto for ligado à ficha técnica. Categoria nova: crie em Cadastros › Categorias de produto. Produto não se apaga: desmarque "Ativo".</div>`, 'Salvar', async fm => {
     const nome = fm.nome.value.trim(), codigo = fm.codigo.value.trim(), categoria = fm.categoria.value.trim();
     if (!nome) return 'Informe o nome do produto.';
     if (!codigo) return 'Informe o código (o mesmo do PDV).';
@@ -265,7 +273,8 @@ function editarBanco(p) {
     const precos = []; let erro = '';
     fm.querySelectorAll('[data-loja]').forEach(i => { if (!i.value.trim()) return; const x = n(i.value); if (!(x > 0)) erro = 'Preço inválido: use números, ex.: 21,90.'; else precos.push({ unidade_id: i.dataset.loja, preco: Math.round(x * 100) / 100 }); });
     if (erro) return erro;
-    const d = { nome, categoria, vende_por: fm.un.value, convenio: fm.convenio.checked, ativo: fm.ativo.checked, categoria_financeira_id: fm.catFin.value || null };
+    const d = { nome, categoria, vende_por: fm.un.value, convenio: fm.convenio.checked, ativo: fm.ativo.checked, categoria_financeira_id: fm.catFin.value || null,
+      ...(catsProd().length ? { controla_estoque: fm.estoque.checked } : {}) };
     let id = p.id;
     if (novo) {
       const { data, error } = await db.from('produtos').insert({ ...d, codigo }).select('id').single();
@@ -395,7 +404,7 @@ $('btnExportar').onclick = () => exportarCSV('cardapio-margens', ['Código', 'Pr
     return [p.codigo, p.nome, p.grupo, p.un, p.convenio ? 'sim' : 'não', p.ativo ? 'sim' : 'não', s ? '' : numero(m.custo, 2), nomeEmpresa(e), m.preco ? numero(m.preco, 2) : '', numero(m.desp, 2),
       s ? '' : numero(m.margem, 2), s ? '' : numero(m.pct, 1), s ? '' : numero(m.cmv, 1), numero(metaCMV(p), 0)]; })));
 // Ficha técnica, custo de insumo ou produto mudou em outra aba: custo, margem e CMV se recalculam sozinhos
-vigiarDados(['produtos', 'fichas', 'insumos', 'categorias_financeiras'], desenhar);
+vigiarDados(['produtos', 'fichas', 'insumos', 'categorias_financeiras', 'categorias_produto'], desenhar);
 
 (async () => {
   if (REAL) {

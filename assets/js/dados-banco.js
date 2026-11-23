@@ -10,7 +10,12 @@ const TABELAS_BANCO = {
   unidades: { ordem: 'ordem' },
   // incremental: relê só as linhas alteradas desde a última leitura (tabelas grandes; nelas não se apaga linha)
   categorias_financeiras: { ordem: 'codigo' },
+  grupos_financeiros: { ordem: 'numero' },   // grupo = número antes do ponto no código da categoria
   contas_bancarias: { ordem: 'apelido' },
+  // Produtos e insumos: categorias de produto (sequência própria), insumos (código I0001…) e códigos de fornecedor
+  categorias_produto: { ordem: 'codigo' },
+  insumos: { ordem: 'codigo' },
+  insumo_codigos: { ordem: 'insumo_id' },
   contas_pagar: { ordem: 'vencimento', incremental: true },
   contas_receber: { ordem: 'vencimento', incremental: true },
   extrato_lancamentos: { ordem: 'data' },  // dentro do dia, a tela ordena pela coluna ordem
