@@ -31,7 +31,10 @@ const TABELAS_BANCO = {
   rescisoes: { ordem: 'data_saida' },   // desligamentos (as verbas são recalculadas por rescisao.js)
   // Férias e contrato de experiência (prazos e avisos: prazos-rh.js)
   ferias: { ordem: 'inicio' },
-  contratos_experiencia: { ordem: 'inicio' }
+  contratos_experiencia: { ordem: 'inicio' },
+  // Folha do contador: eventos (códigos do contador) e holerites importados do PDF (histórico e comparativo)
+  eventos_folha: { ordem: 'codigo' },
+  holerites_contador: { ordem: 'competencia' }
 };
 const TABELAS_RH = ['colaboradores', 'escala_turnos', 'escala_funcionamento', 'escala_padrao', 'escala_dias', 'feriados', 'freelancers', 'freela_diarias'];
 // Lidas à parte: se a migração ainda não foi publicada, o resto do RH segue no banco

@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Holerites do contador</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+<style>
+  .comp-tab th, .comp-tab td { white-space: nowrap; }
+  .comp-tab td:first-child { white-space: normal; min-width: 180px; }
+  .var-alta { background: var(--alerta-fundo, #fff4e0); }
+  .imp-sec { margin-top: 10px; }
+  .imp-sec h3 { font-size: 13px; margin: 0 0 4px; }
+  .imp-tab select { max-width: 220px; height: 26px; font-size: 12px; }
+  .mudancas { font-size: 11.5px; color: var(--texto-2); }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Holerites do contador</h1><span class="sub">Folha do contador importada do PDF · histórico e comparativo mês a mês</span>
+    <div class="dir"><select class="campo" id="selTipo" aria-label="Tipo de folha"></select>
+      <select class="campo" id="selMedida" aria-label="Valor comparado"></select>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn btn-pri" id="btnImportar">Importar holerites (PDF)</button></div></div>
+  <div id="filtros"></div>
+  <div id="aviso"></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="pessoas" class="ativa">Comparativo por pessoa</button><button type="button" data-aba="eventos">Por evento</button><button type="button" data-aba="importacoes">Importações</button></div>
+  <section class="kpis" id="kpis"></section>
+  <section class="cartao"><div class="cartao-cab"><h2 id="titLista"></h2><span class="dir sub" id="contagem"></span></div>
+    <div class="rolagem"><table class="tabela clicavel comp-tab" id="tab"></table></div></section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=16"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=12"></script>
+<script src="../assets/js/cadastro.js?v=7"></script>
+<script src="../assets/js/financeiro.js?v=3"></script>
+<script src="../assets/js/holerites-pdf.js?v=1"></script>
+<script>
+/* Holerites do contador: a "Folha de Pagamento Analítica" que o contador manda em PDF entra aqui e vira histórico.
+   - Importar: escolha um ou vários PDFs. O sistema lê no navegador, confere cada holerite com o total impresso e mostra,
+     antes de gravar: (1) os eventos que ainda não existem no cadastro de eventos (são criados "a revisar"),
+     (2) o que muda no cadastro de cada colaborador (nome completo, cargo, admissão, salário, matrícula e CNPJ do contador)
+     e (3) os holerites que entram (o mesmo mês importado de novo substitui o anterior).
+   - Quem não está no cadastro (ex.: já saiu) entra só no histórico; dá para ligar a um colaborador depois.
+   - Comparativo: líquido, bruto, descontos ou bruto + FGTS, mês a mês, por pessoa e por evento. Variação acima de 10% em destaque.
+   - Tudo ao vivo: o que outra tela importar ou ligar aparece aqui na hora (tabela holerites_contador no Realtime). */
+const TIPOS = { mensal: 'Fechamento mensal', adiantamento: 'Adiantamento', ferias: 'Férias', decimo: '13º salário', rescisao: 'Rescisão', outro: 'Outro' };
+const MEDIDAS = { liquido: 'Líquido', vencimentos: 'Bruto (vencimentos)', descontos: 'Descontos', custo: 'Bruto + FGTS' };
+const TIPO_EVENTO = { provento: 'Provento', desconto: 'Desconto', informativo: 'Informativo' };
+let aba = 'pessoas', REAL = false;
+const guardar = (k, v) => { try { localStorage.setItem('gs_' + k, JSON.stringify(v)); } catch {} };
+const lembrar = (k, padrao) => { try { const v = localStorage.getItem('gs_' + k); return v ? JSON.parse(v) : padrao; } catch { return padrao; } };
+$('selTipo').innerHTML = Object.entries(TIPOS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('');
+$('selMedida').innerHTML = Object.entries(MEDIDAS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('');
+$('selTipo').value = lembrar('hcTipo', 'mensal'); $('selMedida').value = lembrar('hcMedida', 'liquido');
+const filtro = barraFiltros($('filtros'), { aoMudar: () => desenhar(), placeholder: 'Nome, cargo, matrícula, evento… (atalho: /)' });
+
+const L = t => FIN.L(t);
+const cnpjFmt = s => String(s || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+const empresaTxt = cnpj => { const u = L('unidades').find(x => x.cnpj === cnpj); return u ? `${u.nome} (${cnpjFmt(cnpj)})` : `CNPJ ${cnpjFmt(cnpj)}`; };
+const compMes = d => String(d).slice(0, 7);
+const r2 = v => Math.round(v * 100) / 100;
+const chaveNome = s => normalizar(s).replace(/[^a-z0-9]+/g, ' ').trim();
+const nomeProprio = s => String(s).toLowerCase().replace(/(^|\s)\S/g, x => x.toUpperCase()).replace(/ (De|Da|Do|Das|Dos|E) /g, x => x.toLowerCase());
+const colabDe = id => COLABORADORES.find(c => c.id === id);
+const pessoaChave = h => h.colaborador_id || `${h.cnpj}:${h.matricula_contador}`;
+const valorDe = (h, m) => m === 'custo' ? r2(Number(h.vencimentos) + Number(h.valor_fgts)) : Number(h[m]);
+const pctVar = (a, b) => b ? (a - b) / Math.abs(b) * 100 : null;
+const varTxt = (a, b) => { const p = pctVar(a, b); if (p == null) return '<span class="sub">—</span>'; const s = `${p > 0 ? '+' : ''}${numero(p, 1)}%`; return Math.abs(p) < 0.05 ? '<span class="sub">0%</span>' : `<span class="${p > 0 ? 'desce' : 'sobe'}">${s}</span>`; };
+
+// Holerites do tipo escolhido que passam nos filtros (empresa/unidade do colaborador ligado e busca)
+function holeritesVisiveis(tipo = $('selTipo').value, comBusca = aba !== 'eventos') {
+  return L('holerites_contador').filter(h => {
+    if (h.tipo !== tipo) return false;
+    const c = colabDe(h.colaborador_id);
+    if ((filtro.empresa || filtro.unidade) && !c) return false;
+    if (c && !noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade })) return false;
+    return !comBusca || casaBusca([h.nome, c?.nome, h.cargo, h.matricula_contador, c?.matricula].join(' '), filtro.busca);
+  });
+}
+
+/* ---------- Desenho ---------- */
+function desenhar() {
+  if (!REAL) return;
+  guardar('hcTipo', $('selTipo').value); guardar('hcMedida', $('selMedida').value);
+  const todos = L('holerites_contador'), tipo = $('selTipo').value, med = $('selMedida').value;
+  const hs = holeritesVisiveis(), comps = [...new Set(hs.map(h => compMes(h.competencia)))].sort();
+  const ult = comps[comps.length - 1], ant = comps[comps.length - 2];
+  const soma = c => r2(hs.filter(h => compMes(h.competencia) === c).reduce((a, h) => a + valorDe(h, med), 0));
+  const foraCadastro = new Set(todos.filter(h => !h.colaborador_id).map(pessoaChave)).size;
+  $('aviso').innerHTML = !todos.length ? `<div class="aviso">Nenhum holerite importado ainda. Clique em <b>Importar holerites (PDF)</b> e escolha os PDFs da folha que o contador manda (pode escolher vários meses de uma vez).</div>`
+    : foraCadastro ? `<div class="aviso">${foraCadastro} pessoa(s) do contador estão só no histórico, sem ligação com o cadastro (ex.: quem já saiu). Clique na pessoa para ligar a um colaborador.</div>` : '';
+  $('kpis').innerHTML = [
+    ['Meses importados', comps.length, comps.length ? `${nomeComp(comps[0])} a ${nomeComp(ult)} · ${TIPOS[tipo]}` : TIPOS[tipo]],
+    [`${MEDIDAS[med]} ${ult ? nomeComp(ult) : ''}`, ult ? reais(soma(ult)) : '—', ant ? `${nomeComp(ant)}: ${reais(soma(ant))} · ${strip(varTxt(soma(ult), soma(ant)))}` : ''],
+    ['Pessoas no último mês', ult ? hs.filter(h => compMes(h.competencia) === ult).length : 0, ant ? `${hs.filter(h => compMes(h.competencia) === ant).length} no mês anterior` : ''],
+    ['FGTS do último mês', ult ? reais(hs.filter(h => compMes(h.competencia) === ult).reduce((a, h) => a + Number(h.valor_fgts), 0)) : '—', 'informado no holerite'],
+    ['Fora do cadastro', `<span class="${foraCadastro ? 'desce' : ''}">${foraCadastro}</span>`, 'só no histórico']
+  ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  document.querySelectorAll('#abas button').forEach(b => b.classList.toggle('ativa', b.dataset.aba === aba));
+  $('selMedida').classList.toggle('oculto', aba === 'importacoes');
+  ({ pessoas: tabPessoas, eventos: tabEventos, importacoes: tabImportacoes })[aba](hs, comps, med);
+}
+const strip = h => String(h).replace(/<[^>]*>/g, '');
+
+// Comparativo por pessoa: uma linha por pessoa, uma coluna por mês, variação do último mês
+function tabPessoas(hs, comps, med) {
+  const cols = comps.slice(-6), ult = cols[cols.length - 1], ant = cols[cols.length - 2];
+  const pessoas = {};
+  hs.forEach(h => { const k = pessoaChave(h); const p = pessoas[k] ||= { k, hs: {}, h }; p.hs[compMes(h.competencia)] = h; if (h.competencia >= p.h.competencia) p.h = h; });
+  const lista = Object.values(pessoas).sort((a, b) => (colabDe(a.h.colaborador_id)?.nome || a.h.nome).localeCompare(colabDe(b.h.colaborador_id)?.nome || b.h.nome, 'pt-BR'));
+  $('titLista').textContent = `${MEDIDAS[med]} por pessoa${comps.length > 6 ? ' · últimos 6 meses' : ''}`;
+  $('contagem').textContent = `${lista.length} pessoa(s)`;
+  const v = (p, c) => p.hs[c] ? valorDe(p.hs[c], med) : null;
+  const tot = c => r2(lista.reduce((a, p) => a + (v(p, c) || 0), 0));
+  $('tab').innerHTML = `<thead><tr><th>Pessoa</th>${cols.map(c => `<th class="num">${nomeComp(c)}</th>`).join('')}<th class="num">Variação</th></tr></thead><tbody>
+    ${lista.map(p => { const c = colabDe(p.h.colaborador_id), a = v(p, ult), b = v(p, ant), alta = a != null && b != null && Math.abs(pctVar(a, b) || 0) >= 10;
+      return `<tr data-p="${esc(p.k)}" tabindex="0"><td><b>${esc(c?.nome || nomeProprio(p.h.nome))}</b> <small class="sub">${esc(nomeProprio(p.h.cargo))} · mat. ${esc(p.h.matricula_contador)}</small>${c ? '' : ' <span class="etiqueta pendente">fora do cadastro</span>'}${p.h.obs ? ` <span class="etiqueta" title="${esc(p.h.obs)}">obs.</span>` : ''}</td>
+        ${cols.map(x => `<td class="num">${v(p, x) == null ? '<span class="sub">—</span>' : reais(v(p, x))}</td>`).join('')}
+        <td class="num${alta ? ' var-alta' : ''}">${a != null && b != null ? varTxt(a, b) : '<span class="sub">—</span>'}</td></tr>`; }).join('')
+      || `<tr><td colspan="${cols.length + 2}" class="vazio">Nenhum holerite deste tipo com esses filtros.</td></tr>`}</tbody>
+    ${lista.length ? `<tfoot><tr><td><b>Total</b></td>${cols.map(c => `<td class="num"><b>${reais(tot(c))}</b></td>`).join('')}<td class="num">${ant ? varTxt(tot(ult), tot(ant)) : ''}</td></tr></tfoot>` : ''}`;
+}
+
+// Por evento: soma de cada evento em cada mês (o que mais pesa e o que mudou)
+function tabEventos(hs, comps) {
+  const cols = comps.slice(-6), ult = cols[cols.length - 1], ant = cols[cols.length - 2], evs = {};
+  hs.forEach(h => (h.itens || []).forEach(i => { if (!i.codigo || i.tipo === 'informativo' && !['922', '924', '926'].includes(i.codigo)) return;
+    const e = evs[i.codigo] ||= { codigo: i.codigo, nome: i.nome, tipo: i.tipo, por: {}, n: {} }; const c = compMes(h.competencia);
+    e.por[c] = r2((e.por[c] || 0) + i.valor); e.n[c] = (e.n[c] || 0) + 1; }));
+  const cad = Object.fromEntries(L('eventos_folha').map(e => [e.codigo, e]));
+  const ordem = { provento: 0, desconto: 1, informativo: 2 };
+  const lista = Object.values(evs).filter(e => casaBusca(`${e.codigo} ${e.nome} ${cad[e.codigo]?.nome || ''}`, filtro.busca))
+    .sort((a, b) => ordem[a.tipo] - ordem[b.tipo] || a.codigo.localeCompare(b.codigo));
+  $('titLista').textContent = 'Soma de cada evento por mês';
+  $('contagem').textContent = `${lista.length} evento(s)`;
+  let grupo = '';
+  $('tab').innerHTML = `<thead><tr><th>Evento</th>${cols.map(c => `<th class="num">${nomeComp(c)}</th>`).join('')}<th class="num">Variação</th></tr></thead><tbody>
+    ${lista.map(e => { const g = e.tipo !== grupo ? (grupo = e.tipo, `<tr class="grupo"><td colspan="${cols.length + 2}">${e.tipo === 'informativo' ? 'Encargos informados' : TIPO_EVENTO[e.tipo] + 's'}</td></tr>`) : '';
+      return g + `<tr><td><span class="mono cod">${esc(e.codigo)}</span> ${esc(cad[e.codigo]?.nome || e.nome)}${cad[e.codigo] ? '' : ' <span class="etiqueta pendente">fora do cadastro de eventos</span>'}</td>
+        ${cols.map(c => `<td class="num">${e.por[c] == null ? '<span class="sub">—</span>' : `${reais(e.por[c])} <small class="sub">${e.n[c]}</small>`}</td>`).join('')}
+        <td class="num">${e.por[ult] != null && e.por[ant] != null ? varTxt(e.por[ult], e.por[ant]) : '<span class="sub">—</span>'}</td></tr>`; }).join('')
+      || `<tr><td colspan="${cols.length + 2}" class="vazio">Nenhum holerite deste tipo com esses filtros.</td></tr>`}</tbody>`;
+}
+
+// Importações: uma linha por mês × tipo × empresa, com os totais e a opção de apagar (importou o arquivo errado)
+function tabImportacoes() {
+  const grupos = {};
+  L('holerites_contador').forEach(h => { const k = `${h.competencia}|${h.tipo}|${h.cnpj}`; const g = grupos[k] ||= { k, competencia: h.competencia, tipo: h.tipo, cnpj: h.cnpj, hs: [] }; g.hs.push(h); });
+  const lista = Object.values(grupos).sort((a, b) => b.competencia.localeCompare(a.competencia) || a.tipo.localeCompare(b.tipo));
+  const s = (g, k) => g.hs.reduce((a, h) => a + Number(h[k]), 0);
+  $('titLista').textContent = 'Folhas importadas';
+  $('contagem').textContent = `${lista.length} folha(s)`;
+  $('tab').innerHTML = `<thead><tr><th>Mês</th><th>Tipo</th><th class="so-largo">Empresa</th><th class="num">Pessoas</th><th class="num">Vencimentos</th><th class="num">Descontos</th><th class="num">Líquido</th><th class="num so-largo">FGTS</th><th class="so-largo">Arquivo</th><th></th></tr></thead><tbody>
+    ${lista.map(g => `<tr><td><b>${nomeComp(compMes(g.competencia))}</b></td><td>${TIPOS[g.tipo]}</td><td class="so-largo">${esc(empresaTxt(g.cnpj))}</td><td class="num">${g.hs.length}</td>
+      <td class="num">${reais(s(g, 'vencimentos'))}</td><td class="num">${reais(s(g, 'descontos'))}</td><td class="num"><b>${reais(s(g, 'liquido'))}</b></td><td class="num so-largo">${reais(s(g, 'valor_fgts'))}</td>
+      <td class="so-largo"><small class="sub">${esc([...new Set(g.hs.map(h => h.arquivo))].join(', '))} · ${dataBR(g.hs.reduce((m, h) => h.atualizado_em > m ? h.atualizado_em : m, ''))}</small></td>
+      <td><button type="button" class="btn btn-mini" data-apagar="${esc(g.k)}">Apagar</button></td></tr>`).join('')
+      || '<tr><td colspan="10" class="vazio">Nenhuma folha importada.</td></tr>'}</tbody>`;
+}
+
+/* ---------- Detalhe da pessoa: todos os eventos mês a mês, e ligar ao cadastro ---------- */
+function detalhe(k) {
+  const tipo = $('selTipo').value;
+  const hs = L('holerites_contador').filter(h => pessoaChave(h) === k && h.tipo === tipo).sort((a, b) => a.competencia.localeCompare(b.competencia));
+  if (!hs.length) return;
+  const h0 = hs[hs.length - 1], c = colabDe(h0.colaborador_id), cols = hs.map(h => compMes(h.competencia));
+  const evs = {}; hs.forEach(h => (h.itens || []).forEach(i => { if (!i.codigo) return; const e = evs[i.codigo] ||= { codigo: i.codigo, nome: i.nome, tipo: i.tipo, por: {} }; e.por[compMes(h.competencia)] = i; }));
+  const ordem = { provento: 0, desconto: 1, informativo: 2 };
+  const lin = Object.values(evs).sort((a, b) => ordem[a.tipo] - ordem[b.tipo] || a.codigo.localeCompare(b.codigo));
+  const total = (rot, campo) => `<tr><td><b>${rot}</b></td>${hs.map(h => `<td class="num"><b>${reais(h[campo])}</b></td>`).join('')}</tr>`;
+  let grupo = '';
+  const opcoes = COLABORADORES.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map(x => `<option value="${x.id}"${x.id === h0.colaborador_id ? ' selected' : ''}>${esc(x.nome)} · ${esc(nomeUnidade(x.unidade))}</option>`).join('');
+  const corpo = `<div class="sub">${esc(empresaTxt(h0.cnpj))} · matrícula no contador ${esc(h0.matricula_contador)} · ${esc(nomeProprio(h0.cargo))} · admissão ${h0.admissao ? dataBR(h0.admissao + 'T12:00') : '—'} · salário ${reais(h0.salario)}</div>
+    <div class="rolagem" style="max-height:52vh;margin-top:6px"><table class="tabela holerite comp-tab"><thead><tr><th>Evento</th>${cols.map(x => `<th class="num">${nomeComp(x)}</th>`).join('')}</tr></thead><tbody>
+    ${lin.map(e => { const g = e.tipo !== grupo ? (grupo = e.tipo, `<tr class="grupo"><td colspan="${cols.length + 1}">${TIPO_EVENTO[e.tipo]}s</td></tr>`) : '';
+      return g + `<tr><td><span class="mono cod">${esc(e.codigo)}</span> ${esc(e.nome)}</td>${cols.map(x => { const i = e.por[x]; return `<td class="num">${i ? `${reais(i.valor)}${i.ref ? ` <small class="sub">${numero(i.ref, 2)}</small>` : ''}` : '<span class="sub">—</span>'}</td>`; }).join('')}</tr>`; }).join('')}
+    </tbody><tfoot>${total('Vencimentos', 'vencimentos')}${total('Descontos', 'descontos')}${total('Líquido', 'liquido')}${total('FGTS', 'valor_fgts')}</tfoot></table></div>
+    ${hs.filter(h => h.obs).map(h => `<div class="form-nota"><b>${nomeComp(compMes(h.competencia))}:</b> ${esc(h.obs)}</div>`).join('')}
+    <div class="form-grade" style="margin-top:8px"><label class="c12">Colaborador do cadastro<select name="colab" class="campo"><option value="">— fora do cadastro (só histórico) —</option>${opcoes}</select></label></div>
+    <div class="form-nota">A ligação vale para todos os holerites desta pessoa (matrícula ${esc(h0.matricula_contador)} no CNPJ ${cnpjFmt(h0.cnpj)}).</div>`;
+  const foto = L('holerites_contador').filter(h => h.cnpj === h0.cnpj && h.matricula_contador === h0.matricula_contador).map(h => h.id + h.atualizado_em).sort().join();
+  janela(`${c?.nome || nomeProprio(h0.nome)} · ${TIPOS[tipo]}`, corpo, 'Gravar ligação', async f => {
+    const novo = f.colab.value || null;
+    if (novo === (h0.colaborador_id || null)) return '';
+    const agora = L('holerites_contador').filter(h => h.cnpj === h0.cnpj && h.matricula_contador === h0.matricula_contador).map(h => h.id + h.atualizado_em).sort().join();
+    if (agora !== foto) { desenhar(); return 'Estes holerites mudaram em outra tela enquanto a janela estava aberta. Nada foi gravado: feche e confira.'; }
+    const { error } = await db.from('holerites_contador').update({ colaborador_id: novo }).eq('cnpj', h0.cnpj).eq('matricula_contador', h0.matricula_contador);
+    if (error) return 'Não foi possível gravar: ' + error.message;
+    await FIN.gravou('holerites_contador');
+  });
+}
+
+/* ---------- Apagar uma folha importada ---------- */
+function apagar(k) {
+  const [competencia, tipo, cnpj] = k.split('|');
+  const deste = () => L('holerites_contador').filter(h => h.competencia === competencia && h.tipo === tipo && h.cnpj === cnpj);
+  const n = deste().length, foto = deste().map(h => h.id + h.atualizado_em).sort().join();
+  janela(`Apagar ${TIPOS[tipo]} de ${nomeComp(compMes(competencia))}`, `<p>Os ${n} holerite(s) desta folha (${esc(empresaTxt(cnpj))}) saem do histórico. O cadastro dos colaboradores e os eventos ficam como estão. Para trazer de volta, importe o PDF de novo.</p>`, 'Apagar', async () => {
+    if (deste().map(h => h.id + h.atualizado_em).sort().join() !== foto) { desenhar(); return 'Esta folha mudou em outra tela enquanto a janela estava aberta. Nada foi apagado: confira.'; }
+    const { error } = await db.from('holerites_contador').delete().eq('competencia', competencia).eq('tipo', tipo).eq('cnpj', cnpj);
+    if (error) return 'Não foi possível apagar: ' + error.message;
+    await FIN.gravou('holerites_contador');
+  });
+}
+
+/* ---------- Importar PDFs ---------- */
+// Acha o colaborador do cadastro: 1) matrícula do contador no mesmo CNPJ; 2) mesmo nome completo;
+// 3) o nome do cadastro está contido no nome do PDF, de preferência pelo primeiro nome (ex.: cadastro "Adriana" ×
+//    "ADRIANA ARAUJO DE LIMA"; "Sabrina" × "JOANA SABRINA..."); havendo mais de um, ganha quem tem o mesmo cargo
+//    e o holerite mais recente. Toda ligação automática aparece na prévia para conferir e trocar.
+function casarPessoas(pessoas) {
+  const usados = new Set(pessoas.filter(p => p.colab).map(p => p.colab)), recente = pessoas.reduce((m, x) => x.comp > m ? x.comp : m, '');
+  const porCodigo = p => COLABORADORES.find(c => c.empresaCnpj === p.cnpj && c.matriculaContador === p.matricula);
+  pessoas.filter(p => !p.colab).forEach(p => { const c = porCodigo(p) || COLABORADORES.find(c => chaveNome(c.nome) === chaveNome(p.nome) && !usados.has(c.id)); if (c) { p.colab = c.id; p.como = 'mesmo nome ou matrícula'; usados.add(c.id); } });
+  const cands = [];
+  pessoas.filter(p => !p.colab).forEach(p => {
+    const toks = chaveNome(p.nome).split(' ');
+    COLABORADORES.filter(c => !usados.has(c.id)).forEach(c => {
+      const ct = chaveNome(c.nome).split(' ');
+      // o cadastro tem só o nome pelo qual a pessoa é chamada: vale o primeiro nome ou um nome do meio (nota menor)
+      if (!ct.every(t => toks.includes(t))) return;
+      const primeiro = ct[0] === toks[0];
+      if (!primeiro && ct.length > 1) return;
+      cands.push({ p, c, primeiro, nota: (primeiro ? 4 : 0) + (cargoDe(p.cargo, c.unidade) === c.cargo ? 2 : 0) + (p.comp === recente ? 1 : 0) + ct.length / 10 });
+    });
+  });
+  cands.sort((a, b) => b.nota - a.nota).forEach(({ p, c, primeiro }) => { if (p.colab || usados.has(c.id)) return; p.colab = c.id; p.como = primeiro ? 'pelo primeiro nome: confira' : 'por um nome do meio: confira'; usados.add(c.id); });
+}
+
+// O que muda no cadastro do colaborador com o holerite mais recente da pessoa
+function mudancasCadastro(p) {
+  const c = colabDe(p.colab); if (!c || p.maisAntigo) return [];
+  const novo = { nome: nomeProprio(p.nome), cargo: cargoDe(p.cargo, c.unidade), admissao: p.admissao, salario: p.salario, matriculaContador: p.matricula, empresaCnpj: p.cnpj };
+  const atual = { nome: c.nome, cargo: c.cargo, admissao: c.semAdmissao ? '' : c.admissao, salario: c.salario, matriculaContador: c.matriculaContador || '', empresaCnpj: c.empresaCnpj || '' };
+  const rot = { nome: 'nome', cargo: 'cargo', admissao: 'admissão', salario: 'salário', matriculaContador: 'matrícula contador', empresaCnpj: 'CNPJ' };
+  const fmt = (k, v) => !v && v !== 0 ? '—' : k === 'admissao' ? dataBR(v + 'T12:00') : k === 'salario' ? reais(v) : k === 'cargo' ? (CARGOS[v] || v) : k === 'empresaCnpj' ? cnpjFmt(v) : v;
+  return Object.keys(novo).filter(k => novo[k] != null && novo[k] !== '' && (k === 'salario' ? Math.abs(Number(atual[k]) - novo[k]) >= 0.01 : String(atual[k] ?? '') !== String(novo[k])))
+    .map(k => ({ k, de: atual[k], para: novo[k], txt: `${rot[k]}: ${fmt(k, atual[k])} → <b>${esc(fmt(k, novo[k]))}</b>` }));
+}
+
+function montarPlano(docs) {
+  const cad = new Set(L('eventos_folha').map(e => e.codigo)), atuais = L('holerites_contador');
+  const eventos = {}, pessoas = {}, holerites = [];
+  docs.forEach(d => { if (d.erro) return; d.holerites.forEach(h => {
+    h.itens.forEach(i => { if (i.codigo && !cad.has(i.codigo)) { const e = eventos[i.codigo] ||= { codigo: i.codigo, nome: i.nome, tipo: i.tipo }; if (i.nome.length > e.nome.length) e.nome = i.nome; } });
+    const k = `${d.cnpj}:${h.matricula}`, p = pessoas[k] ||= { k, cnpj: d.cnpj, matricula: h.matricula, comp: '' };
+    // dados do cadastro: do mês mais recente (no mesmo mês, o fechamento mensal vale mais que o adiantamento)
+    const peso = d.comp + (d.tipo === 'mensal' ? '2' : '1');
+    if (peso > (p.peso || '')) Object.assign(p, { peso, comp: d.comp, nome: h.nome, cargo: h.cargo, admissao: h.admissao, salario: h.salario });
+    const existe = atuais.find(x => x.cnpj === d.cnpj && x.matricula_contador === h.matricula && compMes(x.competencia) === d.comp && x.tipo === d.tipo);
+    holerites.push({ d, h, k, existe });
+  }); });
+  const ps = Object.values(pessoas).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  // PDF mais antigo que o último já importado da pessoa (ex.: reimportar junho): o cadastro não volta para o dado velho
+  ps.forEach(p => { p.maisAntigo = atuais.some(x => x.cnpj === p.cnpj && x.matricula_contador === p.matricula && compMes(x.competencia) > p.comp); });
+  // quem já tem holerite ligado a um colaborador continua ligado a ele
+  ps.forEach(p => { const ant = atuais.find(x => x.cnpj === p.cnpj && x.matricula_contador === p.matricula && x.colaborador_id); if (ant && colabDe(ant.colaborador_id)) { p.colab = ant.colaborador_id; p.como = 'já ligado antes'; } });
+  casarPessoas(ps);
+  return { docs, eventos: Object.values(eventos).sort((a, b) => a.codigo.localeCompare(b.codigo)), pessoas: ps, holerites };
+}
+
+function previa(plano) {
+  const { docs, eventos, pessoas, holerites } = plano;
+  const opcoes = sel => `<option value="">— só histórico (fora do cadastro) —</option>` + COLABORADORES.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+    .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.nome)} · ${esc(nomeUnidade(c.unidade))}</option>`).join('');
+  const linhaPessoa = (p, i) => { const m = mudancasCadastro(p);
+    return `<tr><td><b>${esc(nomeProprio(p.nome))}</b><br><small class="sub">${esc(nomeProprio(p.cargo))} · mat. ${esc(p.matricula)} · ${nomeComp(p.comp)}</small></td>
+      <td><select class="campo" data-pessoa="${i}">${opcoes(p.colab)}</select>${p.como ? `<br><small class="sub">${esc(p.como)}</small>` : ''}</td>
+      <td class="mudancas" data-mud="${i}">${p.colab ? (m.length ? `<label class="marcar"><input type="checkbox" data-atualiza="${i}" checked> atualizar</label> ${m.map(x => x.txt).join(' · ')}` : p.maisAntigo ? 'já existe holerite mais novo: o cadastro não muda' : 'cadastro já está igual') : '<span class="sub">entra só no histórico</span>'}</td></tr>`; };
+  return `
+    <div class="imp-sec"><h3>1. Arquivos</h3><table class="tabela"><thead><tr><th>Arquivo</th><th>Folha</th><th class="so-largo">Empresa</th><th class="num">Holerites</th><th>Conferência</th></tr></thead><tbody>
+      ${docs.map(d => `<tr><td>${esc(d.arquivo)}</td><td>${d.erro ? `<span class="etiqueta perigo">${esc(d.erro)}</span>` : `${TIPOS[d.tipo]} ${nomeComp(d.comp)}`}</td><td class="so-largo">${d.cnpj ? esc(empresaTxt(d.cnpj)) : ''}</td>
+        <td class="num">${d.holerites?.length || 0}</td><td>${d.erro ? '' : d.holerites.every(h => h.confere) ? '<span class="etiqueta completa">totais batem</span>' : `<span class="etiqueta perigo">${d.holerites.filter(h => !h.confere).length} não batem</span>`}
+        ${holerites.some(x => x.d === d && x.existe) ? ' <span class="etiqueta pendente">já importado: substitui</span>' : ''}</td></tr>`).join('')}</tbody></table></div>
+    <div class="imp-sec"><h3>2. Eventos novos no cadastro de eventos (${eventos.length})</h3>${eventos.length ? `<div class="mudancas">${eventos.map(e => `<span class="mono">${e.codigo}</span> ${esc(e.nome)} <small class="sub">(${TIPO_EVENTO[e.tipo].toLowerCase()})</small>`).join(' · ')}</div>
+      <div class="form-nota">Entram como "a revisar": depois confira as incidências e a categoria financeira em RH › Eventos da folha.</div>` : '<div class="sub">Todos os códigos já estão no cadastro.</div>'}</div>
+    <div class="imp-sec"><h3>3. Colaboradores (${pessoas.length})</h3><div class="rolagem" style="max-height:38vh"><table class="tabela imp-tab"><thead><tr><th>No PDF</th><th>No cadastro</th><th>O que muda no cadastro</th></tr></thead><tbody>
+      ${pessoas.map(linhaPessoa).join('')}</tbody></table></div>
+      <div class="form-nota">O cadastro recebe o dado do holerite mais recente de cada pessoa. Ligações "pelo primeiro nome" precisam de conferência. Situação (ativo/desligado) não muda por aqui.</div></div>
+    <div class="imp-sec"><h3>4. Holerites</h3><div class="sub">${holerites.length} holerite(s): ${holerites.filter(x => !x.existe).length} novo(s), ${holerites.filter(x => x.existe).length} substituem o que já foi importado.</div></div>`;
+}
+
+$('btnImportar').onclick = () => {
+  if (!REAL) return janela('Importar holerites', '<p>A importação grava no banco: entre com o seu login (fora do modo demonstração) depois que o pacote dos holerites do contador for juntado.</p>', 'Entendi', () => {});
+  let plano = null, fotoCad = '';
+  const v = janela('Importar holerites do contador (PDF)', `<div class="form-grade"><label class="c12">PDFs da "Folha de Pagamento Analítica" (pode escolher vários meses)<input type="file" name="arq" class="campo" accept=".pdf,application/pdf" multiple></label></div>
+    <div id="previaImp" class="form-nota">O PDF é lido aqui no navegador. Antes de gravar você vê os eventos novos, o que muda no cadastro de cada pessoa e os holerites que entram.</div>`, 'Importar', async f => {
+    if (!plano) return 'Escolha os PDFs primeiro.';
+    const docs = plano.docs.filter(d => !d.erro);
+    if (!docs.length) return 'Nenhum PDF pôde ser lido.';
+    if (docs.some(d => d.holerites.some(h => !h.confere))) return 'Algum holerite não bate com o total impresso: nada foi importado. Confira o PDF (ou fale com o suporte).';
+    // ligações e atualizações escolhidas na prévia
+    plano.pessoas.forEach((p, i) => { p.colab = f.querySelector(`[data-pessoa="${i}"]`).value || null; p.atualiza = !!f.querySelector(`[data-atualiza="${i}"]`)?.checked; });
+    const escolhidos = plano.pessoas.filter(p => p.colab).map(p => p.colab);
+    if (new Set(escolhidos).size !== escolhidos.length) return 'O mesmo colaborador do cadastro foi escolhido para duas pessoas do PDF. Corrija a coluna "No cadastro".';
+    // conferência: se o cadastro mudou enquanto a janela estava aberta, refaz a prévia com o valor novo
+    if (fotoCadastro() !== fotoCad) { $('previaImp').innerHTML = previa(plano = montarPlano(plano.docs)); fotoCad = fotoCadastro(); ligarPrevia(); return 'O cadastro de colaboradores ou de eventos mudou em outra tela. A prévia foi refeita com os valores novos: confira e clique de novo.'; }
+    // 1) eventos que faltam (outra tela pode ter criado o mesmo código agora: ignora o repetido)
+    const faltam = plano.eventos.filter(e => !L('eventos_folha').some(x => x.codigo === e.codigo));
+    if (faltam.length) { const { error } = await db.from('eventos_folha').upsert(faltam.map(e => ({ codigo: e.codigo, nome: e.nome.slice(0, 60), tipo: e.tipo, origem: 'contador', revisado: false })), { onConflict: 'codigo', ignoreDuplicates: true });
+      if (error) return 'Não foi possível criar os eventos: ' + error.message; }
+    // 2) cadastro dos colaboradores (com conferência: só grava se ninguém mudou desde a prévia)
+    const falhas = [];
+    for (const p of plano.pessoas.filter(p => p.colab && p.atualiza)) {
+      const c = colabDe(p.colab), m = mudancasCadastro(p); if (!c || !m.length) continue;
+      const reg = {}; m.forEach(x => reg[{ matriculaContador: 'matricula_contador', empresaCnpj: 'empresa_cnpj' }[x.k] || x.k] = x.para);
+      const { data, error } = await db.from('colaboradores').update(reg).eq('id', c.id).eq('atualizado_em', c.atualizado_em).select('id');
+      if (error || !data.length) falhas.push(`${c.nome}${error ? ` (${error.message})` : ' (mudou em outra tela)'}`);
+    }
+    // 3) holerites (o mesmo mês × tipo × pessoa importado de novo substitui)
+    const colabDaPessoa = Object.fromEntries(plano.pessoas.map(p => [p.k, p.colab]));
+    const linhas = plano.holerites.map(({ d, h, k }) => ({ competencia: d.comp + '-01', tipo: d.tipo, cnpj: d.cnpj, matricula_contador: h.matricula, colaborador_id: colabDaPessoa[k] || null,
+      nome: h.nome, cargo: h.cargo.slice(0, 60), admissao: h.admissao, salario: h.salario, horas_mes: h.horasMes, vencimentos: h.vencimentos, descontos: h.descontos, liquido: h.liquido,
+      base_inss: h.bases.baseInss, valor_inss: h.bases.inss, base_fgts: h.bases.baseFgts, valor_fgts: h.bases.fgts, base_irrf: h.bases.baseIrrf, valor_irrf: h.bases.irrf,
+      itens: h.itens.map(i => ({ codigo: i.codigo, nome: i.nome, tipo: i.tipo, ref: i.ref, valor: i.valor })), obs: (h.obs || '').slice(0, 500), arquivo: d.arquivo.slice(0, 120) }));
+    for (let i = 0; i < linhas.length; i += 200) {
+      const { error } = await db.from('holerites_contador').upsert(linhas.slice(i, i + 200), { onConflict: 'cnpj,matricula_contador,competencia,tipo' });
+      if (error) { await FIN.gravou('eventos_folha', 'holerites_contador'); await casca().dadosBanco.gravou('colaboradores'); return 'Não foi possível gravar os holerites: ' + error.message; }
+    }
+    await FIN.gravou('eventos_folha', 'holerites_contador'); await casca().dadosBanco.gravou('colaboradores');
+    if (falhas.length) { desenhar(); janela('Importado, com ressalvas', `<p>Os holerites e os eventos entraram. Estes cadastros não foram atualizados porque mudaram em outra tela: ${esc(falhas.join(', '))}. Importe de novo para atualizar.</p>`, 'Entendi', () => {}); }
+    return '';
+  });
+  const fotoCadastro = () => COLABORADORES.map(c => c.id + c.atualizado_em).sort().join() + '|' + L('eventos_folha').map(e => e.codigo).sort().join();
+  function ligarPrevia() {
+    v.querySelectorAll('[data-pessoa]').forEach(s => s.onchange = () => { const i = +s.dataset.pessoa, p = plano.pessoas[i]; p.colab = s.value || null; p.como = p.colab ? 'escolhido por você' : '';
+      const m = mudancasCadastro(p); v.querySelector(`[data-mud="${i}"]`).innerHTML = p.colab ? (m.length ? `<label class="marcar"><input type="checkbox" data-atualiza="${i}" checked> atualizar</label> ${m.map(x => x.txt).join(' · ')}` : 'cadastro já está igual') : '<span class="sub">entra só no histórico</span>'; });
+  }
+  v.querySelector('[name=arq]').onchange = async e => {
+    const arqs = [...e.target.files]; if (!arqs.length) return;
+    $('previaImp').textContent = 'Lendo os PDFs…';
+    const docs = [];
+    for (const a of arqs) {
+      try { const d = await HPDF.ler(new Uint8Array(await a.arrayBuffer())); d.arquivo = a.name;
+        d.erro = !d.comp ? 'mês não encontrado' : !d.cnpj ? 'CNPJ não encontrado' : !d.holerites.length ? 'nenhum holerite encontrado (é a folha analítica do contador?)' : ''; docs.push(d); }
+      catch (x) { docs.push({ arquivo: a.name, erro: 'não consegui ler: ' + (x.message || x), holerites: [] }); }
+    }
+    docs.sort((a, b) => (a.comp || '').localeCompare(b.comp || ''));
+    plano = montarPlano(docs); fotoCad = fotoCadastro();
+    $('previaImp').innerHTML = previa(plano); ligarPrevia();
+  };
+};
+
+/* ---------- Eventos da tela ---------- */
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (b) { aba = b.dataset.aba; desenhar(); } };
+$('selTipo').onchange = desenhar; $('selMedida').onchange = desenhar;
+$('tab').onclick = e => { const a = e.target.closest('[data-apagar]'); if (a) return apagar(a.dataset.apagar); const tr = e.target.closest('tr[data-p]'); if (tr) detalhe(tr.dataset.p); };
+$('tab').onkeydown = e => { if (e.key === 'Enter') e.target.closest('tr[data-p]')?.click(); };
+$('btnExportar').onclick = () => exportarCSV(`holerites-contador-${$('selTipo').value}`, ['Competência', 'Tipo', 'CNPJ', 'Matrícula contador', 'Nome', 'Colaborador no cadastro', 'Cargo', 'Código', 'Evento', 'Tipo do evento', 'Referência', 'Valor'],
+  holeritesVisiveis().sort((a, b) => a.competencia.localeCompare(b.competencia) || a.nome.localeCompare(b.nome)).flatMap(h => (h.itens || []).map(i => [nomeComp(compMes(h.competencia)), TIPOS[h.tipo], cnpjFmt(h.cnpj), h.matricula_contador, h.nome,
+    colabDe(h.colaborador_id)?.nome || '', h.cargo, i.codigo || '', i.nome, TIPO_EVENTO[i.tipo], i.ref == null ? '' : numero(i.ref, 2), numero(i.valor, 2)])));
+// Importação, ligação ou cadastro mudado em outra aba (ou outro computador): redesenha sozinha
+vigiarDados(['holerites_contador', 'eventos_folha', 'colaboradores', 'unidades'], desenhar);
+
+(async () => {
+  REAL = await FIN.usar() && await FIN.garantir('eventos_folha', 'holerites_contador').then(() => true).catch(() => false);
+  if (!REAL) {
+    $('aviso').innerHTML = `<div class="aviso">${db ? 'Os holerites do contador entram no banco quando o pacote deles for juntado.' : 'Modo demonstração: os holerites do contador existem só com o banco ligado (entre com o seu login).'}</div>`;
+    $('kpis').innerHTML = ''; $('tab').innerHTML = ''; return;
+  }
+  janela.nota = 'Grava no banco';
+  desenhar();
+})();
+</script>
+</body>
+</html>

@@ -364,6 +364,18 @@ const CARGOS = { cozinheiro: 'Cozinheiro(a)', aux_cozinha: 'Auxiliar de cozinha'
   acougueiro: 'Açougueiro(a)', aux_acougue: 'Auxiliar de açougue', motorista: 'Motorista', gerente: 'Gerente administrativo', aux_adm: 'Auxiliar administrativo', comprador: 'Comprador(a)',
   diretoria: 'Diretoria', assist_financeiro: 'Assistente financeiro', gerente_loja: 'Gerente de loja', subgerente: 'Subgerente', lider_cozinha: 'Líder de cozinha',
   churrasqueiro: 'Churrasqueiro(a)', motoboy: 'Motoboy' };
+// Cargo escrito de qualquer jeito (planilha, holerite do contador) → cargo do cadastro. Desconhecido fica como veio.
+const CARGO_APELIDOS = { 'op de caixa': 'caixa', 'operador de caixa': 'caixa', 'operadora de caixa': 'caixa', caixa: 'caixa', cozinheira: 'cozinheiro', cozinheiro: 'cozinheiro',
+  'ajud cozinha': 'aux_cozinha', 'ajudante de cozinha': 'aux_cozinha', 'aux cozinha': 'aux_cozinha', 'auxiliar de cozinha': 'aux_cozinha', acougueiro: 'acougueiro', 'assist financeiro': 'assist_financeiro',
+  'assistente financeiro': 'assist_financeiro', 'sub gerente': 'subgerente', subgerente: 'subgerente', 'lider cozinha': 'lider_cozinha', 'lider de cozinha': 'lider_cozinha', churrasqueiro: 'churrasqueiro',
+  motoboy: 'motoboy', comprador: 'comprador', diretoria: 'diretoria', diretor: 'diretoria', atendente: 'atendente', motorista: 'motorista',
+  'gerente de restaurante': 'gerente_loja', 'gerente de loja': 'gerente_loja', 'auxiliar administrativo': 'aux_adm', 'auxiliar de acougue': 'aux_acougue' };
+const cargoDe = (t, un) => {
+  const k = normalizar(String(t).replace(/\((a|o|as|os)\)/gi, '')).replace(/[^a-z0-9]+/g, ' ').trim();
+  if (k === 'gerente') return un === 'escritorio' ? 'gerente' : 'gerente_loja';
+  const livre = String(t).replace(/\((a|o)\)/gi, '').trim().toLowerCase().replace(/(^|\s)\S/g, x => x.toUpperCase()).replace(/ (De|Da|Do|Das|Dos|E) /g, x => x.toLowerCase());
+  return CARGO_APELIDOS[k] || Object.keys(CARGOS).find(x => normalizar(CARGOS[x]).replace(/[^a-z0-9]+/g, ' ').trim() === k || x === k) || livre.slice(0, 40);
+};
 // Com o banco ligado, os colaboradores (e feriados e turnos) vêm das tabelas do banco: a casca lê antes de abrir as
 // telas e mantém a MESMA lista ao vivo para todas as abas (sistema.js · carregarRH). Os de baixo só no modo demonstração.
 const RH_DO_BANCO = !!dadoComum('RH_BANCO', () => false);

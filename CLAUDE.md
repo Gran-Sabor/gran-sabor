@@ -33,6 +33,11 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
   `assets/js/escala.js` (ESC) é a regra da escala num lugar só (dia de cada pessoa, cobertura mínima, faltas, pagamento de freelancer);
   a folha desconta falta direto da escala (`ESC.faltasNoMes`), sem lançamento. `UNIDADE_EMPRESA` mora em menu.js.
   Colaboradores reais entram pela tela (Novo ou "Importar planilha"), nunca pelo repositório.
+- Folha do contador: `eventos_folha` (códigos do contador, tipo, incidências, categoria financeira, "revisado") e `holerites_contador`
+  (um holerite por pessoa × mês × tipo, itens em jsonb). Entram pela tela RH › Holerites do contador › "Importar holerites (PDF)":
+  `assets/js/holerites-pdf.js` (HPDF) lê a "Folha de Pagamento Analítica" no navegador (pdf.js) e confere cada holerite com o
+  total impresso; a prévia mostra eventos novos, o que muda no cadastro (nome, cargo, admissão, salário, `matricula_contador`,
+  `empresa_cnpj`) e os holerites. A folha calculada (folha.js) ainda usa os códigos de exemplo de `EVENTOS`.
 - PDV no banco: `caixas` e `vendas` (registro inteiro em `dados` jsonb, colunas de busca calculadas). `assets/js/caixas-banco.js`
   (na casca) carrega CAIXAS/VENDAS antes das abas, grava o que as telas mudaram (ao ouvir `avisarMudanca('caixas'|'vendas')`)
   com conferência e aplica o Realtime no mesmo objeto. Um PDV só tem um caixa aberto (índice único). Início mostra "Caixas agora".
