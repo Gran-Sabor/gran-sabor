@@ -1,7 +1,7 @@
 /* =====================================================================
    Gran Sabor · escala.js — A ESCALA NUM LUGAR SÓ
    Quem trabalha em cada dia, em qual turno e unidade, faltas, cobertura
-   mínima e freelancers. A tela Escala, a Configuração, Faltas e freelancers
+   mínima e freelancers. A tela Escala, a Configuração, Faltas, Freelancers
    e a folha (desconto de falta) usam estas mesmas funções.
    Regra do dia (da mais forte para a mais fraca):
      fora do contrato > férias > afastado > exceção do dia (troca, folga,
@@ -249,7 +249,7 @@ const ESC = (() => {
   return api;
 })();
 
-/* ---------- Janela da diária de freelancer (usada na Escala e em Faltas e freelancers) ----------
+/* ---------- Janela da diária de freelancer (usada na Escala, em Faltas e em Freelancers) ----------
    preset: { unidade, data, motivo, cobre, entrada, saida } para nova diária. */
 ESC.MOTIVOS = { falta: 'Cobrir falta', folga: 'Cobrir folga', ferias: 'Cobrir férias', demanda: 'Movimento alto', evento: 'Evento', outro: 'Outro' };
 ESC.SITUACOES = { combinada: 'Combinada', trabalhou: 'Trabalhou', nao_veio: 'Não veio', cancelada: 'Cancelada' };
@@ -257,7 +257,7 @@ ESC.janelaDiaria = function (atual, preset = {}) {
   const x = atual || { unidade_id: ESC.unId(preset.unidade || 'loja1'), data: preset.data || hojeISO(), entrada: preset.entrada || '11:00', saida: preset.saida || '15:00',
     motivo: preset.motivo || 'demanda', cobre_colaborador_id: preset.cobre || null, situacao: 'combinada', valor: null, funcao: '', obs: '', freelancer_id: '' };
   const foto = atual ? JSON.parse(JSON.stringify(atual)) : null, temConta = !!x.conta_pagar_id, ro = temConta ? ' disabled' : '';
-  const fls = ESC.freelancers().filter(f => f.ativo || f.id === x.freelancer_id);
+  const fls = ESC.freelancers().filter(f => (f.ativo && !f.bloqueado) || f.id === x.freelancer_id);
   const un = ESC.unCod(x.unidade_id);
   const opUn = ESC.unidadesEscala().map(u => `<option value="${u.id}"${u.id === un ? ' selected' : ''}>${esc(u.nome)}</option>`).join('');
   const opCol = cod => `<option value="">— ninguém —</option>` + COLABORADORES.filter(c => c.ativo && c.unidade === cod).map(c => `<option value="${c.id}"${c.id === x.cobre_colaborador_id ? ' selected' : ''}>${esc(c.nome)}</option>`).join('');
@@ -273,9 +273,12 @@ ESC.janelaDiaria = function (atual, preset = {}) {
     <label class="c4">Função<input name="funcao" class="campo" maxlength="40" value="${esc(x.funcao)}" placeholder="Ex.: Ajud. cozinha"></label>
     <label class="c4">Valor (R$)<input name="valor" class="campo" inputmode="decimal" value="${x.valor != null ? numero(x.valor, 2) : ''}"${ro}></label>
     <label class="c4">Situação<select name="sit" class="campo"${ro}>${Object.entries(ESC.SITUACOES).map(([k, n]) => `<option value="${k}"${k === x.situacao ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+    <label class="c4">Chegou às<input name="entR" type="time" class="campo" value="${ESC.hm(x.entrada_real)}"></label>
+    <label class="c4">Saiu às<input name="saiR" type="time" class="campo" value="${ESC.hm(x.saida_real)}"></label>
+    <label class="c4">Avaliação do dia<select name="nota" class="campo"><option value="">—</option>${[5, 4, 3, 2, 1].map(n => `<option value="${n}"${Number(x.avaliacao) === n ? ' selected' : ''}>${'★'.repeat(n)} ${n}</option>`).join('')}</select></label>
     <label class="c12">Observação<input name="obs" class="campo" maxlength="200" value="${esc(x.obs)}"></label></div>
     <div class="form-nota">${temConta ? 'Pagamento já gerado em Contas a pagar: valor, dia e situação ficam travados. Diferença? Ajuste em Contas a pagar, com acerto visível.'
-      : 'Depois que o freelancer trabalhar, marque "Trabalhou" e gere o pagamento em Faltas e freelancers: vira conta a pagar na hora.'}
+      : 'Depois que o freelancer trabalhar, marque "Trabalhou" (chegada, saída e avaliação) e gere o pagamento na tela Freelancers: vira conta a pagar na hora.'}
     ${atual && !temConta ? ' <button type="button" class="btn btn-mini" data-excluir>Excluir diária</button>' : ''}</div>`;
   const v = janela(atual ? `Diária · ${ESC.freelancer(x.freelancer_id).nome}` : 'Novo freelancer na escala', corpo, 'Salvar', async f => {
     const valor = f.valor.value.trim() === '' ? 0 : Number(f.valor.value.replace(/\./g, '').replace(',', '.'));
@@ -283,13 +286,19 @@ ESC.janelaDiaria = function (atual, preset = {}) {
     if (!f.data.value || !f.ent.value || !f.sai.value) return 'Informe dia, entrada e saída.';
     if (!(valor >= 0)) return 'Valor inválido.';
     if (atual) { const agora = ESC.diarias().find(y => y.id === atual.id); const m = mudouDesde(foto, agora, Object.keys(foto), 'A diária'); if (m) return m; }
+    if (f.fl.value && typeof FL !== 'undefined' && !FL.podeChamar(ESC.freelancer(f.fl.value)) && f.fl.value !== x.freelancer_id) return 'Este freelancer está bloqueado ou inativo.';
+    // Frequência alta (risco de vínculo): avisa uma vez; Salvar de novo confirma
+    const aviso = !temConta && f.sit.value !== 'cancelada' && typeof FL !== 'undefined' && (!atual || f.data.value !== x.data || f.fl.value !== x.freelancer_id) ? FL.avisoHabitual(f.fl.value, f.data.value) : '';
+    if (aviso && f.dataset.avisado !== aviso) { f.dataset.avisado = aviso; return '⚠ ' + aviso + ' Para marcar mesmo assim, clique em Salvar de novo.'; }
     let fl = f.fl.value;
     if (!fl) {
       fl = ESC.novoId();
       const e = await ESC.salvar('freelancers', { id: fl, nome: f.novo.value.trim(), funcao: f.funcao.value.trim(), diaria: valor, ativo: true });
       if (e) return e;
     }
-    const dados = { entrada: f.ent.value, saida: f.sai.value, motivo: f.motivo.value, cobre_colaborador_id: f.cobre.value || null, funcao: f.funcao.value.trim(), obs: f.obs.value.trim() };
+    if ((f.entR.value || f.saiR.value || f.nota.value) && f.sit.value !== 'trabalhou' && !temConta) return 'Chegada, saída e avaliação só valem para quem trabalhou: marque a situação "Trabalhou".';
+    const dados = { entrada: f.ent.value, saida: f.sai.value, motivo: f.motivo.value, cobre_colaborador_id: f.cobre.value || null, funcao: f.funcao.value.trim(), obs: f.obs.value.trim(),
+      entrada_real: f.entR.value || null, saida_real: f.saiR.value || null, avaliacao: f.nota.value ? Number(f.nota.value) : null };
     if (!temConta) Object.assign(dados, { freelancer_id: fl, unidade_id: ESC.unId(f.un.value), data: f.data.value, valor, situacao: f.sit.value });
     return ESC.salvar('freela_diarias', dados, atual);
   });

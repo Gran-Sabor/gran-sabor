@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freelancers</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+<style>
+  .estrelas { color: #c98a00; letter-spacing: 1px; white-space: nowrap; }
+  .pend { font-size: 11px; color: var(--perigo); }
+  .acoes { white-space: nowrap; }
+  .acoes .btn-mini + .btn-mini { margin-left: 4px; }
+  td.num small { display: block; }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Freelancers</h1><span class="sub">Contratação, diárias, pagamento e custo · cada diária vira conta a pagar</span>
+    <div class="dir"><span class="etiqueta exemplo oculto" id="etqExemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" data-abrir="escala">Ver escala</button>
+      <button type="button" class="btn" id="btnExportar">Exportar</button>
+      <button type="button" class="btn" id="btnNovoFl">+ Freelancer</button>
+      <button type="button" class="btn btn-pri" id="btnNovo">+ Nova diária</button></div></div>
+  <div id="filtros"></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="diarias" class="ativa">Diárias</button><button type="button" data-aba="cadastro">Freelancers e contratação</button><button type="button" data-aba="custos">Custos</button></div>
+  <section class="kpis" id="kpis"></section>
+  <div id="conteudo"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=10"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/folha.js?v=3"></script>
+<script src="../assets/js/escala.js?v=2"></script>
+<script src="../assets/js/freelas.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script>
+/* Freelancers: cadastro e ficha de contratação, diárias (convite, confirmação, avaliação), pagamento e custo.
+   Regras e contas em freelas.js (FL) e escala.js (ESC): nada calculado aqui fica guardado.
+   As 3 empresas sempre separadas: filtro, indicadores por empresa e agrupamento. */
+let aba = 'diarias';
+janela.nota = ESC.REAL ? 'Grava no banco e aparece na hora nas outras telas' : 'Exemplo: as alterações somem ao recarregar';
+$('etqExemplo').classList.toggle('oculto', ESC.REAL);
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, periodo: true, placeholder: 'Nome, função, motivo, unidade… (atalho: /)' });
+const porEmpresa = (itens, valor) => EMPRESAS.map(e => `${e.nome.replace('Empresa ', 'E')}: ${valor(itens.filter(i => i.empresa === e.id))}`).join(' · ');
+const soma = l => reais(FL.soma(l));
+const kpis = l => l.map(([t, v, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${v}</div><div class="kpi-ctx">${c || ''}</div></div>`).join('');
+const diaBR = iso => `${dataBR(iso + 'T12:00')} <small class="sub">${ESC.SEM[ESC.dow(iso)]}</small>`;
+
+/* ---------- Diárias ---------- */
+function diarias() {
+  const de = filtro.de || '0000', ate = filtro.ate || '9999';
+  return ESC.diarias().filter(x => x.data >= de && x.data <= ate).map(x => { const un = ESC.unCod(x.unidade_id), fl = ESC.freelancer(x.freelancer_id);
+    return { x, un, empresa: UNIDADE_EMPRESA[un], fl, conta: FL.contaDe(x), valor: Number(x.valor || 0) }; })
+    .filter(i => noFiltro(filtro, { empresa: i.empresa, unidade: i.un }) && casaBusca([i.fl.nome, i.x.funcao, ESC.MOTIVOS[i.x.motivo], i.x.obs, nomeUnidade(i.un),
+      i.x.cobre_colaborador_id ? colab(i.x.cobre_colaborador_id).nome : ''].join(' '), filtro.busca))
+    .sort((a, b) => b.x.data.localeCompare(a.x.data) || ESC.hm(a.x.entrada).localeCompare(ESC.hm(b.x.entrada)));
+}
+const aPagar = l => l.filter(i => i.x.situacao === 'trabalhou' && !i.x.conta_pagar_id);
+const aConfirmar = l => l.filter(i => i.x.situacao === 'combinada' && i.x.data < hojeISO());
+function abaDiarias() {
+  const ds = diarias(), valem = ds.filter(i => ESC.valeDiaria(i.x));
+  const sem = aPagar(ds), conf = aConfirmar(ds), pagas = ds.filter(i => i.conta?.pago), abertas = ds.filter(i => i.conta && !i.conta.pago);
+  $('kpis').innerHTML = kpis([
+    ['Diárias no período', valem.length, porEmpresa(valem, l => l.length)],
+    ['Custo das diárias', soma(valem), porEmpresa(valem, l => soma(l).replace('R$', '').trim())],
+    ['Passou do dia, sem confirmar', `<span class="${conf.length ? 'desce' : ''}">${conf.length}</span>`, 'marque se trabalhou ou não veio'],
+    ['Trabalhou, sem pagamento', `<span class="${sem.length ? 'desce' : ''}">${sem.length}</span>`, soma(sem)],
+    ['Em contas a pagar', abertas.length, soma(abertas)],
+    ['Pagas', pagas.length, soma(pagas)]
+  ]);
+  const grupos = EMPRESAS.map(e => [e, ds.filter(i => i.empresa === e.id)]).filter(([, l]) => l.length);
+  const pag = i => i.conta ? (i.conta.pago ? `<span class="etiqueta completa">pago ${ESC.dm(i.conta.pagoEm)}</span>` : `<span class="etiqueta pendente">a pagar ${ESC.dm(i.conta.vencimento)}</span>`)
+      + (i.conta.diarias > 1 ? ` <small class="sub">junto com ${i.conta.diarias - 1}</small>` : '')
+      + (Math.abs(i.conta.valor - i.conta.somaDiarias) >= 0.01 ? ` <span class="etiqueta perigo" title="As diárias somam ${reais(i.conta.somaDiarias)} e a conta a pagar está com ${reais(i.conta.valor)}">dif. ${reais(i.conta.somaDiarias - i.conta.valor)}</span>` : '')
+    : i.x.conta_pagar_id ? '<span class="etiqueta pendente">conta apagada?</span>'
+    : i.x.situacao === 'trabalhou' ? `<button type="button" class="btn btn-mini" data-pagar="${i.x.id}">Gerar pagamento</button>` : '<span class="sub">—</span>';
+  const acoes = i => {
+    const b = [];
+    if (i.x.situacao === 'combinada') { const w = FL.linkConvite(i.x); if (w) b.push(`<a class="btn btn-mini" href="${esc(w)}" target="_blank" rel="noopener" title="Abrir o WhatsApp com a mensagem pronta">WhatsApp</a>`);
+      if (i.x.data <= hojeISO()) b.push(`<button type="button" class="btn btn-mini" data-veio="${i.x.id}">Trabalhou</button><button type="button" class="btn btn-mini" data-naoveio="${i.x.id}">Não veio</button>`); }
+    return b.join('');
+  };
+  const sit = i => esc(ESC.SITUACOES[i.x.situacao]) + (i.x.avaliacao ? ` <span class="estrelas" title="Avaliação do dia">${FL.estrelas(i.x.avaliacao)}</span>` : '')
+    + (i.x.entrada_real || i.x.saida_real ? ` <small class="sub">real ${ESC.hm(i.x.entrada_real) || '?'}–${ESC.hm(i.x.saida_real) || '?'}</small>` : '');
+  return `${conf.length ? `<div class="aviso">${conf.length} diária(s) já passaram e continuam "combinada": confirme se o freelancer trabalhou (o pagamento só sai depois disso).</div>` : ''}
+    ${sem.length ? `<div class="aviso">${sem.length} diária(s) trabalhada(s) ainda sem pagamento (${soma(sem)}). <button type="button" class="btn btn-mini" data-pagartodas>Gerar pagamento de todas</button></div>` : ''}
+    <section class="cartao"><div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Dia</th><th>Unidade</th><th>Freelancer</th><th>Horário</th><th>Motivo</th><th class="num">Valor</th><th>Situação</th><th>Pagamento</th><th></th></tr></thead><tbody>
+    ${grupos.map(([e, l]) => `<tr class="grupo"><td colspan="9">${esc(e.nome)} <span class="sub">${l.length} · ${soma(l.filter(i => ESC.valeDiaria(i.x)))}</span></td></tr>` + l.map(i => `<tr data-diaria="${i.x.id}" tabindex="0"${ESC.valeDiaria(i.x) ? '' : ' class="inativa"'}>
+      <td>${diaBR(i.x.data)}</td><td>${esc(nomeUnidade(i.un))}</td><td><b>${esc(i.fl.nome)}</b> <small class="sub">${esc(i.x.funcao)}</small> ${FL.etqHabitual(FL.habitualidade(i.x.freelancer_id, i.x.data))}</td>
+      <td>${ESC.hm(i.x.entrada)}–${ESC.hm(i.x.saida)}</td><td>${esc(ESC.MOTIVOS[i.x.motivo])}${i.x.cobre_colaborador_id ? ` <small class="sub">cobre ${esc(colab(i.x.cobre_colaborador_id).nome.split(' ')[0])}</small>` : ''}</td>
+      <td class="num">${reais(i.valor)}</td><td>${sit(i)}</td><td>${pag(i)}</td><td class="acoes">${acoes(i)}</td></tr>`).join('')).join('')
+      || '<tr><td colspan="9" class="vazio">Nenhuma diária no período. Use "+ Nova diária" ou chame pela Escala (clique no dia de quem faltou).</td></tr>'}</tbody></table></div></section>
+    <div class="form-nota">Gerar pagamento cria a conta em Contas a pagar na unidade da diária (favorecido "Freelancer · nome"). Dá para juntar as diárias de cada freelancer numa conta só.
+      Depois de gerada, valor e dia ficam travados; diferença se acerta em Contas a pagar, com acerto visível.</div>`;
+}
+function gerarPagamentos(itens) {
+  const total = itens.reduce((a, i) => a + i.valor, 0), fotos = itens.map(i => ({ ...i.x }));
+  const varias = new Set(itens.map(i => i.x.freelancer_id + '|' + i.x.unidade_id)).size < itens.length;
+  janela(itens.length > 1 ? `Gerar ${itens.length} pagamentos` : `Pagamento · ${itens[0].fl.nome}`, `<p>${itens.map(i => `${esc(i.fl.nome)} · ${ESC.dm(i.x.data)} · ${esc(nomeUnidade(i.un))} · <b>${reais(i.valor)}</b>`).join('<br>')}</p>
+    <div class="form-grade"><label class="c4">Vencimento<input name="venc" type="date" class="campo" value="${hojeISO()}"></label>
+    ${varias ? '<label class="c8 marcar"><input type="checkbox" name="juntar" checked> Uma conta só por freelancer e unidade (paga tudo num Pix)</label>' : ''}</div>
+    <div class="form-nota">Total ${reais(total)}. Ao confirmar, o sistema relê cada diária: se alguma mudou em outra tela, ela não é gerada e aparece o valor novo.</div>`, 'Gerar', async f => {
+    if (!f.venc.value) return 'Informe o vencimento.';
+    await ESC.garantirPagar();
+    return FL.gerarPagamentos(fotos, f.venc.value, !!f.juntar?.checked);
+  });
+}
+// Confirmação rápida do dia (relê antes de gravar)
+async function marcar(id, situacao) {
+  const atual = ESC.diarias().find(x => x.id === id);
+  if (!atual || atual.situacao !== 'combinada') return desenhar();
+  if (situacao === 'nao_veio') {
+    return janela(`Não veio · ${ESC.freelancer(atual.freelancer_id).nome}`, `<p>${ESC.dm(atual.data)} · ${esc(nomeUnidade(ESC.unCod(atual.unidade_id)))}. A diária fica registrada como "Não veio" e não gera pagamento.</p>
+      <div class="form-grade"><label class="c12">Observação<input name="obs" class="campo" maxlength="200" value="${esc(atual.obs)}" placeholder="Ex.: não avisou"></label>
+      <label class="c6 marcar"><input type="checkbox" name="bloq"> Bloquear este freelancer (não chamar mais)</label></div>`, 'Confirmar', async f => {
+      const e = await ESC.salvar('freela_diarias', { situacao: 'nao_veio', obs: f.obs.value.trim() }, { ...atual });
+      if (e || !f.bloq.checked) return e;
+      const fl = ESC.freelancers().find(y => y.id === atual.freelancer_id);
+      return ESC.salvar('freelancers', { bloqueado: true, motivo_bloqueio: ('Não veio em ' + ESC.dm(atual.data) + (f.obs.value.trim() ? ': ' + f.obs.value.trim() : '')).slice(0, 200) }, fl);
+    });
+  }
+  ESC.janelaDiaria(atual).querySelector('[name=sit]').value = 'trabalhou';
+}
+
+/* ---------- Freelancers e contratação ---------- */
+function freelasFiltrados() {
+  return ESC.freelancers().filter(f => casaBusca([f.nome, f.funcao, f.telefone, FL.situacao(f), f.motivo_bloqueio].join(' '), filtro.busca))
+    .sort((a, b) => (a.bloqueado - b.bloqueado) || (b.ativo - a.ativo) || a.nome.localeCompare(b.nome));
+}
+function doPeriodo(f) {
+  const de = filtro.de || '0000', ate = filtro.ate || '9999';
+  return FL.doFreela(f.id).filter(x => x.data >= de && x.data <= ate && noFiltro(filtro, { empresa: UNIDADE_EMPRESA[ESC.unCod(x.unidade_id)], unidade: ESC.unCod(x.unidade_id) }));
+}
+function abaCadastro() {
+  const fs = freelasFiltrados(), ativos = fs.filter(FL.podeChamar);
+  const hs = Object.fromEntries(fs.map(f => [f.id, FL.habitualidade(f.id)]));
+  const incompletos = ativos.filter(f => FL.pendencias(f).length), risco = ativos.filter(f => hs[f.id].nivel);
+  $('kpis').innerHTML = kpis([
+    ['Freelancers ativos', ativos.length, `${fs.length} cadastrado(s) · ${fs.filter(f => f.bloqueado).length} bloqueado(s)`],
+    ['Ficha incompleta', `<span class="${incompletos.length ? 'desce' : ''}">${incompletos.length}</span>`, 'documentos, termo, Pix ou telefone'],
+    ['Frequência alta', `<span class="${risco.length ? 'desce' : ''}">${risco.length}</span>`, `risco de vínculo · ${FL.REGRA.semanaAtencao}+/semana ou ${FL.REGRA.trintaAtencao}+ em 30 dias`],
+    ['Chamados no período', fs.filter(f => doPeriodo(f).length).length, 'com ao menos 1 diária'],
+    ['Diária média', reais(fs.filter(f => f.diaria > 0).reduce((a, f, _, l) => a + f.diaria / l.length, 0)), 'valor de referência']
+  ]);
+  const sit = f => f.bloqueado ? `<span class="etiqueta perigo" title="${esc(f.motivo_bloqueio)}">bloqueado</span>` : f.ativo ? '<span class="etiqueta completa">ativo</span>' : '<span class="etiqueta">inativo</span>';
+  return `${risco.length ? `<div class="aviso">Frequência alta: ${risco.map(f => `<b>${esc(f.nome)}</b> (${esc(hs[f.id].texto)})`).join(', ')}. Chamar a mesma pessoa com frequência pode caracterizar vínculo de emprego: alterne ou avalie contratar (regra de exemplo, confirmar com o contador).</div>` : ''}
+    <section class="cartao"><div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Nome</th><th>Situação</th><th>Função</th><th>Telefone</th><th>Ficha</th><th>Avaliação</th><th class="num">Diária</th><th class="num">Últimos 30 dias</th><th class="num">No período</th><th></th></tr></thead><tbody>
+    ${fs.map(f => { const l = doPeriodo(f), p = FL.pendencias(f), av = FL.avaliacao(f.id), h = hs[f.id];
+      return `<tr data-freela="${f.id}" tabindex="0"${FL.podeChamar(f) ? '' : ' class="inativa"'}><td><b>${esc(f.nome)}</b></td><td>${sit(f)}</td><td>${esc(f.funcao) || '—'}</td><td>${esc(f.telefone) || '—'}</td>
+      <td>${p.length ? `<span class="pend" title="Falta: ${esc(p.join(', '))}">falta ${p.length}: ${esc(p.slice(0, 2).join(', '))}${p.length > 2 ? '…' : ''}</span>` : '<span class="etiqueta completa">completa</span>'}</td>
+      <td>${av ? `<span class="estrelas">${FL.estrelas(av.media)}</span> <small class="sub">${numero(av.media, 1)} (${av.n})</small>` : '<span class="sub">—</span>'}</td>
+      <td class="num">${reais(f.diaria)}</td><td class="num">${h.trinta} ${FL.etqHabitual(h)}</td><td class="num">${l.length}<small class="sub">${soma(l)}</small></td>
+      <td class="acoes"><button type="button" class="btn btn-mini" data-recibo="${f.id}">Recibo</button></td></tr>`; }).join('')
+      || '<tr><td colspan="10" class="vazio">Nenhum freelancer cadastrado. Use "+ Freelancer".</td></tr>'}</tbody></table></div></section>
+    <div class="form-nota">Contratação: confira documento com foto, CPF e comprovante de endereço, e colha a assinatura do termo de prestação de serviço autônomo antes da primeira diária.
+      Recibo: lista as diárias trabalhadas no período do filtro para o freelancer assinar.</div>`;
+}
+function editarFreela(fl) {
+  const foto = fl ? { ...fl } : null, x = fl || { nome: '', cpf: '', telefone: '', pix: '', funcao: '', diaria: 0, ativo: true, obs: '', doc_identidade: false, doc_endereco: false, termo_assinado_em: null, bloqueado: false, motivo_bloqueio: '' };
+  const h = fl ? FL.habitualidade(fl.id) : null, av = fl ? FL.avaliacao(fl.id) : null;
+  const v = janela(fl ? fl.nome : 'Novo freelancer', `<div class="form-grade">
+    <label class="c8">Nome completo *<input name="nome" class="campo" maxlength="80" value="${esc(x.nome)}"></label>
+    <label class="c4">CPF<input name="cpf" class="campo" inputmode="numeric" maxlength="14" value="${esc(fmtDoc(x.cpf || ''))}"></label>
+    <label class="c4">Telefone (WhatsApp)<input name="tel" class="campo" inputmode="tel" maxlength="20" value="${esc(x.telefone)}" placeholder="(11) 99999-0000"></label>
+    <label class="c8">Chave Pix<input name="pix" class="campo" maxlength="80" value="${esc(x.pix)}"></label>
+    <label class="c4">Função<input name="funcao" class="campo" maxlength="40" value="${esc(x.funcao)}" placeholder="Ex.: Ajud. cozinha"></label>
+    <label class="c4">Diária (R$)<input name="diaria" class="campo" inputmode="decimal" value="${numero(x.diaria, 2)}"></label>
+    <label class="c4 marcar"><input type="checkbox" name="ativo"${x.ativo ? ' checked' : ''}> Ativo</label>
+    <div class="c12 sub" style="margin-top:4px"><b>Contratação</b> (documentos conferidos)</div>
+    <label class="c4 marcar"><input type="checkbox" name="docId"${x.doc_identidade ? ' checked' : ''}> Documento com foto</label>
+    <label class="c4 marcar"><input type="checkbox" name="docEnd"${x.doc_endereco ? ' checked' : ''}> Comprovante de endereço</label>
+    <label class="c4">Termo assinado em<input name="termo" type="date" class="campo" value="${x.termo_assinado_em || ''}"></label>
+    <label class="c4 marcar"><input type="checkbox" name="bloq"${x.bloqueado ? ' checked' : ''}> Bloqueado (não chamar)</label>
+    <label class="c8">Motivo do bloqueio<input name="motivo" class="campo" maxlength="200" value="${esc(x.motivo_bloqueio || '')}"></label>
+    <label class="c12">Observação<input name="obs" class="campo" maxlength="200" value="${esc(x.obs)}"></label></div>
+    ${fl ? `<div class="form-nota">Últimos 30 dias: ${h.trinta} diária(s)${h.texto ? ' · <b>' + esc(h.texto) + '</b>' : ''} · avaliação ${av ? numero(av.media, 1) + ' em ' + av.n + ' dia(s)' : 'sem nota'}.</div>` : ''}`, 'Salvar', async f => {
+    const cpf = f.cpf.value.replace(/\D/g, ''), diaria = Number(f.diaria.value.replace(/\./g, '').replace(',', '.') || 0);
+    if (f.nome.value.trim().length < 2) return 'Informe o nome.';
+    if (cpf && cpf.length !== 11) return 'CPF com 11 números (ou deixe em branco).';
+    if (!(diaria >= 0)) return 'Diária inválida.';
+    if (f.bloq.checked && !f.motivo.value.trim()) return 'Diga o motivo do bloqueio (aparece para quem for chamar).';
+    if (cpf && ESC.freelancers().some(y => y.cpf === cpf && y.id !== fl?.id)) return 'Já existe freelancer com este CPF.';
+    if (foto) { const m = mudouDesde(foto, ESC.freelancers().find(y => y.id === fl.id), ['atualizado_em'], 'Este cadastro'); if (m) return m; }
+    return ESC.salvar('freelancers', { nome: f.nome.value.trim(), cpf: cpf || null, telefone: f.tel.value.trim(), pix: f.pix.value.trim(), funcao: f.funcao.value.trim(), diaria,
+      ativo: f.ativo.checked, obs: f.obs.value.trim(), doc_identidade: f.docId.checked, doc_endereco: f.docEnd.checked, termo_assinado_em: f.termo.value || null,
+      bloqueado: f.bloq.checked, motivo_bloqueio: f.bloq.checked ? f.motivo.value.trim() : '' }, foto);
+  });
+  return v;
+}
+
+/* ---------- Custos (por empresa e unidade, por motivo) ---------- */
+function abaCustos() {
+  const l = FL.custo(filtro), motivos = Object.keys(ESC.MOTIVOS);
+  const pago = l.filter(i => i.conta?.pago), falta = l.filter(i => i.x.motivo === 'falta');
+  const porFl = {}; l.forEach(i => { (porFl[i.x.freelancer_id] = porFl[i.x.freelancer_id] || []).push(i); });
+  const top = Object.entries(porFl).sort((a, b) => FL.soma(b[1]) - FL.soma(a[1])).slice(0, 8);
+  $('kpis').innerHTML = kpis([
+    ['Custo com freelancers', soma(l), porEmpresa(l, x => soma(x).replace('R$', '').trim())],
+    ['Diárias', l.length, `${Object.keys(porFl).length} freelancer(s)`],
+    ['Cobrindo faltas', soma(falta), `${falta.length} diária(s) · custo extra das faltas`],
+    ['Já pago', soma(pago), `a pagar ou sem conta: ${soma(l.filter(i => !i.conta?.pago))}`],
+    ['Custo médio da diária', reais(l.length ? FL.soma(l) / l.length : 0), '']
+  ]);
+  const linha = (rot, x, cls = '') => `<tr${cls}><td>${rot}</td>${motivos.map(m => { const s = x.filter(i => i.x.motivo === m); return `<td class="num">${s.length ? soma(s) : '<span class="sub">—</span>'}</td>`; }).join('')}<td class="num">${x.length}</td><td class="num"><b>${soma(x)}</b></td></tr>`;
+  const corpo = EMPRESAS.map(e => { const le = l.filter(i => i.empresa === e.id); if (!le.length) return '';
+    const uns = [...new Set(le.map(i => i.un))].sort();
+    return `<tr class="grupo"><td colspan="${motivos.length + 3}">${esc(e.nome)}</td></tr>` + uns.map(u => linha(esc(nomeUnidade(u)), le.filter(i => i.un === u))).join('')
+      + (uns.length > 1 ? linha(`<b>Total ${esc(e.nome)}</b>`, le) : ''); }).join('');
+  return `<section class="cartao"><div class="cartao-cab"><h2>Por unidade e motivo</h2></div><div class="rolagem"><table class="tabela"><thead><tr><th>Unidade</th>${motivos.map(m => `<th class="num">${esc(ESC.MOTIVOS[m])}</th>`).join('')}<th class="num">Diárias</th><th class="num">Total</th></tr></thead><tbody>
+    ${corpo || `<tr><td colspan="${motivos.length + 3}" class="vazio">Nenhuma diária no período.</td></tr>`}</tbody>${l.length ? `<tfoot>${linha('<b>Todas as empresas</b>', l)}</tfoot>` : ''}</table></div></section>
+    <section class="cartao"><div class="cartao-cab"><h2>Quem mais custou no período</h2></div><div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Freelancer</th><th>Empresas</th><th class="num">Diárias</th><th class="num">Valor</th><th class="num">Pago</th></tr></thead><tbody>
+    ${top.map(([id, x]) => `<tr data-freela="${id}" tabindex="0"><td><b>${esc(ESC.freelancer(id).nome)}</b></td><td>${etqEmpresas([...new Set(x.map(i => i.empresa))])}</td><td class="num">${x.length}</td><td class="num">${soma(x)}</td><td class="num">${soma(x.filter(i => i.conta?.pago))}</td></tr>`).join('')
+      || '<tr><td colspan="5" class="vazio">—</td></tr>'}</tbody></table></div></section>
+    <div class="form-nota">Custo = diárias combinadas ou trabalhadas no período (canceladas e "não veio" ficam fora). O mesmo número entra no custo de pessoal de cada unidade.</div>`;
+}
+
+function desenhar() {
+  $('abas').querySelectorAll('button').forEach(b => b.classList.toggle('ativa', b.dataset.aba === aba));
+  $('conteudo').innerHTML = { diarias: abaDiarias, cadastro: abaCadastro, custos: abaCustos }[aba]();
+}
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (b) { aba = b.dataset.aba; desenhar(); } };
+$('btnNovo').onclick = () => ESC.janelaDiaria(null, { unidade: filtro.unidade || 'loja1' });
+$('btnNovoFl').onclick = () => editarFreela(null);
+$('conteudo').onclick = e => {
+  const t = e.target, d = s => t.closest(`[${s}]`)?.getAttribute(s);
+  if (t.closest('a[href]')) return;
+  if (t.closest('[data-pagartodas]')) return gerarPagamentos(aPagar(diarias()));
+  if (d('data-pagar')) return gerarPagamentos(diarias().filter(i => i.x.id === d('data-pagar')));
+  if (d('data-veio')) return marcar(d('data-veio'), 'trabalhou');
+  if (d('data-naoveio')) return marcar(d('data-naoveio'), 'nao_veio');
+  if (d('data-recibo')) { const m = FL.recibo(d('data-recibo'), filtro.de, filtro.ate); if (m) janela('Recibo', `<p>${esc(m)}</p>`, 'OK', () => ''); return; }
+  if (d('data-diaria')) return ESC.janelaDiaria(ESC.diarias().find(x => x.id === d('data-diaria')));
+  if (d('data-freela')) return editarFreela(ESC.freelancers().find(x => x.id === d('data-freela')));
+};
+$('conteudo').onkeydown = e => { if (e.key === 'Enter' && e.target.matches('tr[tabindex]')) e.target.click(); };
+$('btnExportar').onclick = () => aba === 'cadastro'
+  ? exportarCSV('freelancers', ['Nome', 'Situação', 'Função', 'Telefone', 'Pix', 'Diária', 'Ficha pendente', 'Termo assinado', 'Avaliação', 'Diárias 30 dias', 'Motivo do bloqueio'],
+      freelasFiltrados().map(f => { const av = FL.avaliacao(f.id); return [f.nome, FL.situacao(f), f.funcao, f.telefone, f.pix, numero(f.diaria, 2), FL.pendencias(f).join(', '),
+        f.termo_assinado_em ? dataBR(f.termo_assinado_em + 'T12:00') : '', av ? numero(av.media, 1) : '', FL.habitualidade(f.id).trinta, f.motivo_bloqueio || '']; }))
+  : exportarCSV('diarias-freelancer', ['Empresa', 'Unidade', 'Dia', 'Freelancer', 'Função', 'Entrada', 'Saída', 'Chegou', 'Saiu', 'Motivo', 'Cobre', 'Valor', 'Situação', 'Avaliação', 'Pagamento'],
+      diarias().map(i => [nomeEmpresa(i.empresa), nomeUnidade(i.un), dataBR(i.x.data + 'T12:00'), i.fl.nome, i.x.funcao, ESC.hm(i.x.entrada), ESC.hm(i.x.saida), ESC.hm(i.x.entrada_real), ESC.hm(i.x.saida_real),
+        ESC.MOTIVOS[i.x.motivo], i.x.cobre_colaborador_id ? colab(i.x.cobre_colaborador_id).nome : '', numero(i.valor, 2), ESC.SITUACOES[i.x.situacao], i.x.avaliacao || '',
+        i.conta ? (i.conta.pago ? 'pago' : 'a pagar') : '']));
+ESC.aoGravar = desenhar;
+vigiarDados(['colaboradores', 'freelancers', 'freela_diarias', 'contas_pagar', 'unidades'], desenhar);
+desenhar();
+ESC.garantirPagar().then(desenhar).catch(e => console.warn('Contas a pagar:', e.message));
+</script>
+</body>
+</html>

@@ -27,6 +27,9 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
   `assets/js/escala.js` (ESC) é a regra da escala num lugar só (dia de cada pessoa, cobertura mínima, faltas, pagamento de freelancer);
   a folha desconta falta direto da escala (`ESC.faltasNoMes`), sem lançamento. `UNIDADE_EMPRESA` mora em menu.js.
   Colaboradores reais entram pela tela (Novo ou "Importar planilha"), nunca pelo repositório.
+- Freelancers: `assets/js/freelas.js` (FL) tem a regra num lugar só: ficha de contratação (documentos, termo), bloqueio,
+  frequência alta (risco de vínculo, `FL.REGRA`), avaliação, custo (`FL.custo(filtro)`) e pagamento. Pagamento no banco pela função
+  `gerar_pagamento_freela` (uma conta a pagar para uma ou mais diárias, tudo ou nada). Tela: `pages/rh-freelancers.html`.
 - PDV no banco: `caixas` e `vendas` (registro inteiro em `dados` jsonb, colunas de busca calculadas). `assets/js/caixas-banco.js`
   (na casca) carrega CAIXAS/VENDAS antes das abas, grava o que as telas mudaram (ao ouvir `avisarMudanca('caixas'|'vendas')`)
   com conferência e aplica o Realtime no mesmo objeto. Um PDV só tem um caixa aberto (índice único). Início mostra "Caixas agora".
