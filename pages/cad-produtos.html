@@ -55,7 +55,10 @@ const COLUNAS = '*, produto_precos(preco, unidades(codigo))';
 // Vazia = padrão: 1.02 Convênios PJ se for preço de convênio, senão 1.01 Vendas nas lojas.
 const catsReceita = () => { try { return (casca().dadosBanco?.lista('categorias_financeiras') || []).filter(c => c.tipo === 'receita' && c.ativo !== false)
   .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true })); } catch { return []; } };
-if (REAL) { try { casca().dadosBanco?.garantir('categorias_financeiras').catch(() => {}); } catch {} }
+const catsFin = () => { try { return casca().dadosBanco?.lista('categorias_financeiras') || []; } catch { return []; } };
+const catFinTxt = p => { const c = categoriaDaVenda(p, catsFin()); return `<br><small class="sub" title="Categoria financeira: linha da DRE onde a venda entra">${esc(c.codigo)} ${esc(c.nome)}${p.catFin ? '' : ' · padrão'}</small>`; };
+const strip = h => String(h).replace(/<[^>]*>/g, ' ');
+if (REAL) { try { casca().dadosBanco?.garantir('categorias_financeiras').then(() => desenhar()).catch(() => {}); } catch {} }
 let lojas = [];                                 // lojas do banco: { id, codigo, nome }
 const semCusto = p => !p.comp.length;
 
@@ -91,7 +94,7 @@ const montarCategorias = () => { const v = selCat.value, cats = [...new Set(prod
 const emps = () => filtro.empresa ? [filtro.empresa] : EMPRESAS.map(e => e.id);
 const fora = p => !semCusto(p) && emps().some(e => margemProduto(p, e).cmv > metaCMV(p));
 const nomeComponente = c => c.tipo === 'ficha' ? (FICHAS.find(f => f.id === c.ref) || {}).nome : insumo(c.ref).nome;
-const textoBusca = p => [p.nome, p.codigo, p.grupo, p.convenio ? 'convenio' : '', p.comp.map(nomeComponente).join(' '), ...emps().map(e => numero(p.precos[e], 2))].join(' ');
+const textoBusca = p => [p.nome, p.codigo, p.grupo, REAL ? strip(catFinTxt(p)) : '', p.convenio ? 'convenio' : '', p.comp.map(nomeComponente).join(' '), ...emps().map(e => numero(p.precos[e], 2))].join(' ');
 const porUn = p => p.un === 'kg' ? '/kg' : '';
 const corCMV = (m, p) => m.cmv > metaCMV(p) ? 'desce' : 'sobe';
 const etqs = p => (p.convenio ? ' <span class="etiqueta" title="Preço de convênio: não é venda ao consumidor">convênio</span>' : '')
@@ -127,7 +130,7 @@ function desenhar() {
     cab = `<tr><th>Produto</th><th class="so-largo">Grupo</th><th class="num">Preço</th><th class="num">Custo</th><th class="num so-largo" title="Imposto da ${esc(nomeEmpresa(e))} (${numero(IMPOSTO_EMPRESA[e], 1)}%) + cartão (${numero(TAXA_CARTAO, 1)}%)">Imposto + cartão</th>
       <th class="num">Margem</th><th class="num">CMV</th><th class="num so-largo">Meta</th><th class="num so-largo" title="Preço para chegar exatamente na meta de CMV">Preço p/ meta</th></tr>`;
     linha = p => { const m = margemProduto(p, e), s = semCusto(p);
-      return `<tr data-id="${p.id}" tabindex="0"${p.ativo ? '' : ' class="inativa"'}><td><b>${esc(p.nome)}</b> <small class="sub mono">${esc(p.codigo)}</small>${etqs(p)}</td><td class="so-largo">${esc(p.grupo)}</td>
+      return `<tr data-id="${p.id}" tabindex="0"${p.ativo ? '' : ' class="inativa"'}><td><b>${esc(p.nome)}</b> <small class="sub mono">${esc(p.codigo)}</small>${etqs(p)}</td><td class="so-largo">${esc(p.grupo)}${REAL ? catFinTxt(p) : ''}</td>
         <td class="num">${m.preco ? `<b>${reais(m.preco)}</b>${porUn(p)}` : tr}</td><td class="num">${s ? sc : reais(m.custo)}</td><td class="num so-largo">${m.preco ? reais(m.desp) : tr}</td>
         <td class="num">${s || !m.preco ? tr : `${reais(m.margem)} <small class="sub">${pct(m.pct)}</small>`}</td><td class="num ${s ? '' : corCMV(m, p)}">${s || !m.preco ? tr : pct(m.cmv)}</td>
         <td class="num so-largo">${pct(metaCMV(p))}</td><td class="num so-largo">${s ? tr : m.cmv > metaCMV(p) || !m.preco ? reais(precoParaCMV(m.custo, metaCMV(p))) : '<span class="sub">ok</span>'}</td></tr>`; };
@@ -136,7 +139,7 @@ function desenhar() {
     cab = `<tr><th rowspan="2">Produto</th><th rowspan="2" class="so-largo">Grupo</th><th rowspan="2" class="num">Custo</th>${es.map(e => `<th colspan="3" class="emp">${etqEmpresa(e)}</th>`).join('')}</tr>
       <tr>${es.map(() => `<th class="num emp">Preço</th><th class="num">Margem</th><th class="num">CMV</th>`).join('')}</tr>`;
     linha = p => { const s = semCusto(p);
-      return `<tr data-id="${p.id}" tabindex="0"${p.ativo ? '' : ' class="inativa"'}><td><b>${esc(p.nome)}</b> <small class="sub mono">${esc(p.codigo)}</small>${etqs(p)}</td><td class="so-largo">${esc(p.grupo)}</td>
+      return `<tr data-id="${p.id}" tabindex="0"${p.ativo ? '' : ' class="inativa"'}><td><b>${esc(p.nome)}</b> <small class="sub mono">${esc(p.codigo)}</small>${etqs(p)}</td><td class="so-largo">${esc(p.grupo)}${REAL ? catFinTxt(p) : ''}</td>
       <td class="num">${s ? sc : reais(custoProduto(p))}</td>${es.map(e => { const m = margemProduto(p, e);
         return `<td class="num emp">${m.preco ? `<b>${reais(m.preco)}</b>${porUn(p)}` : tr}</td><td class="num">${s || !m.preco ? tr : pct(m.pct)}</td><td class="num ${s ? '' : corCMV(m, p)}">${s || !m.preco ? tr : pct(m.cmv)}</td>`; }).join('')}</tr>`; };
   }
@@ -375,7 +378,7 @@ $('btnExportar').onclick = () => exportarCSV('cardapio-margens', ['Código', 'Pr
     return [p.codigo, p.nome, p.grupo, p.un, p.convenio ? 'sim' : 'não', p.ativo ? 'sim' : 'não', s ? '' : numero(m.custo, 2), nomeEmpresa(e), m.preco ? numero(m.preco, 2) : '', numero(m.desp, 2),
       s ? '' : numero(m.margem, 2), s ? '' : numero(m.pct, 1), s ? '' : numero(m.cmv, 1), numero(metaCMV(p), 0)]; })));
 // Ficha técnica, custo de insumo ou produto mudou em outra aba: custo, margem e CMV se recalculam sozinhos
-vigiarDados(['produtos', 'fichas', 'insumos'], desenhar);
+vigiarDados(['produtos', 'fichas', 'insumos', 'categorias_financeiras'], desenhar);
 
 (async () => {
   if (REAL) {

@@ -91,7 +91,8 @@ const INSUMOS = dadoComum('INSUMOS', () => [
   ['i15', 'Suco natural laranja 1 L',  'Bebidas',    'un',  7.50, 30, 'f4'],
   ['i16', 'Marmitex alumínio nº 9',    'Embalagens', 'un',  0.62, 500, 'f5'],
   ['i17', 'Gás P45',                   'Gás',        'un', 410.00, 2, 'f6']
-].map(([id, nome, categoria, un, custo, min, fornecedor]) => ({ id, codigo: id.toUpperCase(), nome, categoria, un, custo, min, fornecedor, ncm: '', ativo: true })));
+].map(([id, nome, categoria, un, custo, min, fornecedor]) => ({ id, codigo: id.toUpperCase(), nome, categoria, un, custo, min, fornecedor, ncm: '', ativo: true,
+  catFin: { Carnes: '3.01', 'Hortifrúti': '3.02', Mercearia: '3.03', Bebidas: '3.04', Embalagens: '3.05', 'Gás': '3.06' }[categoria] || '' })));
 
 /* ---------- Eventos da folha (proventos e descontos) ---------- */
 // inc: incide em INSS / FGTS / IRRF
@@ -309,6 +310,14 @@ const produtoDoBanco = r => {
   return { id: r.id, codigo: r.codigo, nome: r.nome, grupo: r.categoria, un: r.vende_por, perda: 0, comp: [], precos, precosUn,
     convenio: !!r.convenio, ativo: !!r.ativo, catFin: r.categoria_financeira_id || null, atualizadoEm: r.atualizado_em, doBanco: true };
 };
+// Categoria financeira (receita) da venda de um produto: a do cadastro ou o padrão.
+// É a única conta disso: DRE, relatórios e telas chamam esta função.
+const CATEGORIA_VENDA_PADRAO = p => p.convenio ? '1.02' : '1.01';
+function categoriaDaVenda(p, cats) {
+  const lista = cats || [];
+  return (p.catFin && lista.find(c => c.id === p.catFin)) || lista.find(c => c.tipo === 'receita' && c.codigo === CATEGORIA_VENDA_PADRAO(p))
+    || { codigo: CATEGORIA_VENDA_PADRAO(p), nome: p.convenio ? 'Convênios PJ' : 'Vendas nas lojas', padrao: true };
+}
 // Depois de gravar: troca a lista de todas as abas de uma vez (mesmo objeto, as outras telas veem na hora)
 function trocarProdutosBanco(linhas) {
   casca().__gsDados.PRODUTOS_BANCO = linhas;
