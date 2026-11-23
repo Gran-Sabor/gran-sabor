@@ -50,7 +50,12 @@
 // Mesma lista de todas as abas (PDV, ficha técnica, vendas); o custo é sempre calculado na hora
 const produtos = PRODUTOS_VENDA;
 const REAL = PRODUTOS_DO_BANCO;                 // cardápio real vindo do banco
-const COLUNAS = 'id, codigo, nome, categoria, vende_por, convenio, ativo, atualizado_em, produto_precos(preco, unidades(codigo))';
+const COLUNAS = '*, produto_precos(preco, unidades(codigo))';
+// Categoria financeira (receita) do produto: é ela que leva a venda para a linha certa da DRE.
+// Vazia = padrão: 1.02 Convênios PJ se for preço de convênio, senão 1.01 Vendas nas lojas.
+const catsReceita = () => { try { return (casca().dadosBanco?.lista('categorias_financeiras') || []).filter(c => c.tipo === 'receita' && c.ativo !== false)
+  .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true })); } catch { return []; } };
+if (REAL) { try { casca().dadosBanco?.garantir('categorias_financeiras').catch(() => {}); } catch {} }
 let lojas = [];                                 // lojas do banco: { id, codigo, nome }
 const semCusto = p => !p.comp.length;
 
@@ -235,6 +240,8 @@ function editarBanco(p) {
       <datalist id="listaCat">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
       <label class="c3 marcar"><input type="checkbox" name="convenio"${p.convenio ? ' checked' : ''}> Preço de convênio PJ</label>
       <label class="c3 marcar"><input type="checkbox" name="ativo"${p.ativo ? ' checked' : ''}> Ativo</label>
+      <label class="c6">Categoria financeira (DRE)<select name="catFin" class="campo"><option value="">Padrão (1.01 vendas · 1.02 convênio)</option>
+        ${catsReceita().map(c => `<option value="${c.id}"${c.id === p.catFin ? ' selected' : ''}>${esc(c.codigo)} ${esc(c.nome)}</option>`).join('')}</select></label>
     </div>
     <div class="sub-tit">Preço por loja <span class="sub">vazio = não vende nessa loja${p.un === 'kg' ? ' · preço do kg' : ''}</span></div>
     <table class="tabela"><thead><tr><th>Loja</th><th class="num" style="width:140px">Preço</th></tr></thead><tbody>
@@ -248,7 +255,7 @@ function editarBanco(p) {
     const precos = []; let erro = '';
     fm.querySelectorAll('[data-loja]').forEach(i => { if (!i.value.trim()) return; const x = n(i.value); if (!(x > 0)) erro = 'Preço inválido: use números, ex.: 21,90.'; else precos.push({ unidade_id: i.dataset.loja, preco: Math.round(x * 100) / 100 }); });
     if (erro) return erro;
-    const d = { nome, categoria, vende_por: fm.un.value, convenio: fm.convenio.checked, ativo: fm.ativo.checked };
+    const d = { nome, categoria, vende_por: fm.un.value, convenio: fm.convenio.checked, ativo: fm.ativo.checked, categoria_financeira_id: fm.catFin.value || null };
     let id = p.id;
     if (novo) {
       const { data, error } = await db.from('produtos').insert({ ...d, codigo }).select('id').single();

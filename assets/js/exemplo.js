@@ -307,7 +307,7 @@ const produtoDoBanco = r => {
   const precosUn = {}, precos = {};
   (r.produto_precos || []).forEach(x => { const un = x.unidades?.codigo; if (!un) return; precosUn[un] = Number(x.preco); if (UNIDADE_EMPRESA[un]) precos[UNIDADE_EMPRESA[un]] = Number(x.preco); });
   return { id: r.id, codigo: r.codigo, nome: r.nome, grupo: r.categoria, un: r.vende_por, perda: 0, comp: [], precos, precosUn,
-    convenio: !!r.convenio, ativo: !!r.ativo, atualizadoEm: r.atualizado_em, doBanco: true };
+    convenio: !!r.convenio, ativo: !!r.ativo, catFin: r.categoria_financeira_id || null, atualizadoEm: r.atualizado_em, doBanco: true };
 };
 // Depois de gravar: troca a lista de todas as abas de uma vez (mesmo objeto, as outras telas veem na hora)
 function trocarProdutosBanco(linhas) {

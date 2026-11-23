@@ -3,6 +3,8 @@
    Estrutura: linha da DRE > grupo (número) > categoria (código 0.00).
    Os números dos grupos são os mesmos da importação do fluxo de caixa
    (financeiro.js: 3 = CMV, 4 = Folha...), para as duas cargas casarem.
+   Alocação: categoria "do escritório" é rateada entre as lojas no resultado
+   (regra do rateio ainda em aberto: partes iguais ou proporcional ao faturamento).
    Aqui mora só a ESTRUTURA (nomes genéricos), nunca valores nem nomes de
    pessoas: a planilha de DRE entra pela tela (botão "Importar DRE") e
    nada dela vai para o repositório.
@@ -28,7 +30,7 @@ const PLANO_DRE = (() => {
     11: { grupo: 'Investimentos', dre: 'Investimentos' }
   };
 
-  // [código, nome, natureza (f = fixa), linha da DRE se diferente da do grupo, nomes como aparecem na planilha]
+  // [código, nome, marcas (f = fixa, e = do escritório: rateada entre as lojas), linha da DRE se diferente da do grupo, nomes como aparecem na planilha]
   const CATS = [
     ['1.01', 'Vendas nas lojas (recebido)', '', '', ['vendas brutas']],
     ['1.02', 'Convênios PJ', '', '', []],
@@ -53,19 +55,22 @@ const PLANO_DRE = (() => {
     ['4.14', 'Seguro de vida', 'f', '', ['seguro de vida']],
     ['4.15', 'Uniformes', '', '', ['uniformes']],
     ['4.16', 'Aniversários', '', '', ['aniversario']],
-    ['5.01', 'Aluguel', 'f', '', ['aluguel', 'aluguel escritorio']],
-    ['5.02', 'Contabilidade', 'f', '', ['contabilidade']],
+    ['5.01', 'Aluguel', 'f', '', ['aluguel']],
+    ['5.02', 'Contabilidade', 'fe', '', ['contabilidade']],
     ['5.03', 'Sistema de caixa', 'f', '', ['sistema de caixa']],
-    ['5.04', 'Telefone e internet', 'f', '', ['telefone / internet', 'telefone / internet escritorio']],
+    ['5.04', 'Telefone e internet', 'f', '', ['telefone / internet']],
     ['5.05', 'Água', 'f', '', ['agua']],
-    ['5.06', 'Energia elétrica', 'f', '', ['luz', 'luz escritorio']],
+    ['5.06', 'Energia elétrica', 'f', '', ['luz']],
     ['5.07', 'Gás', '', '', ['gas']],
-    ['5.08', 'Material de escritório', '', '', ['material escritorio']],
+    ['5.08', 'Material de escritório', 'e', '', ['material escritorio']],
     ['5.09', 'Eventos internos', '', '', ['eventos internos']],
     ['5.10', 'Dedetização', 'f', '', ['detetizacao', 'dedetizacao']],
     ['5.11', 'Cartórios', '', '', ['cartorios']],
     ['5.12', 'Confraternização', '', '', ['confraternizacao']],
-    ['5.13', 'Pró-labore', 'f', '', ['prolabore', 'pro-labore']],
+    ['5.13', 'Pró-labore', 'fe', '', ['prolabore', 'pro-labore']],
+    ['5.14', 'Aluguel do escritório', 'fe', '', ['aluguel escritorio']],
+    ['5.15', 'Energia elétrica do escritório', 'fe', '', ['luz escritorio']],
+    ['5.16', 'Telefone e internet do escritório', 'fe', '', ['telefone / internet escritorio']],
     ['6.01', 'Elétrica', '', '', ['eletrica manutencao + mao de obra']],
     ['6.02', 'Hidráulica', '', '', ['hidraulica manutencao + mao de obra']],
     ['6.03', 'Computadores', '', '', ['computadores materias + mao de obra']],
@@ -100,8 +105,9 @@ const PLANO_DRE = (() => {
     ['11.02', 'Obras e reformas', '', '', []],
     ['11.03', 'Móveis e utensílios', '', '', []],
     ['11.04', 'Veículos (compra)', '', '', []]
-  ].map(([codigo, nome, nat, dre, nomes]) => { const g = GRUPOS[codigo.split('.')[0]];
-    return { codigo, nome, grupo: g.grupo, tipo: g.tipo || 'despesa', dre: dre || g.dre, natureza: nat ? 'fixa' : 'variavel', nomes }; });
+  ].map(([codigo, nome, m, dre, nomes]) => { const g = GRUPOS[codigo.split('.')[0]];
+    return { codigo, nome, grupo: g.grupo, tipo: g.tipo || 'despesa', dre: dre || g.dre, natureza: m.includes('f') ? 'fixa' : 'variavel',
+      alocacao: m.includes('e') ? 'escritorio' : 'unidade', nomes }; });
 
   // Títulos de bloco da planilha → grupo de quem vem abaixo (linha que não está no plano entra nesse grupo)
   const BLOCOS = [[/^impostos$/, 2], [/^custo de mp/, 3], [/^folha de pagamento func/, 4], [/^despesas marketing/, 8],
@@ -132,7 +138,7 @@ const PLANO_DRE = (() => {
         if (bloco === 10) { credores++; continue; }
         if (!bloco) continue;                           // linha solta antes do primeiro bloco
         const g = GRUPOS[bloco], dre = bloco === 9 && k.includes('jur') ? 'Resultado financeiro' : g.dre;
-        if (![...novas.values()].some(n => chave(n.nome) === k)) novas.set(k, { nome: capital(txt).slice(0, 80), grupo: g.grupo, n: bloco, tipo: 'despesa', dre, natureza: 'variavel', aba: nome });
+        if (![...novas.values()].some(n => chave(n.nome) === k)) novas.set(k, { nome: capital(txt).slice(0, 80), grupo: g.grupo, n: bloco, tipo: 'despesa', dre, natureza: 'variavel', alocacao: /escritorio/.test(k) ? 'escritorio' : 'unidade', aba: nome });
       }
     });
     return { achadas, novas: [...novas.values()], credores, lidas };

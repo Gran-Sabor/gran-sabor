@@ -195,6 +195,7 @@ const RESC = (() => {
     if (REAL) {
       const cats = cb().lista('categorias_financeiras').filter(x => x.tipo === 'despesa' && x.ativo);
       const cat = cats.find(x => /rescis/i.test(x.nome)) || cats.find(x => /sal[aá]rio|folha/i.test(x.nome)) || cats.find(x => /pessoal|folha/i.test(x.grupo)) || null;
+      if (!cat) return 'Cadastre antes uma categoria financeira de folha (ex.: 4.10 Rescisões) em Cadastros › Categoria financeira: toda conta a pagar precisa de categoria.';
       const { error } = await banco().rpc('registrar_rescisao', { p_colaborador: c.id, p_visto_em: c.atualizado_em, p_tipo: op.tipo, p_aviso: agora.op.aviso,
         p_data_aviso: op.dataAviso, p_data_saida: op.saida, p_saldo_fgts: agora.fgtsEstimado ? null : agora.saldoFgts, p_obs: obs.slice(0, 500),
         p_liquido: agora.liquido, p_guia_fgts: agora.guiaFgts, p_categoria: cat?.id || null, p_favorecido: fav, p_vencimento: agora.prazo });

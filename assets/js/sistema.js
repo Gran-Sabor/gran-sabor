@@ -88,7 +88,8 @@ async function atualizarUnidades() {
 /* ---------- Cardápio real (produtos + preço por loja) ----------
    Lido uma vez aqui, antes de abrir as telas: todas as abas usam a mesma lista (dadoComum).
    Se a tabela ainda não existir no banco, as telas seguem com o exemplo. */
-const COLUNAS_PRODUTOS = 'id, codigo, nome, categoria, vende_por, convenio, ativo, atualizado_em, produto_precos(preco, unidades(codigo))';
+// '*' de propósito: coluna nova no banco (ex.: categoria financeira) não quebra a leitura enquanto a migração não chega
+const COLUNAS_PRODUTOS = '*, produto_precos(preco, unidades(codigo))';
 async function carregarProdutos() {
   let raiz = window;
   try { while (raiz.parent !== raiz && raiz.parent.location.origin === location.origin) raiz = raiz.parent; } catch {}

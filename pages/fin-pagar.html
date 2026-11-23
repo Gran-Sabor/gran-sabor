@@ -162,7 +162,7 @@ function nova(c) {
       <label class="c3">Valor (R$)<input name="valor" class="campo" inputmode="decimal" value="${c.valor ? numero(c.valor, 2) : ''}"></label>
       <label class="c4">Unidade<select name="unidade" class="campo">${uns.map(u => `<option value="${u.id}"${u.id === c.unidade ? ' selected' : ''}>${esc(u.nome)} · ${esc(nomeEmpresa(UNIDADE_EMPRESA[u.id]))}</option>`).join('')}</select></label>
       ${REAL ? '' : '<label class="c4">Centro de custo<select name="centro" class="campo"></select></label>'}
-      <label class="${REAL ? 'c8' : 'c4'}">Categoria<select name="categoria" class="campo">${REAL ? '<option value="">Sem categoria</option>' : ''}${cats.map(k => `<option value="${k.id}"${k.id === c.categoria ? ' selected' : ''}>${k.codigo} ${esc(REAL ? k.grupo + ' › ' + k.nome : k.nome)}</option>`).join('')}</select></label>
+      <label class="${REAL ? 'c8' : 'c4'}">Categoria *<select name="categoria" class="campo">${REAL ? '<option value="">Escolha a categoria…</option>' : ''}${cats.map(k => `<option value="${k.id}"${k.id === c.categoria ? ' selected' : ''}>${k.codigo} ${esc(REAL ? k.grupo + ' › ' + k.nome : k.nome)}</option>`).join('')}</select></label>
       <label class="c4">${ed ? 'Vencimento' : '1º vencimento'}<input name="vencimento" type="date" class="campo" value="${c.vencimento}"></label>
       ${ed ? '' : `<label class="c4">Parcelas<input name="parcelas" type="number" min="1" max="24" class="campo" value="1"></label>
       <label class="c4 marcar"><input name="recorrente" type="checkbox"> Repetir todo mês (12×)</label>`}
@@ -172,6 +172,7 @@ function nova(c) {
     'Salvar', async f => {
       const valor = FIN.centavos(n(f.valor.value));
       if ((!REAL && !f.favorecido.value.trim()) || !(valor > 0)) return REAL ? 'Informe o valor.' : 'Informe favorecido e valor.';
+      if (!f.categoria.value) return 'Escolha a categoria: sem ela a conta não entra certo na DRE nem nos relatórios.';
       if (!REAL) {
         const dados = { favorecido: f.favorecido.value.trim(), documento: f.documento.value.trim(), unidade: f.unidade.value, empresa: UNIDADE_EMPRESA[f.unidade.value], centro: f.centro.value, categoria: f.categoria.value };
         if (ed) { const mudou = mudouDesde(foto, CONTAS_PAGAR.find(x => x.id === c.id), ['valor', 'vencimento', 'pagoEm', 'favorecido'], 'Esta conta'); if (mudou) return mudou;
@@ -184,7 +185,7 @@ function nova(c) {
         desenhar(); return avisarMudanca('contas_pagar');
       }
       const dados = { favorecido: f.favorecido.value.trim(), documento: f.documento.value.trim(), unidade_id: FIN.unidadePorCodigo(f.unidade.value).id,
-        categoria_id: f.categoria.value || null, obs: f.obs.value.trim() };
+        categoria_id: f.categoria.value, obs: f.obs.value.trim() };
       if (ed) {
         const { data, error } = await db.from('contas_pagar').update({ ...dados, valor, vencimento: f.vencimento.value })
           .eq('id', c.id).eq('atualizado_em', foto.atualizado_em).is('pago_em', null).select('id');
