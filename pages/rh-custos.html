@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custo por colaborador</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+<style>
+  .aus { display: inline-block; min-width: 20px; text-align: center; border-radius: 4px; font-size: 11px; font-weight: 700; padding: 1px 4px; margin-right: 2px; }
+  .aus.fa { background: var(--perigo); color: #fff; } .aus.at { background: #f6dfea; color: #8a2a5a; } .aus.ab { background: #e3f1ea; color: #2f7d4f; } .aus.hr { background: var(--fundo); color: var(--texto-2); }
+  tr.subtotal td { font-weight: 600; background: var(--fundo); }
+  .meses { display: inline-flex; gap: 2px; align-items: flex-end; height: 18px; vertical-align: middle; }
+  .meses i { display: block; width: 5px; background: var(--perigo); border-radius: 1px; min-height: 1px; opacity: .85; }
+  .meses i.zero { background: var(--borda); }
+  .compo td:first-child { color: var(--texto-2); }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Custo por colaborador</h1><span class="sub">Quanto cada pessoa custa no mês e quanto as faltas mudam esse custo · calculado na hora pela folha e pela escala</span>
+    <div class="dir"><span class="etiqueta exemplo oculto" id="etqExemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <span class="comp-nav"><button type="button" class="btn btn-ico" id="compAnt" aria-label="Mês anterior">‹</button><b id="compTxt"></b><button type="button" class="btn btn-ico" id="compProx" aria-label="Próximo mês">›</button></span>
+      <button type="button" class="btn" data-abrir="faltas_freelas">Faltas e freelancers</button>
+      <button type="button" class="btn" id="btnExportar">Exportar</button></div></div>
+  <div id="filtros"></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="custo" class="ativa">Custo do mês</button><button type="button" data-aba="faltas">Faltas e impacto (12 meses)</button></div>
+  <section class="kpis" id="kpis"></section>
+  <div id="conteudo"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=13"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/folha.js?v=3"></script>
+<script src="../assets/js/escala.js?v=1"></script>
+<script src="../assets/js/custos.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script>
+/* Nada é digitado aqui: tudo sai da folha (folha.js), da escala (escala.js) e das diárias de freelancer,
+   pela conta única de custos.js. Falta marcada na escala, lançamento, salário ou diária mudou em outra
+   tela (ou em outro computador)? Esta tela se refaz sozinha.
+   As 3 empresas sempre separadas: filtro, agrupamento, subtotal e quadro por empresa. */
+let comp = COMPETENCIA_ATUAL, aba = 'custo';
+$('etqExemplo').classList.toggle('oculto', ESC.REAL);
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador, matrícula, cargo… (atalho: /)' });
+const nomeCargo = c => CARGOS[c.cargo] || c.cargo || '';
+const naTela = c => noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade }) && casaBusca([c.nome, c.matricula, nomeCargo(c)].join(' '), filtro.busca);
+const kpis = l => l.map(([t, v, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${v}</div><div class="kpi-ctx">${c || ''}</div></div>`).join('');
+const porEmpresa = (lista, f) => EMPRESAS.map(e => `${e.nome.replace('Empresa ', 'E')}: ${f(lista.filter(x => x.c.empresa === e.id))}`).join(' · ');
+const sinal = v => v > 0.005 ? `<span class="desce">+${reais(v)}</span>` : v < -0.005 ? `<span class="sobe">${reais(v)}</span>` : '<span class="sub">—</span>';
+const ausTxt = x => [x.faltas && `<span class="aus fa" title="Faltas (descontam)">${x.faltas} FA</span>`, x.atestados && `<span class="aus at" title="Atestados (pagos)">${x.atestados} AT</span>`,
+  x.abonadas && `<span class="aus ab" title="Faltas abonadas (pagas)">${x.abonadas} AB</span>`, x.atrasoHoras && `<span class="aus hr" title="Horas de atraso">${numero(x.atrasoHoras, 1)} h</span>`].filter(Boolean).join('') || '<span class="sub">—</span>';
+
+/* ---------- Custo do mês ---------- */
+function abaCusto() {
+  const lista = CUSTO.competencia(comp, naTela), t = CUSTO.somar(lista);
+  const comAus = lista.filter(x => x.ausencias || x.atrasoHoras);
+  const encPct = t.salario ? (t.encargos + t.provisoes + t.vtEmpresa) / t.salario * 100 : 0;
+  $('kpis').innerHTML = kpis([
+    ['Custo total do mês', reais(t.total), porEmpresa(lista, l => reais(CUSTO.somar(l).total).replace('R$', '').trim())],
+    ['Custo médio por pessoa', reais(t.pessoas ? t.total / t.pessoas : 0), `${t.pessoas} pessoa(s) · por dia trabalhado ${reais(t.custoDia)}`],
+    ['Além do salário', pct(encPct), `encargos ${reais(t.encargos)} · 13º e férias ${reais(t.provisoes)} · VT ${reais(t.vtEmpresa)}`],
+    ['Ausências no mês', `<span class="${t.ausencias ? 'desce' : ''}">${numero(t.ausencias)}</span>`, `${numero(t.faltas)} falta(s) · absenteísmo ${pct(t.absenteismo)}`],
+    ['Impacto das ausências', sinal(t.impacto), `freelancer ${reais(t.freelancer)} · descontado ${reais(t.descontoAusencia)}`]
+  ]);
+  const grupos = EMPRESAS.map(e => [e, lista.filter(x => x.c.empresa === e.id)]).filter(([, l]) => l.length);
+  const linha = x => `<tr data-id="${x.c.id}" tabindex="0"><td><b>${esc(x.c.nome)}</b> <small class="sub">${esc(nomeCargo(x.c))}</small>${x.afastado ? ' <span class="etiqueta pendente">afastado (INSS)</span>' : ''}</td>
+    <td class="so-largo">${esc(nomeUnidade(x.c.unidade))}</td><td class="num">${reais(x.salario)}</td><td class="num so-largo">${reais(x.encargos)}</td><td class="num so-largo">${reais(x.provisoes)}</td>
+    <td class="num so-largo">${reais(x.vtEmpresa)}</td><td class="num so-largo">${x.freelancer ? reais(x.freelancer) : '<span class="sub">—</span>'}</td>
+    <td class="num"><b>${reais(x.total)}</b></td><td class="num so-largo">${x.trabalhados ? reais(x.custoDia) : '<span class="sub">—</span>'}${x.aumentoDia > 0.05 ? ` <small class="desce" title="Quanto o dia trabalhado ficou mais caro por causa das ausências">+${pct(x.aumentoDia)}</small>` : ''}</td>
+    <td>${ausTxt(x)}</td><td class="num">${x.ausencias || x.atrasoHoras ? sinal(x.impacto) : '<span class="sub">—</span>'}</td></tr>`;
+  const sub = (rot, l) => { const s = CUSTO.somar(l); return `<tr class="subtotal"><td>${rot}</td><td class="so-largo"></td><td class="num">${reais(s.salario)}</td><td class="num so-largo">${reais(s.encargos)}</td><td class="num so-largo">${reais(s.provisoes)}</td>
+    <td class="num so-largo">${reais(s.vtEmpresa)}</td><td class="num so-largo">${reais(s.freelancer)}</td><td class="num">${reais(s.total)}</td><td class="num so-largo">${reais(s.custoDia)}</td><td>${numero(s.ausencias)} aus.</td><td class="num">${sinal(s.impacto)}</td></tr>`; };
+  return `${comAus.length ? `<div class="aviso">${comAus.length} pessoa(s) com ausência em ${nomeComp(comp)}. As faltas já descontam no holerite; atestado e abono são pagos sem trabalho; freelancer que cobriu entra no custo de quem faltou.</div>` : ''}
+    <section class="cartao"><div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Colaborador</th><th class="so-largo">Unidade</th><th class="num">Salário e adicionais</th>
+      <th class="num so-largo" title="INSS patronal (conforme o regime) + FGTS 8%">Encargos</th><th class="num so-largo" title="1/12 de 13º + 1/12 de férias com 1/3, com encargos">13º e férias</th>
+      <th class="num so-largo" title="Vale-transporte pago pela empresa, já tirado o desconto de 6%">VT</th><th class="num so-largo" title="Diárias de freelancer que cobriram ausências desta pessoa">Cobertura</th>
+      <th class="num">Custo do mês</th><th class="num so-largo">Por dia trabalhado</th><th>Ausências</th><th class="num" title="Freelancer + dias pagos sem trabalho − desconto na folha">Impacto</th></tr></thead><tbody>
+    ${grupos.map(([e, l]) => `<tr class="grupo"><td colspan="11">${esc(e.nome)} <span class="sub">${l.length} · ${esc(CUSTO.NOME_REGIME[CUSTO.regimeDe(e.id)])}</span></td></tr>` + l.map(linha).join('') + sub('Subtotal ' + esc(e.nome), l)).join('')
+      || '<tr><td colspan="11" class="vazio">Ninguém com esses filtros neste mês.</td></tr>'}
+    ${grupos.length > 1 ? sub('Total', lista) : ''}</tbody></table></div></section>
+    <div class="form-nota">Clique numa pessoa para ver a conta. Encargos e provisões são de exemplo (o contador confirma o regime de cada empresa). Mudou a escala, um lançamento, o cadastro ou uma diária em outra tela? Esta tela se refaz sozinha.</div>`;
+}
+
+function detalhe(c) {
+  const x = CUSTO.mes(c, comp);
+  if (!x) return janela(c.nome, `<p>${esc(c.nome)} não estava contratado(a) em ${nomeComp(comp)}.</p>`, 'Fechar', () => {});
+  const l = (rot, v, cls = '') => `<tr class="${cls}"><td>${rot}</td><td class="num">${v}</td></tr>`;
+  const aliq = CUSTO.PATRONAL[x.regime];
+  janela(`Custo ${nomeComp(comp)} · ${c.nome}`, `<div class="sub">${esc(nomeEmpresa(c.empresa))} · ${esc(nomeUnidade(c.unidade))} · ${esc(nomeCargo(c))} · salário ${reais(c.salario)} · ${esc(CUSTO.NOME_REGIME[x.regime])}</div>
+    <table class="tabela compo"><tbody>
+      ${l('Salário e adicionais do holerite (já sem faltas e atrasos)', reais(x.salario))}
+      ${l(`INSS patronal (${pct(aliq * 100)} da base ${reais(x.h.baseInss)})`, reais(x.inssPatronal))}
+      ${l('FGTS 8%', reais(x.fgts))}
+      ${l('Provisão de 13º (1/12)', reais(x.prov13))}
+      ${l('Provisão de férias + 1/3 (1/12)', reais(x.provFerias))}
+      ${l('Encargos sobre 13º e férias', reais(x.encProvisoes))}
+      ${l(`Vale-transporte pago pela empresa (${x.trabalhados} dias, menos o desconto de 6%)`, reais(x.vtEmpresa))}
+      ${l(`Freelancer cobrindo ausências (${x.cobertura.length} diária${x.cobertura.length === 1 ? '' : 's'})`, reais(x.freelancer))}
+      ${l('<b>Custo do mês</b>', `<b>${reais(x.total)}</b>`, 'subtotal')}
+      ${l(`Por dia trabalhado (${x.trabalhados} de ${x.previstos} previstos)`, x.trabalhados ? reais(x.custoDia) : '—')}
+      ${l('Por dia, se não houvesse ausências', reais(x.custoDiaSemAus))}
+      ${l('Por hora contratada (220 h, sem freelancer)', reais(x.custoHora))}
+    </tbody></table>
+    <h3 class="sub-tit">Ausências e impacto no custo</h3>
+    <table class="tabela compo"><tbody>
+      ${l(`Faltas: ${x.faltasEscala} na escala${x.faltasLanc ? ` + ${numero(x.faltasLanc)} lançada(s)` : ''} · atrasos ${numero(x.atrasoHoras, 1)} h`, `<span class="sobe">− ${reais(x.descontoAusencia)}</span> <small class="sub">descontado</small>`)}
+      ${l(`Atestados (${x.atestados}) e faltas abonadas (${x.abonadas}): pagos sem trabalho, com encargos`, reais(x.pagoSemTrabalho))}
+      ${l('Freelancer para cobrir', reais(x.freelancer))}
+      ${l('<b>Impacto das ausências</b> (positivo = custaram mais do que foi descontado)', `<b>${sinal(x.impacto)}</b>`, 'subtotal')}
+      ${l('Absenteísmo do mês', pct(x.absenteismo))}
+    </tbody></table>
+    ${x.cobertura.length ? `<div class="form-nota"><b>Diárias que cobriram:</b> ${x.cobertura.map(d => `${ESC.dm(d.data)} ${esc(ESC.freelancer(d.freelancer_id).nome)} ${reais(d.valor)}`).join(' · ')}</div>` : ''}
+    <div class="form-nota">Faltas, atestados e abonos são marcados na <a href="#" data-abrir="escala">Escala</a>; o holerite desconta sozinho (<a href="#" data-abrir="holerites">Folha e holerites</a>). Tabelas de exemplo: o contador confirma.</div>`, 'Fechar', () => {});
+}
+
+/* ---------- Faltas e impacto (12 meses até a competência) ---------- */
+function dadosPeriodo() {
+  const ms = CUSTO.meses(comp, 12);
+  const porMes = ms.map(m => ({ m, lista: CUSTO.competencia(m, naTela) }));
+  const pessoas = {};
+  porMes.forEach(({ m, lista }) => lista.forEach(x => { (pessoas[x.c.id] ||= { c: x.c, meses: {}, itens: [] }).meses[m] = x; pessoas[x.c.id].itens.push(x); }));
+  return { ms, porMes, pessoas: Object.values(pessoas).map(p => ({ ...p, t: CUSTO.somar(p.itens) })) };
+}
+function abaFaltas() {
+  const { ms, porMes, pessoas } = dadosPeriodo(), todos = porMes.flatMap(p => p.lista), t = CUSTO.somar(todos);
+  const ranking = pessoas.filter(p => p.t.ausencias || p.t.atrasoHoras).sort((a, b) => b.t.ausencias - a.t.ausencias || b.t.impacto - a.t.impacto);
+  const top = ranking[0];
+  $('kpis').innerHTML = kpis([
+    ['Ausências em 12 meses', numero(t.ausencias), `${numero(t.faltas)} falta(s) · ${numero(t.atestados)} atestado(s) · ${numero(t.abonadas)} abonada(s)`],
+    ['Absenteísmo', pct(t.absenteismo), porEmpresa(todos, l => pct(CUSTO.somar(l).absenteismo))],
+    ['Descontado na folha', reais(t.descontoAusencia), 'faltas, DSR e atrasos'],
+    ['Gasto com cobertura', reais(t.freelancer), `pago sem trabalho ${reais(t.pagoSemTrabalho)}`],
+    ['Impacto no custo', sinal(t.impacto), top ? `mais ausências: ${esc(top.c.nome.split(' ')[0])} (${numero(top.t.ausencias)})` : 'ninguém faltou']
+  ]);
+  const max = Math.max(1, ...pessoas.flatMap(p => ms.map(m => p.meses[m]?.ausencias || 0)));
+  const mini = p => `<span class="meses" title="Ausências mês a mês (${nomeComp(ms[0])} a ${nomeComp(ms[11])})">${ms.map(m => { const n = p.meses[m]?.ausencias || 0;
+    return `<i class="${n ? '' : 'zero'}" style="height:${n ? Math.max(4, n / max * 18) : 2}px" title="${nomeComp(m)}: ${n}"></i>`; }).join('')}</span>`;
+  const grupos = EMPRESAS.map(e => [e, ranking.filter(p => p.c.empresa === e.id)]).filter(([, l]) => l.length);
+  const mesesTab = porMes.slice().reverse().map(({ m, lista }) => { const s = CUSTO.somar(lista);
+    return `<tr><td>${nomeComp(m)}</td>${EMPRESAS.map(e => `<td class="num">${numero(CUSTO.somar(lista.filter(x => x.c.empresa === e.id)).ausencias) || '<span class="sub">0</span>'}</td>`).join('')}
+      <td class="num">${pct(s.absenteismo)}</td><td class="num">${sinal(s.impacto)}</td></tr>`; }).join('');
+  return `<div class="grade-2">
+    <section class="cartao"><div class="cartao-cab"><h2>Quem faltou</h2><span class="dir sub">${nomeComp(ms[0])} a ${nomeComp(ms[11])}</span></div>
+      <div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Colaborador</th><th>Ausências</th><th class="so-largo">Mês a mês</th><th class="num">Absent.</th>
+        <th class="num so-largo">Descontado</th><th class="num so-largo">Freelancer</th><th class="num">Impacto</th></tr></thead><tbody>
+      ${grupos.map(([e, l]) => `<tr class="grupo"><td colspan="7">${esc(e.nome)} <span class="sub">${l.length}</span></td></tr>` + l.map(p => `<tr data-id="${p.c.id}" tabindex="0">
+        <td><b>${esc(p.c.nome)}</b> <small class="sub">${esc(nomeUnidade(p.c.unidade))}</small>${p.t.faltas >= 3 ? ' <span class="etiqueta perigo" title="3 faltas ou mais em 12 meses">recorrente</span>' : ''}</td>
+        <td>${ausTxt(p.t)}</td><td class="so-largo">${mini(p)}</td><td class="num">${pct(p.t.absenteismo)}</td>
+        <td class="num so-largo">${reais(p.t.descontoAusencia)}</td><td class="num so-largo">${reais(p.t.freelancer)}</td><td class="num">${sinal(p.t.impacto)}</td></tr>`).join('')).join('')
+        || '<tr><td colspan="7" class="vazio">Ninguém faltou nos últimos 12 meses com esses filtros.</td></tr>'}</tbody></table></div></section>
+    <section class="cartao"><div class="cartao-cab"><h2>Por mês</h2><span class="dir sub">ausências por empresa</span></div>
+      <div class="rolagem"><table class="tabela"><thead><tr><th>Mês</th>${EMPRESAS.map(e => `<th class="num">${esc(e.nome.replace('Empresa ', 'E'))}</th>`).join('')}<th class="num">Absent.</th><th class="num">Impacto</th></tr></thead>
+      <tbody>${mesesTab}</tbody></table></div></section></div>
+    <div class="form-nota">Ausência = falta, atestado ou falta abonada (escala e lançamentos do mês). Impacto = freelancer para cobrir + dias pagos sem trabalho − desconto na folha. Antes do sistema não há escala: os meses antigos aparecem zerados.</div>`;
+}
+
+function desenhar() {
+  $('compTxt').textContent = nomeComp(comp);
+  $('abas').querySelectorAll('button').forEach(b => b.classList.toggle('ativa', b.dataset.aba === aba));
+  $('conteudo').innerHTML = aba === 'custo' ? abaCusto() : abaFaltas();
+}
+const mudaComp = d => { const [a, m] = comp.split('-').map(Number), x = new Date(a, m - 1 + d, 1); comp = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`; desenhar(); };
+$('compAnt').onclick = () => mudaComp(-1); $('compProx').onclick = () => mudaComp(1);
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (b) { aba = b.dataset.aba; desenhar(); } };
+$('conteudo').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) detalhe(colab(tr.dataset.id)); };
+$('conteudo').onkeydown = e => { if (e.key === 'Enter' && e.target.matches('tr[data-id]')) e.target.click(); };
+$('btnExportar').onclick = () => {
+  if (aba === 'custo') return exportarCSV(`custo-colaboradores-${comp}`, ['Competência', 'Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Cargo', 'Salário e adicionais', 'INSS patronal', 'FGTS',
+    'Provisão 13º', 'Provisão férias', 'Encargos provisões', 'VT empresa', 'Freelancer cobertura', 'Custo do mês', 'Dias trabalhados', 'Dias previstos', 'Custo por dia', 'Faltas', 'Atestados', 'Abonadas', 'Atraso (h)',
+    'Descontado', 'Pago sem trabalho', 'Impacto ausências'],
+    CUSTO.competencia(comp, naTela).map(x => [nomeComp(comp), nomeEmpresa(x.c.empresa), nomeUnidade(x.c.unidade), x.c.matricula, x.c.nome, nomeCargo(x.c), ...[x.salario, x.inssPatronal, x.fgts, x.prov13, x.provFerias,
+      x.encProvisoes, x.vtEmpresa, x.freelancer, x.total].map(v => numero(v, 2)), x.trabalhados, x.previstos, numero(x.custoDia, 2), x.faltas, x.atestados, x.abonadas, numero(x.atrasoHoras, 1),
+      ...[x.descontoAusencia, x.pagoSemTrabalho, x.impacto].map(v => numero(v, 2))]));
+  const { ms, porMes } = dadosPeriodo();
+  exportarCSV(`faltas-impacto-${ms[0]}-a-${ms[11]}`, ['Competência', 'Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Faltas', 'Atestados', 'Abonadas', 'Atraso (h)', 'Dias previstos', 'Absenteísmo %', 'Descontado', 'Freelancer', 'Pago sem trabalho', 'Impacto'],
+    porMes.flatMap(({ m, lista }) => lista.filter(x => x.ausencias || x.atrasoHoras).map(x => [nomeComp(m), nomeEmpresa(x.c.empresa), nomeUnidade(x.c.unidade), x.c.matricula, x.c.nome, x.faltas, x.atestados, x.abonadas,
+      numero(x.atrasoHoras, 1), x.previstos, numero(x.absenteismo, 1), ...[x.descontoAusencia, x.freelancer, x.pagoSemTrabalho, x.impacto].map(v => numero(v, 2))])));
+};
+// Tudo o que entra na conta: se mudar em qualquer aba ou computador, a tela se refaz (Realtime pela casca)
+vigiarDados(['colaboradores', 'escala_dias', 'escala_padrao', 'escala_funcionamento', 'escala_turnos', 'feriados', 'freela_diarias', 'freelancers',
+  'lancamentos', 'eventos', 'adiantamentos', 'ferias', 'contas_pagar', 'unidades'], desenhar);
+desenhar();
+</script>
+</body>
+</html>

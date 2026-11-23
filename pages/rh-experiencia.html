@@ -26,7 +26,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="../assets/js/config.js?v=2"></script>
 <script src="../assets/js/banco.js?v=1"></script>
-<script src="../assets/js/menu.js?v=11"></script>
+<script src="../assets/js/menu.js?v=13"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=9"></script>
@@ -113,7 +113,7 @@ function editar(cId) {
       <tr><td>Fim do 1º período</td><td><b>${br(fim1) || '—'}</b>${d2 ? ' · prorrogação assinada até este dia' : ''}</td></tr>
       ${d2 ? `<tr><td>Fim da experiência</td><td><b>${br(fim2)}</b> · ${d1 + d2} dias no total</td></tr>` : ''}
       <tr><td>Avisos</td><td>${[fim1, d2 ? fim2 : ''].filter(Boolean).map(x => br(FOLHA.somaDias(x, -P.REGRAS.experienciaAntecedencia))).join(' e ')} (${P.REGRAS.experienciaAntecedencia} dias antes), no Início e no sino do topo</td></tr></tbody></table>
-      ${f.sit.value === 'encerrado' ? `<div class="form-nota">Encerrado: faça o desligamento e o cálculo da rescisão (término de contrato de experiência). ${f.decidido.value && fim2 && f.decidido.value < (d2 ? fim2 : fim1) ? '<b>Antes do fim do prazo:</b> há indenização de metade dos dias que faltam.' : ''}</div>` : ''}`; };
+      ${f.sit.value === 'encerrado' ? `<div class="form-nota">Encerrado: faça o desligamento e o cálculo na tela <a href="#" data-abrir="rescisao">Rescisão</a> (término de contrato de experiência). ${f.decidido.value && fim2 && f.decidido.value < (d2 ? fim2 : fim1) ? '<b>Antes do fim do prazo:</b> há indenização de metade dos dias que faltam.' : ''}</div>` : ''}`; };
   f.modelo.onchange = () => { const m = MODELOS[+f.modelo.value]; if (m) { f.d1.value = m[0]; f.d2.value = m[1]; } calc(); };
   f.addEventListener('input', e => { if (e.target.name === 'd1' || e.target.name === 'd2') f.modelo.value = (i => i < 0 ? 'x' : i)(MODELOS.findIndex(([a, b]) => a === +f.d1.value && b === +f.d2.value)); calc(); });
   f.addEventListener('change', calc);

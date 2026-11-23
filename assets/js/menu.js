@@ -47,6 +47,7 @@ const MENU = [
     { id: 'escala',         nome: 'Escala', arquivo: 'pages/rh-escala.html' },
     { id: 'escala_config',  nome: 'Configuração da escala', arquivo: 'pages/rh-escala-config.html' },
     { id: 'faltas_freelas', nome: 'Faltas e freelancers', arquivo: 'pages/rh-faltas-freelas.html' },
+    { id: 'custo_pessoal',  nome: 'Custo por colaborador', arquivo: 'pages/rh-custos.html' },
     { id: 'lancamentos',    nome: 'Lançamentos do mês', arquivo: 'pages/rh-lancamentos.html' },
     { id: 'consumo_interno', nome: 'Consumo interno', arquivo: 'pages/rh-consumo.html' },
     { id: 'adiantamento',   nome: 'Adiantamento salarial', arquivo: 'pages/rh-adiantamento.html' },
@@ -54,6 +55,7 @@ const MENU = [
     { id: 'decimo',         nome: '13º salário', arquivo: 'pages/rh-decimo.html' },
     { id: 'ferias',         nome: 'Férias', arquivo: 'pages/rh-ferias.html' },
     { id: 'experiencia',    nome: 'Contrato de experiência', arquivo: 'pages/rh-experiencia.html' },
+    { id: 'rescisao',       nome: 'Rescisão', arquivo: 'pages/rh-rescisao.html' },
     { id: 'ponto',          nome: 'Ponto e horas extras' },
     { id: 'eventos_folha',  nome: 'Eventos da folha', arquivo: 'pages/rh-eventos.html' }
   ]},

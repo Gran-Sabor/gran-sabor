@@ -23,6 +23,7 @@ const TABELAS_BANCO = {
   feriados: { ordem: 'data' },
   freelancers: { ordem: 'nome' },
   freela_diarias: { ordem: 'data' },
+  rescisoes: { ordem: 'data_saida' },   // desligamentos (as verbas são recalculadas por rescisao.js)
   // Férias e contrato de experiência (prazos e avisos: prazos-rh.js)
   ferias: { ordem: 'inicio' },
   contratos_experiencia: { ordem: 'inicio' }
