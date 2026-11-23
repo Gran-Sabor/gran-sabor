@@ -34,7 +34,7 @@ alter table public.categorias_financeiras
   add column if not exists alocacao text not null default 'unidade' check (alocacao in ('unidade', 'escritorio'));
 comment on column public.categorias_financeiras.alocacao is 'unidade = fica na loja do lançamento; escritorio = rateado entre as lojas no resultado';
 
-/* ---------- Contas a pagar: categoria obrigatória ----------
+/* ---------- Contas a pagar e a receber: categoria obrigatória ----------
    Conta nova precisa de categoria, e quem tem categoria não pode ficar sem.
    As antigas sem categoria continuam podendo ser pagas (aparecem como "Sem categoria")
    até alguém editar e escolher; por isso é gatilho e não check. */
@@ -42,13 +42,17 @@ create or replace function public.exigir_categoria_pagar()
 returns trigger language plpgsql set search_path = '' as $$
 begin
   if new.categoria_id is null and (tg_op = 'INSERT' or old.categoria_id is not null) then
-    raise exception 'Escolha a categoria: toda conta a pagar precisa de categoria financeira.' using errcode = 'P0001';
+    raise exception 'Escolha a categoria: todo lançamento de entrada ou saída de dinheiro precisa de categoria financeira.' using errcode = 'P0001';
   end if;
   return new;
 end;
 $$;
 drop trigger if exists contas_pagar_categoria on public.contas_pagar;
 create trigger contas_pagar_categoria before insert or update of categoria_id on public.contas_pagar
+  for each row execute function public.exigir_categoria_pagar();
+-- Mesma regra no contas a receber: todo dinheiro que entra ou sai tem categoria
+drop trigger if exists contas_receber_categoria on public.contas_receber;
+create trigger contas_receber_categoria before insert or update of categoria_id on public.contas_receber
   for each row execute function public.exigir_categoria_pagar();
 
 /* ---------- Produto de venda → categoria financeira (receita) ----------

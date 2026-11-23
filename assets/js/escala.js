@@ -228,6 +228,7 @@ const ESC = (() => {
     if (REAL) {
       const cats = cb().lista('categorias_financeiras').filter(c => c.tipo === 'despesa' && c.ativo);
       const cat = cats.find(c => /freela|diarist/i.test(c.nome)) || cats.find(c => /folha/i.test(c.grupo)) || null;
+      if (!cat) return 'Cadastre antes a categoria financeira de freelancers (ex.: 4.09 Freelancers) em Cadastros › Categoria financeira: todo pagamento precisa de categoria.';
       const { error } = await banco().from('contas_pagar').insert({ id: contaId, unidade_id: atual.unidade_id, categoria_id: cat?.id || null, favorecido: ('Freelancer · ' + fl.nome).slice(0, 120),
         documento: doc, valor: Number(atual.valor), vencimento, obs: obs.slice(0, 500), origem: 'freela', chave_importacao: 'freela:' + atual.id });
       if (error) { await cb().gravou('freela_diarias', 'contas_pagar'); return traduz(error); }

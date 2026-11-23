@@ -22,7 +22,7 @@
       <button type="button" class="btn" id="btnExportar">Exportar</button>
       <button type="button" class="btn btn-pri" id="btnNovo">+ Novo produto</button></div></div>
   <div id="filtros"></div>
-  <div id="avisoBanco"></div>
+  <div id="avisoBanco"></div><div id="avisoCat"></div>
   <div class="abas-tela" id="abas"></div>
   <section class="kpis" id="kpis"></section>
   <section class="cartao"><div class="cartao-cab"><h2>Produtos</h2><span class="dir sub" id="contagem"></span></div>
@@ -56,7 +56,8 @@ const COLUNAS = '*, produto_precos(preco, unidades(codigo))';
 const catsReceita = () => { try { return (casca().dadosBanco?.lista('categorias_financeiras') || []).filter(c => c.tipo === 'receita' && c.ativo !== false)
   .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true })); } catch { return []; } };
 const catsFin = () => { try { return casca().dadosBanco?.lista('categorias_financeiras') || []; } catch { return []; } };
-const catFinTxt = p => { const c = categoriaDaVenda(p, catsFin()); return `<br><small class="sub" title="Categoria financeira: linha da DRE onde a venda entra">${esc(c.codigo)} ${esc(c.nome)}${p.catFin ? '' : ' · padrão'}</small>`; };
+const catPadraoId = p => (catsReceita().find(c => c.codigo === CATEGORIA_VENDA_PADRAO(p)) || {}).id || null;
+const catFinTxt = p => { const c = categoriaDaVenda(p, catsFin()); return `<br><small class="sub" title="Categoria financeira: linha da DRE onde a venda entra">${esc(c.codigo)} ${esc(c.nome)}</small>${p.catFin ? '' : ' <span class="etiqueta pendente" title="Escolha a categoria financeira no cadastro">sem categoria</span>'}`; };
 const strip = h => String(h).replace(/<[^>]*>/g, ' ');
 if (REAL) { try { casca().dadosBanco?.garantir('categorias_financeiras').then(() => desenhar()).catch(() => {}); } catch {} }
 let lojas = [];                                 // lojas do banco: { id, codigo, nome }
@@ -81,7 +82,7 @@ const pareceConvenio = nome => { const t = normalizar(nome).toUpperCase().replac
 const GRUPOS = ['Buffet', 'Marmitex', 'Bebidas', 'Sobremesas'];
 const ABAS = REAL
   ? [['todos', 'Ativos', p => p.ativo], ['kg', 'Por kg', p => p.ativo && p.un === 'kg'], ['convenio', 'Convênio PJ', p => p.ativo && p.convenio],
-     ['repetidos', 'Prováveis repetidos', p => repSet.has(p.id)], ['semPreco', 'Sem preço', p => p.ativo && !Object.keys(p.precosUn).length], ['inativos', 'Inativos', p => !p.ativo]]
+     ['repetidos', 'Prováveis repetidos', p => repSet.has(p.id)], ['semPreco', 'Sem preço', p => p.ativo && !Object.keys(p.precosUn).length], ['semCat', 'Sem categoria financeira', p => p.ativo && !p.catFin], ['inativos', 'Inativos', p => !p.ativo]]
   : [['todos', 'Todos', () => true], ...GRUPOS.filter(g => produtos.some(p => p.grupo === g)).map(g => [g, g, p => p.grupo === g]), ['fora', 'Fora da meta', p => fora(p)]];
 let aba = 'todos', repSet = new Set();
 const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, unidade: false, placeholder: 'Produto, código, categoria, preparo… (atalho: /)' });
@@ -108,13 +109,17 @@ function visiveis() {
 
 function desenhar() {
   repSet = REAL ? repetidos() : new Set(); montarCategorias();
+  if (REAL) { const sem = produtos.filter(p => p.ativo && !p.catFin).length;
+    $('avisoCat').innerHTML = sem && catsReceita().length ? `<div class="aviso">${sem} produto(s) ativo(s) sem categoria financeira: a venda deles não entra certo na DRE.
+      <button type="button" class="btn btn-mini" id="btnCatPadrao" title="1.02 Convênios PJ para preço de convênio; 1.01 Vendas nas lojas para o resto">Aplicar o padrão a eles</button></div>` : ''; }
   const v = visiveis(), es = emps(), uma = es.length === 1;
   const comCusto = v.filter(p => !semCusto(p)), ms = comCusto.flatMap(p => es.map(e => margemProduto(p, e)).filter(m => m.preco));
   const kpis = REAL ? [
     ['Produtos ativos', produtos.filter(p => p.ativo).length, `${new Set(produtos.filter(p => p.ativo).map(p => p.grupo)).size} categorias · ${produtos.filter(p => p.ativo && p.un === 'kg').length} por kg`],
     ['Sem custo', `<span class="${produtos.some(p => p.ativo && semCusto(p)) ? 'desce' : ''}">${produtos.filter(p => p.ativo && semCusto(p)).length}</span>`, 'falta ligar à ficha técnica'],
     ['Convênio PJ', produtos.filter(p => p.ativo && p.convenio).length, 'fora do caixa do consumidor'],
-    ['Prováveis repetidos', `<span class="${repSet.size ? 'desce' : ''}">${repSet.size}</span>`, 'confira e desative um de cada par']
+    ['Prováveis repetidos', `<span class="${repSet.size ? 'desce' : ''}">${repSet.size}</span>`, 'confira e desative um de cada par'],
+    ['Sem categoria financeira', `<span class="${produtos.some(p => p.ativo && !p.catFin) ? 'desce' : ''}">${produtos.filter(p => p.ativo && !p.catFin).length}</span>`, 'obrigatória: leva a venda para a DRE']
   ] : [
     ['Produtos', v.length, `${new Set(v.map(p => p.grupo)).size} grupos`],
     ['CMV médio', pct(ms.length ? ms.reduce((a, m) => a + m.cmv, 0) / ms.length : 0), uma ? nomeEmpresa(es[0]) : 'média das 3 empresas'],
@@ -243,7 +248,7 @@ function editarBanco(p) {
       <datalist id="listaCat">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
       <label class="c3 marcar"><input type="checkbox" name="convenio"${p.convenio ? ' checked' : ''}> Preço de convênio PJ</label>
       <label class="c3 marcar"><input type="checkbox" name="ativo"${p.ativo ? ' checked' : ''}> Ativo</label>
-      <label class="c6">Categoria financeira (DRE)<select name="catFin" class="campo"><option value="">Padrão (1.01 vendas · 1.02 convênio)</option>
+      <label class="c6">Categoria financeira (DRE) *<select name="catFin" class="campo"><option value="">Escolha…</option>
         ${catsReceita().map(c => `<option value="${c.id}"${c.id === p.catFin ? ' selected' : ''}>${esc(c.codigo)} ${esc(c.nome)}</option>`).join('')}</select></label>
     </div>
     <div class="sub-tit">Preço por loja <span class="sub">vazio = não vende nessa loja${p.un === 'kg' ? ' · preço do kg' : ''}</span></div>
@@ -255,6 +260,8 @@ function editarBanco(p) {
     if (!nome) return 'Informe o nome do produto.';
     if (!codigo) return 'Informe o código (o mesmo do PDV).';
     if (!categoria) return 'Informe a categoria.';
+    if (!fm.catFin.value) return catsReceita().length ? 'Escolha a categoria financeira: é ela que leva a venda para a DRE e os relatórios.'
+      : 'Ainda não há categorias de receita. Cadastre em Cadastros › Categoria financeira (botão Importar DRE) e volte aqui.';
     const precos = []; let erro = '';
     fm.querySelectorAll('[data-loja]').forEach(i => { if (!i.value.trim()) return; const x = n(i.value); if (!(x > 0)) erro = 'Preço inválido: use números, ex.: 21,90.'; else precos.push({ unidade_id: i.dataset.loja, preco: Math.round(x * 100) / 100 }); });
     if (erro) return erro;
@@ -345,7 +352,9 @@ async function importar(arquivo) {
     const pedaco = (l, t = 400) => Array.from({ length: Math.ceil(l.length / t) }, (_, k) => l.slice(k * t, k * t + t));
     // 1. Produtos novos (completos) e já existentes (só nome, categoria e vende por)
     for (const lote of pedaco(ok.filter(x => !existe.has(x.codigo)))) {
-      const { error } = await db.from('produtos').upsert(lote.map(x => ({ codigo: x.codigo, nome: x.nome, categoria: x.categoria, vende_por: x.vende_por, convenio: x.convenio, ativo: x.ativo, origem: 'saipos' })), { onConflict: 'codigo' });
+      // produto novo já entra com a categoria financeira padrão (1.01 vendas · 1.02 convênio), se ela existir
+      const { error } = await db.from('produtos').upsert(lote.map(x => ({ codigo: x.codigo, nome: x.nome, categoria: x.categoria, vende_por: x.vende_por, convenio: x.convenio, ativo: x.ativo, origem: 'saipos',
+        ...(catPadraoId(x) ? { categoria_financeira_id: catPadraoId(x) } : {}) })), { onConflict: 'codigo' });
       if (error) { await recarregar(); return 'Parou no meio: ' + error.message + '. O que entrou já aparece na lista; importe de novo para completar.'; } }
     for (const lote of pedaco(ok.filter(x => existe.has(x.codigo)))) {
       const { error } = await db.from('produtos').upsert(lote.map(x => ({ codigo: x.codigo, nome: x.nome, categoria: x.categoria, vende_por: x.vende_por })), { onConflict: 'codigo' });
@@ -368,6 +377,14 @@ $('abas').innerHTML = ABAS.map(([k, nm], i) => `<button type="button" data-aba="
 $('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba;
   $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
 const abrir = p => REAL ? editarBanco(p) : editar(p);
+// Categoria padrão em lote, só nos produtos ainda sem categoria (quem já escolheu não muda)
+document.addEventListener('click', async e => { if (e.target.id !== 'btnCatPadrao') return;
+  const sem = produtos.filter(p => p.ativo && !p.catFin), b = e.target; b.disabled = true;
+  for (const conv of [false, true]) { const id = catPadraoId({ convenio: conv }), ids = sem.filter(p => !!p.convenio === conv).map(p => p.id);
+    if (!id || !ids.length) continue;
+    const { error } = await db.from('produtos').update({ categoria_financeira_id: id }).in('id', ids).is('categoria_financeira_id', null);
+    if (error) { b.disabled = false; return janela('Categoria padrão', `<p>Não foi possível gravar: ${esc(error.message)}</p>`, 'Fechar', () => ''); } }
+  await recarregar(); });
 $('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) abrir(produtos.find(p => p.id === tr.dataset.id)); };
 $('tab').onkeydown = e => { if (e.key === 'Enter') e.target.closest('tr[data-id]')?.click(); };
 $('btnNovo').onclick = () => abrir();

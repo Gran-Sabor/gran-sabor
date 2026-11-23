@@ -40,6 +40,11 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
   Não são venda ao consumidor (sem NFC-e, com documento próprio): convênio PJ (NF-e + boleto no fechamento do período),
   consumo de funcionário (desconto na folha, evento 110) e cortesia/degustação (alerta para a Fernanda no fechamento do caixa).
 - Toda tabela nova: RLS ligado e políticas na mesma migração.
+- Categoria financeira é obrigatória em todo lançamento que um dia vira entrada ou saída de dinheiro (contas a pagar e a receber,
+  folha, férias, rescisão, freelancer, XML, venda). A venda leva a categoria do cadastro do produto (`categoriaDaVenda` em exemplo.js);
+  a compra leva a do cadastro do insumo (XML dividido por categoria). Indicadores, resumos, DRE e relatórios somam por essa categoria.
+  Plano: linha da DRE › grupo › categoria (`assets/js/plano-dre.js`); categoria do escritório é rateada entre as lojas (regra em aberto).
+  A Gran Sabor começa do zero: não há controle antigo a migrar.
 - Nunca push direto na `main`: ramo próprio + pacote; o Alexandre faz o merge.
 
 ## Dados sempre atualizados em toda a cadeia (lição da Drogarema, 08/11/2026)
