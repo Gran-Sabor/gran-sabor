@@ -52,6 +52,7 @@ const MENU = [
     { id: 'consumo_interno', nome: 'Consumo interno', arquivo: 'pages/rh-consumo.html' },
     { id: 'adiantamento',   nome: 'Adiantamento salarial', arquivo: 'pages/rh-adiantamento.html' },
     { id: 'holerites',      nome: 'Folha e holerites', arquivo: 'pages/rh-holerite.html' },
+    { id: 'holerites_contador', nome: 'Holerites do contador', arquivo: 'pages/rh-holerites-contador.html' },
     { id: 'decimo',         nome: '13º salário', arquivo: 'pages/rh-decimo.html' },
     { id: 'ferias',         nome: 'Férias', arquivo: 'pages/rh-ferias.html' },
     { id: 'experiencia',    nome: 'Contrato de experiência', arquivo: 'pages/rh-experiencia.html' },

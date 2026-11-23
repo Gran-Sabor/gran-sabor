@@ -11,10 +11,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="../assets/js/config.js?v=2"></script>
 <script src="../assets/js/banco.js?v=1"></script>
-<script src="../assets/js/menu.js?v=15"></script>
+<script src="../assets/js/menu.js?v=16"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=11"></script>
+<script src="../assets/js/exemplo.js?v=12"></script>
 <script src="../assets/js/folha.js?v=3"></script>
 <script src="../assets/js/escala.js?v=2"></script>
 <script src="../assets/js/cadastro.js?v=7"></script>
@@ -32,7 +32,10 @@ const campoAdm = REAL ? 'admissaoInformada' : 'admissao';
 // Com o banco, a admissão vazia aparece vazia no formulário (a folha usa o mês cheio enquanto isso)
 if (REAL) COLABORADORES.forEach(c => c.admissaoInformada = c.semAdmissao ? '' : c.admissao);
 const linhaBanco = d => ({ nome: d.nome, matricula: d.matricula, cpf: d.cpf || null, cargo: d.cargo, unidade_id: ESC.unId(d.unidade), admissao: d[campoAdm] || null,
-  salario: d.salario, vt: d.vt || 0, optante_vt: !!d.optanteVT, dependentes: d.dependentes || 0, turno: d.turno, situacao: d.situacao, pix: d.pix || '' });
+  salario: d.salario, vt: d.vt || 0, optante_vt: !!d.optanteVT, dependentes: d.dependentes || 0, turno: d.turno, situacao: d.situacao, pix: d.pix || '',
+  // matrícula no contador e CNPJ de quem registra: só depois que a migração dos holerites do contador chegou ao banco
+  ...(COM_CONTADOR() ? { matricula_contador: d.matriculaContador || null, empresa_cnpj: String(d.empresaCnpj || '').replace(/\D/g, '') || null } : {}) });
+const COM_CONTADOR = () => REAL && COLABORADORES.some(c => c.temContador);
 
 montarCadastro({
   titulo: 'Colaboradores', sub: 'Cadastro de funcionários · a empresa que registra vem da unidade',
@@ -47,7 +50,7 @@ montarCadastro({
   colunas: [
     { campo: 'matricula', titulo: 'Matr.', fmt: v => `<span class="mono">${esc(v)}</span>` },
     { campo: 'nome', titulo: 'Nome', fmt: v => `<b>${esc(v)}</b>` },
-    { campo: 'cargo', titulo: 'Cargo', fmt: v => esc(nomeCargo(v)), busca: l => nomeCargo(l.cargo) },
+    { campo: 'cargo', titulo: 'Cargo', fmt: v => esc(nomeCargo(v)), busca: l => nomeCargo(l.cargo) + ' ' + (l.matriculaContador || '') + ' ' + (l.empresaCnpj || '') },
     { campo: 'admissao', titulo: 'Admissão', fmt: (v, l) => l.semAdmissao ? '<span class="etiqueta pendente">não informada</span>' : `${dataBR(v + 'T12:00')} <small class="sub">${tempoCasa(v)}</small>`,
       csv: l => l.semAdmissao ? '' : dataBR(l.admissao + 'T12:00') },
     { campo: 'salario', titulo: 'Salário', num: true, fmt: v => reais(v), csv: l => numero(l.salario, 2) },
@@ -76,12 +79,17 @@ montarCadastro({
     { campo: 'turno', titulo: 'Turno padrão', tipo: 'select', opcoes: () => Object.entries(TURNOS).filter(([k]) => k !== 'F').map(([k, [n, h]]) => [k, `${n} ${h}`]), larg: 'c4', secao: 'Contrato' },
     { campo: 'vt', titulo: 'Vale-transporte por dia (R$)', tipo: 'dinheiro', larg: 'c4', dica: '0 = não usa', secao: 'Benefícios' },
     { campo: 'optanteVT', titulo: 'Optante do VT (desconta até 6%)', tipo: 'check', larg: 'c8', secao: 'Benefícios' },
-    { campo: 'situacao', titulo: 'Situação', tipo: 'select', opcoes: Object.entries(SIT).map(([k, [n]]) => [k, n]), larg: 'c4', secao: 'Benefícios' }
+    { campo: 'situacao', titulo: 'Situação', tipo: 'select', opcoes: Object.entries(SIT).map(([k, [n]]) => [k, n]), larg: 'c4', secao: 'Benefícios' },
+    ...(COM_CONTADOR() ? [
+      { campo: 'empresaCnpj', titulo: 'CNPJ da empresa que registra', tipo: 'doc', larg: 'c6', max: 18, dica: 'vem do holerite do contador', secao: 'Contador' },
+      { campo: 'matriculaContador', titulo: 'Matrícula no contador', larg: 'c4', max: 10, dica: 'ex.: 000092', secao: 'Contador' }] : [])
   ],
   novo: f => ({ unidade: f.unidade || 'loja1', cargo: 'atendente', turno: 'M', situacao: 'ativo', [campoAdm]: hojeISO(), dependentes: 0, vt: 0, optanteVT: false, ativo: true, matricula: proxMatricula() }),
   validar: (d, item) => {
     if (d[campoAdm] && !/^\d{4}-\d{2}-\d{2}$/.test(d[campoAdm])) return 'Admissão inválida.';
     if (!(d.salario > 0)) return 'Informe o salário.';
+    if (d.empresaCnpj && String(d.empresaCnpj).replace(/\D/g, '').length !== 14) return 'CNPJ da empresa com 14 números (ou deixe em branco).';
+    if (d.matriculaContador && !/^\d{1,10}$/.test(d.matriculaContador)) return 'Matrícula no contador: só números.';
     if (d.cpf && d.cpf.length !== 11) return 'CPF com 11 números (ou deixe em branco).';
     d.empresa = UNIDADE_EMPRESA[d.unidade]; d.ativo = d.situacao !== 'desligado'; d.matricula = d.matricula || item.matricula; d.dependentes = d.dependentes || 0; d.vt = d.vt || 0;
     return '';
@@ -107,12 +115,6 @@ document.querySelector('.tela-cab .dir').insertAdjacentHTML('afterbegin', '<butt
 const chave = s => normalizar(s).replace(/[^a-z0-9]+/g, ' ').trim();
 const UN_APELIDOS = { adm: 'escritorio', rateio: 'escritorio', escritorio: 'escritorio', s1: 'loja1', gs1: 'loja1', s2: 'loja2', gs2: 'loja2', s3: 'loja3', gs3: 'loja3', central: 'central' };
 const unidadeDe = t => { const k = chave(t).replace(/\s/g, ''); return UN_APELIDOS[k] || (UNIDADES.find(u => u.id !== 'todas' && (chave(u.nome).replace(/\s/g, '') === k || u.id === k)) || {}).id || ''; };
-const CARGO_APELIDOS = { 'op de caixa': 'caixa', 'operador de caixa': 'caixa', 'operadora de caixa': 'caixa', caixa: 'caixa', cozinheira: 'cozinheiro', cozinheiro: 'cozinheiro',
-  'ajud cozinha': 'aux_cozinha', 'ajudante de cozinha': 'aux_cozinha', 'aux cozinha': 'aux_cozinha', 'auxiliar de cozinha': 'aux_cozinha', acougueiro: 'acougueiro', 'assist financeiro': 'assist_financeiro',
-  'assistente financeiro': 'assist_financeiro', 'sub gerente': 'subgerente', subgerente: 'subgerente', 'lider cozinha': 'lider_cozinha', 'lider de cozinha': 'lider_cozinha', churrasqueiro: 'churrasqueiro',
-  motoboy: 'motoboy', comprador: 'comprador', diretoria: 'diretoria', diretor: 'diretoria', atendente: 'atendente', motorista: 'motorista' };
-const cargoDe = (t, un) => { const k = chave(t); if (k === 'gerente') return un === 'escritorio' ? 'gerente' : 'gerente_loja';
-  return CARGO_APELIDOS[k] || Object.keys(CARGOS).find(x => chave(CARGOS[x]) === k || x === k) || String(t).trim().slice(0, 40); };
 const numBR = x => { if (typeof x === 'number') return x; let s = String(x ?? '').replace(/[R$\s]/g, ''); if (!s) return NaN; if (/,\d{1,2}$/.test(s)) s = s.replace(/\./g, '').replace(',', '.'); else s = s.replace(/,/g, ''); return Number(s); };
 const dataDe = x => { if (x == null || x === '') return ''; if (typeof x === 'number') { const d = new Date(Math.round((x - 25569) * 864e5)); return d.toISOString().slice(0, 10); }
   const s = String(x).trim(); let m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(s); if (m) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;

@@ -104,7 +104,7 @@ async function carregarProdutos() {
 const colaboradorDoBanco = (r, cod) => ({ id: r.id, matricula: r.matricula, nome: r.nome, cpf: r.cpf || '', cargo: r.cargo, unidade: cod,
   empresa: UNIDADE_EMPRESA[cod] || '', admissao: r.admissao || '2000-01-01', semAdmissao: !r.admissao, aniversario: r.aniversario || '',
   demissao: r.demissao || '', salario: Number(r.salario), vt: Number(r.vt), optanteVT: !!r.optante_vt, dependentes: r.dependentes || 0,
-  turno: r.turno, situacao: r.situacao, pix: r.pix || '', jornada: '44h semanais', ativo: r.situacao !== 'desligado', atualizado_em: r.atualizado_em, doBanco: true });
+  turno: r.turno, situacao: r.situacao, pix: r.pix || '', matriculaContador: r.matricula_contador || '', empresaCnpj: r.empresa_cnpj || '', temContador: 'matricula_contador' in r, jornada: '44h semanais', ativo: r.situacao !== 'desligado', atualizado_em: r.atualizado_em, doBanco: true });
 // Onde moram os dados comuns das abas (o mesmo lugar que tela.js · dadoComum usa)
 function raizDados() {
   let raiz = window;

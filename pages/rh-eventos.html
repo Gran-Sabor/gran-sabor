@@ -8,49 +8,139 @@
 <link rel="stylesheet" href="../assets/css/estilo.css?v=11">
 </head>
 <body>
-<script src="../assets/js/menu.js?v=15"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=16"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=11"></script>
+<script src="../assets/js/exemplo.js?v=12"></script>
 <script src="../assets/js/cadastro.js?v=7"></script>
+<script src="../assets/js/financeiro.js?v=3"></script>
 <script>
-/* Eventos = linhas que aparecem no holerite. As incidências dizem se o valor
-   entra na base do INSS, FGTS e IRRF. Valem para as 3 empresas. */
+/* Eventos = linhas que aparecem no holerite. As incidências dizem se o valor entra na base do INSS, FGTS e IRRF.
+   Com o banco: são os códigos da folha do contador (tabela eventos_folha). A importação dos holerites em PDF
+   cria sozinha os códigos que faltam, como "a revisar"; aqui se confere tipo, incidências e categoria financeira.
+   Categoria financeira: obrigatória para marcar como revisado um provento ou desconto (leva a folha para a DRE).
+   Não se apaga: desmarque "Ativo". Sem o banco: eventos de exemplo. */
 const TIPOS = { provento: 'Provento', desconto: 'Desconto', informativo: 'Informativo' };
-const FORMAS = { fixo: 'Valor fixo do cadastro', horas: 'Por horas', dias: 'Por dias', valor: 'Valor lançado', calculado: 'Calculado pelo sistema' };
-montarCadastro({
-  titulo: 'Eventos da folha', sub: 'Proventos e descontos do holerite · incidências de INSS, FGTS e IRRF',
-  novoRotulo: 'Novo evento', tituloLista: 'Eventos', porUnidade: false,
-  dados: EVENTOS, tabela: 'eventos',
-  abas: [{ nome: 'Todos', filtro: () => true }, { nome: 'Proventos', filtro: l => l.tipo === 'provento' },
-         { nome: 'Descontos', filtro: l => l.tipo === 'desconto' }, { nome: 'Informativos', filtro: l => l.tipo === 'informativo' }],
-  colunas: [
-    { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
-    { campo: 'nome', titulo: 'Evento', fmt: v => `<b>${esc(v)}</b>` },
-    { campo: 'tipo', titulo: 'Tipo', fmt: v => `<span class="etiqueta ${v === 'provento' ? 'completa' : v === 'desconto' ? 'pendente' : ''}">${TIPOS[v]}</span>` },
-    { campo: 'forma', titulo: 'Como é lançado', fmt: v => FORMAS[v] },
-    { campo: 'inss', titulo: 'INSS', fmt: sim }, { campo: 'fgts', titulo: 'FGTS', fmt: sim }, { campo: 'irrf', titulo: 'IRRF', fmt: sim },
-    { campo: 'ativo', titulo: 'Ativo', fmt: sim }
-  ],
-  kpis: v => [
-    ['Eventos', v.length, 'na aba atual'],
-    ['Proventos', v.filter(e => e.tipo === 'provento').length, 'somam no holerite'],
-    ['Descontos', v.filter(e => e.tipo === 'desconto').length, 'subtraem do líquido'],
-    ['Lançados à mão', v.filter(e => ['horas', 'dias', 'valor'].includes(e.forma)).length, 'entram pela tela de lançamentos']
-  ],
-  campos: [
-    { campo: 'codigo', titulo: 'Código', obrig: true, larg: 'c2', max: 3, somenteLeitura: true },
-    { campo: 'nome', titulo: 'Nome no holerite', obrig: true, larg: 'c6', max: 50 },
-    { campo: 'tipo', titulo: 'Tipo', tipo: 'select', opcoes: Object.entries(TIPOS), larg: 'c4' },
-    { campo: 'forma', titulo: 'Como é lançado', tipo: 'select', opcoes: Object.entries(FORMAS), larg: 'c4' },
-    { campo: 'inss', titulo: 'Incide INSS', tipo: 'check', larg: 'c2' }, { campo: 'fgts', titulo: 'Incide FGTS', tipo: 'check', larg: 'c2' },
-    { campo: 'irrf', titulo: 'Incide IRRF', tipo: 'check', larg: 'c2' }, { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c2' }
-  ],
-  novo: () => ({ tipo: 'provento', forma: 'valor', inss: true, fgts: true, irrf: true, ativo: true }),
-  validar: (d, item, lista) => !/^\d{3}$/.test(d.codigo || item.codigo) ? 'Código com 3 números.' : !item.id && lista.some(e => e.codigo === d.codigo) ? 'Código já usado.' : '',
-  gerarId: d => d.codigo,
-  rodapeForm: () => 'Regras de cálculo (tabelas de INSS e IRRF, DSR) serão confirmadas com o contador da Gran Sabor.'
-});
+const FORMAS = { fixo: 'Valor fixo do cadastro', horas: 'Por horas', dias: 'Por dias', valor: 'Valor lançado', calculado: 'Calculado' };
+const etqTipo = v => `<span class="etiqueta ${v === 'provento' ? 'completa' : v === 'desconto' ? 'pendente' : ''}">${TIPOS[v] || v}</span>`;
+
+(async () => {
+  const REAL = await FIN.usar() && await FIN.garantir('eventos_folha', 'holerites_contador').then(() => true).catch(() => false);
+  if (!REAL) return exemplo();
+  janela.nota = 'Grava no banco';
+  const lista = FIN.L('eventos_folha');
+  const catsFin = () => FIN.categorias();
+  const nomeCatFin = id => { const c = catsFin().find(k => k.id === id); return c ? `${c.codigo} ${c.nome}` : ''; };
+  const opcoesFin = item => catsFin().filter(c => c.tipo === 'despesa' && (c.ativo !== false || c.id === item.categoria_financeira_id))
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true })).map(c => [c.id, `${c.codigo} ${c.nome}`]);
+  // Em quantos holerites importados o evento aparece e o último mês (ajuda a revisar o que importa)
+  const uso = cod => { const hs = FIN.L('holerites_contador').filter(h => (h.itens || []).some(i => i.codigo === cod));
+    return { n: hs.length, ultimo: hs.reduce((m, h) => h.competencia > m ? h.competencia : m, '') }; };
+  montarCadastro({
+    titulo: 'Eventos da folha', sub: 'Códigos da folha do contador · incidências · categoria financeira',
+    novoRotulo: 'Novo evento', tituloLista: 'Eventos', porUnidade: false,
+    dados: lista, tabela: 'eventos_folha', depende: ['holerites_contador', 'categorias_financeiras'],
+    abas: [{ nome: 'Todos', filtro: l => l.ativo }, { nome: 'Proventos', filtro: l => l.ativo && l.tipo === 'provento' },
+      { nome: 'Descontos', filtro: l => l.ativo && l.tipo === 'desconto' }, { nome: 'Informativos', filtro: l => l.ativo && l.tipo === 'informativo' },
+      { nome: 'A revisar', filtro: l => l.ativo && !l.revisado }, { nome: 'Inativos', filtro: l => !l.ativo }],
+    colunas: [
+      { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
+      { campo: 'nome', titulo: 'Evento', fmt: (v, l) => `<b>${esc(v)}</b>${l.obs ? ` <small class="sub">${esc(l.obs)}</small>` : ''}` },
+      { campo: 'tipo', titulo: 'Tipo', fmt: etqTipo },
+      { campo: 'inss', titulo: 'Incide', fmt: (v, l) => l.tipo === 'informativo' ? '<span class="sub">—</span>' : ['inss', 'fgts', 'irrf'].filter(k => l[k]).map(k => k.toUpperCase()).join(' · ') || '<span class="sub">nada</span>' },
+      { campo: 'categoria_financeira_id', titulo: 'Categoria financeira', fmt: (v, l) => l.tipo === 'informativo' ? '<span class="sub">—</span>' : nomeCatFin(v) ? esc(nomeCatFin(v)) : '<span class="etiqueta pendente">falta</span>',
+        busca: l => nomeCatFin(l.categoria_financeira_id) },
+      { campo: 'codigo', titulo: 'Uso', fmt: v => { const u = uso(v); return u.n ? `${u.n} holerite(s) <small class="sub">até ${nomeComp(u.ultimo.slice(0, 7))}</small>` : '<span class="sub">—</span>'; }, busca: () => '' },
+      { campo: 'revisado', titulo: 'Revisado', fmt: v => v ? sim(true) : '<span class="etiqueta pendente">a revisar</span>' }
+    ],
+    ordenar: (a, b) => a.codigo.localeCompare(b.codigo),
+    kpis: (v, todos) => {
+      const at = todos.filter(e => e.ativo), din = at.filter(e => e.tipo !== 'informativo');
+      return [
+        ['Eventos ativos', at.length, `${at.filter(e => e.tipo === 'provento').length} proventos · ${at.filter(e => e.tipo === 'desconto').length} descontos · ${at.filter(e => e.tipo === 'informativo').length} informativos`],
+        ['A revisar', `<span class="${at.some(e => !e.revisado) ? 'desce' : ''}">${at.filter(e => !e.revisado).length}</span>`, 'tipo, incidências e categoria'],
+        ['Sem categoria financeira', `<span class="${din.some(e => !e.categoria_financeira_id) ? 'desce' : ''}">${din.filter(e => !e.categoria_financeira_id).length}</span>`, 'proventos e descontos levam a folha para a DRE'],
+        ['Na aba atual', v.length, '']
+      ];
+    },
+    campos: [
+      { campo: 'codigo', titulo: 'Código', obrig: true, larg: 'c2', max: 3, somenteLeitura: true },
+      { campo: 'nome', titulo: 'Nome no holerite', obrig: true, larg: 'c6', max: 60 },
+      { campo: 'tipo', titulo: 'Tipo', tipo: 'select', opcoes: Object.entries(TIPOS), larg: 'c4' },
+      { campo: 'forma', titulo: 'Como é lançado', tipo: 'select', opcoes: Object.entries(FORMAS), larg: 'c4' },
+      { campo: 'inss', titulo: 'Incide INSS', tipo: 'check', larg: 'c2' }, { campo: 'fgts', titulo: 'Incide FGTS', tipo: 'check', larg: 'c2' },
+      { campo: 'irrf', titulo: 'Incide IRRF', tipo: 'check', larg: 'c2' }, { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c2' },
+      { campo: 'categoria_financeira_id', titulo: 'Categoria financeira (DRE)', tipo: 'select', vazio: 'Escolha… (proventos e descontos)', opcoes: opcoesFin, larg: 'c8' },
+      { campo: 'revisado', titulo: 'Revisado', tipo: 'check', larg: 'c4' },
+      { campo: 'obs', titulo: 'Observação', larg: 'c12', max: 200 }
+    ],
+    novo: () => ({ tipo: 'provento', forma: 'valor', inss: true, fgts: true, irrf: true, ativo: true, revisado: false, origem: 'contador', obs: '' }),
+    tituloItem: e => `${e.codigo} · ${e.nome}`,
+    validar: (d, item, lista) => {
+      const cod = d.codigo || item.codigo;
+      if (!/^\d{3}$/.test(cod)) return 'Código com 3 números.';
+      if (!item.id && lista.some(e => e.codigo === cod)) return 'Código já usado.';
+      if (d.revisado && d.tipo !== 'informativo' && !d.categoria_financeira_id) return 'Para marcar como revisado, escolha a categoria financeira (provento e desconto levam a folha para a DRE).';
+      return '';
+    },
+    gerarId: d => d.codigo,
+    salvar: async (d, item) => {
+      const reg = { nome: d.nome.trim(), tipo: d.tipo, forma: d.forma, inss: !!d.inss, fgts: !!d.fgts, irrf: !!d.irrf, ativo: !!d.ativo, revisado: !!d.revisado,
+        categoria_financeira_id: d.tipo === 'informativo' ? null : d.categoria_financeira_id || null, obs: (d.obs || '').trim() };
+      if (!item) {
+        const { error } = await db.from('eventos_folha').insert({ ...reg, codigo: d.codigo });
+        if (error) return error.code === '23505' ? 'Este código já existe (alguém cadastrou agora?).' : 'Não foi possível gravar: ' + error.message;
+      } else {
+        // só grava se ninguém mudou o evento desde que o formulário abriu
+        const { data, error } = await db.from('eventos_folha').update(reg).eq('id', item.id).eq('atualizado_em', item.atualizado_em).select('id');
+        if (error) return 'Não foi possível gravar: ' + error.message;
+        if (!data.length) { await FIN.gravou('eventos_folha'); return 'Este evento mudou em outra tela enquanto o formulário estava aberto. Nada foi feito: feche e confira.'; }
+      }
+      await FIN.gravou('eventos_folha');
+    },
+    rodapeForm: () => 'Os códigos são os da folha do contador; a importação dos holerites (PDF) cria os que faltam. Evento não se apaga: desmarque "Ativo".'
+  });
+})();
+
+/* ---------- Modo demonstração (sem banco): eventos de exemplo ---------- */
+function exemplo() {
+  montarCadastro({
+    titulo: 'Eventos da folha', sub: 'Proventos e descontos do holerite · incidências de INSS, FGTS e IRRF',
+    novoRotulo: 'Novo evento', tituloLista: 'Eventos', porUnidade: false,
+    dados: EVENTOS, tabela: 'eventos',
+    abas: [{ nome: 'Todos', filtro: () => true }, { nome: 'Proventos', filtro: l => l.tipo === 'provento' },
+           { nome: 'Descontos', filtro: l => l.tipo === 'desconto' }, { nome: 'Informativos', filtro: l => l.tipo === 'informativo' }],
+    colunas: [
+      { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
+      { campo: 'nome', titulo: 'Evento', fmt: v => `<b>${esc(v)}</b>` },
+      { campo: 'tipo', titulo: 'Tipo', fmt: etqTipo },
+      { campo: 'forma', titulo: 'Como é lançado', fmt: v => FORMAS[v] },
+      { campo: 'inss', titulo: 'INSS', fmt: sim }, { campo: 'fgts', titulo: 'FGTS', fmt: sim }, { campo: 'irrf', titulo: 'IRRF', fmt: sim },
+      { campo: 'ativo', titulo: 'Ativo', fmt: sim }
+    ],
+    kpis: v => [
+      ['Eventos', v.length, 'na aba atual'],
+      ['Proventos', v.filter(e => e.tipo === 'provento').length, 'somam no holerite'],
+      ['Descontos', v.filter(e => e.tipo === 'desconto').length, 'subtraem do líquido'],
+      ['Lançados à mão', v.filter(e => ['horas', 'dias', 'valor'].includes(e.forma)).length, 'entram pela tela de lançamentos']
+    ],
+    campos: [
+      { campo: 'codigo', titulo: 'Código', obrig: true, larg: 'c2', max: 3, somenteLeitura: true },
+      { campo: 'nome', titulo: 'Nome no holerite', obrig: true, larg: 'c6', max: 50 },
+      { campo: 'tipo', titulo: 'Tipo', tipo: 'select', opcoes: Object.entries(TIPOS), larg: 'c4' },
+      { campo: 'forma', titulo: 'Como é lançado', tipo: 'select', opcoes: Object.entries(FORMAS), larg: 'c4' },
+      { campo: 'inss', titulo: 'Incide INSS', tipo: 'check', larg: 'c2' }, { campo: 'fgts', titulo: 'Incide FGTS', tipo: 'check', larg: 'c2' },
+      { campo: 'irrf', titulo: 'Incide IRRF', tipo: 'check', larg: 'c2' }, { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c2' }
+    ],
+    novo: () => ({ tipo: 'provento', forma: 'valor', inss: true, fgts: true, irrf: true, ativo: true }),
+    validar: (d, item, lista) => !/^\d{3}$/.test(d.codigo || item.codigo) ? 'Código com 3 números.' : !item.id && lista.some(e => e.codigo === d.codigo) ? 'Código já usado.' : '',
+    gerarId: d => d.codigo,
+    rodapeForm: () => 'Regras de cálculo (tabelas de INSS e IRRF, DSR) serão confirmadas com o contador da Gran Sabor.'
+  });
+}
 </script>
 </body>
 </html>
