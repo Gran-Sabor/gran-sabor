@@ -30,7 +30,7 @@
 <script src="../assets/js/menu.js?v=10"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/exemplo.js?v=10"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
 // Mesma lista de todas as abas. O nome do fornecedor vem sempre do cadastro (se mudar lá, muda aqui)
@@ -100,7 +100,7 @@ function conferir(nf) {
       <label class="c2">Emissão<span class="valor-fixo">${dataBR(nf.emissao + 'T12:00')}</span></label>
       <label class="c2">Valor<span class="valor-fixo">${reais(nf.valor)}</span></label>
       <label class="c4">Entrada no estoque de<select name="unidade" class="campo">${unidades.map(u => `<option value="${u.id}">${esc(u.nome)}</option>`).join('')}</select></label>
-      <label class="c4">Categoria no contas a pagar<select name="categoria" class="campo">${CATEGORIAS.filter(k => k.dre === 'CMV').map(k => `<option value="${k.id}"${forn && normalizar(k.nome).startsWith(normalizar(forn.categoria).slice(0, 5)) ? ' selected' : ''}>${k.codigo} ${esc(k.nome)}</option>`).join('')}</select></label>
+      <label class="c4">Categoria no contas a pagar<select name="categoria" class="campo">${CATEGORIAS.filter(k => k.dre === 'Custos · Mercadoria').map(k => `<option value="${k.id}"${forn && normalizar(k.nome).startsWith(normalizar(forn.categoria).slice(0, 5)) ? ' selected' : ''}>${k.codigo} ${esc(k.nome)}</option>`).join('')}</select></label>
     </div>
     <h3 class="sub-tit">Itens · ligue cada item ao insumo (o sistema lembra nas próximas notas)</h3>
     <div class="rolagem"><table class="tabela"><thead><tr><th>Produto na nota</th><th class="num">Qtd</th><th>Un.</th><th class="num">Unitário</th><th class="num">Total</th><th>Insumo</th><th class="num">Fator</th></tr></thead><tbody>${
