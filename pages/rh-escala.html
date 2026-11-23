@@ -42,7 +42,8 @@
     <div class="dir"><span class="etiqueta exemplo oculto" id="etqExemplo" title="Dados fictícios: nada é gravado">exemplo</span>
       <span class="comp-nav"><button type="button" class="btn btn-ico" id="semAnt" aria-label="Semanas anteriores">‹</button><b id="perTxt"></b><button type="button" class="btn btn-ico" id="semProx" aria-label="Próximas semanas">›</button></span>
       <button type="button" class="btn" id="btnHoje">Hoje</button>
-      <button type="button" class="btn" data-abrir="faltas_freelas">Faltas e freelancers</button>
+      <button type="button" class="btn" data-abrir="faltas_freelas">Faltas</button>
+      <button type="button" class="btn" data-abrir="freelancers">Freelancers</button>
       <button type="button" class="btn" data-abrir="escala_config">Configurar</button>
       <button type="button" class="btn" id="btnExportar">Exportar</button></div></div>
   <div id="filtros"></div>
@@ -59,7 +60,8 @@
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=9"></script>
 <script src="../assets/js/folha.js?v=3"></script>
-<script src="../assets/js/escala.js?v=1"></script>
+<script src="../assets/js/escala.js?v=2"></script>
+<script src="../assets/js/freelas.js?v=1"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
 /* Escala: tudo sai de escala.js (a mesma regra que a folha usa para descontar falta).
@@ -152,7 +154,7 @@ function editarDia(c, d) {
   const opcoes = [...ESC.turnos().map(t => ['t:' + t.codigo, `${t.codigo} · ${t.nome} ${ESC.hm(t.entrada)}–${ESC.hm(t.saida)}`]), ['t:', 'Outro horário'],
     ['folga', 'Folga'], ['falta', 'Falta (desconta na folha)'], ['atestado', 'Atestado'], ['abonada', 'Falta abonada']];
   const turnoP = p.tipo === 'turno' ? `${p.entrada ? '' : p.turno + ' '}${ESC.horario(p)}` : ESC.NOME[p.tipo];
-  const fls = ESC.freelancers().filter(f => f.ativo);
+  const fls = ESC.freelancers().filter(f => FL.podeChamar(f));
   const corpo = `<p class="sub" style="margin:0 0 6px">${ESC.SEMANA[ESC.dow(d)]}, ${dataBR(d + 'T12:00')}${FERIADOS[d] ? ' · feriado: ' + esc(FERIADOS[d]) : ''} · pelo padrão: <b>${esc(turnoP)}</b></p>
     <div class="opcoes-dia" role="radiogroup">${opcoes.map(([k, n]) => `<label><input type="radio" name="tipo" value="${k}"${k === atualTipo ? ' checked' : ''}> ${esc(n)}</label>`).join('')}</div>
     <div class="form-grade" style="margin-top:8px">
@@ -190,6 +192,9 @@ function editarDia(c, d) {
       : p.tipo === dados.tipo) && !dados.obs;
     const cobrir = f.cobrir.checked && ['folga', 'falta', 'atestado', 'abonada'].includes(dados.tipo);
     if (cobrir && !f.fl.value && !f.flNovo.value.trim()) return 'Escolha o freelancer (ou digite o nome de um novo) ou desmarque "Chamar freelancer".';
+    // Frequência alta do freelancer (risco de vínculo): avisa uma vez antes de gravar; Salvar de novo confirma
+    const aviso = cobrir && f.fl.value ? FL.avisoHabitual(f.fl.value, d) : '';
+    if (aviso && f.dataset.avisado !== aviso) { f.dataset.avisado = aviso; return '⚠ ' + aviso + ' Para chamar mesmo assim, clique em Salvar de novo.'; }
     let erro = igual ? (foto ? await ESC.apagar('escala_dias', foto) : '') : await ESC.salvar('escala_dias', { colaborador_id: c.id, data: d, ...dados }, foto);
     if (erro || !cobrir) return erro;
     let fl = f.fl.value;
