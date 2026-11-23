@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rescisão</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+<style>
+  .trct td:first-child { white-space: normal; }
+  .trct tr.grupo td { font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--texto-2); background: var(--superficie-2); }
+  .comparar td, .comparar th { padding: 4px 8px; }
+  .comparar tr.atual td { font-weight: 650; background: var(--superficie-2); }
+  .resumo-fgts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; margin-top: 8px; }
+  .resumo-fgts div { border: 1px solid var(--borda); border-radius: 6px; padding: 6px 8px; font-size: 12px; color: var(--texto-2); }
+  .resumo-fgts b { display: block; font-size: 14px; color: var(--texto); }
+  .acoes-trct { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; padding: 0 10px 10px; }
+  .so-celular-i { display: none; }
+  @media (max-width: 600px) { .so-celular-i { display: inline; } }
+  @media (max-width: 860px) { #vProjecao > .coluna { order: -1; } }
+  #sim { padding: 4px 10px 10px; } #resumoFgts { padding: 0 10px 8px; } #alertas:not(:empty) { padding: 0 10px; }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Rescisão</h1><span class="sub">Projeção das verbas por tipo de desligamento · registrar tira da folha e da escala e gera as contas a pagar</span>
+    <div class="dir"><span class="etiqueta exemplo oculto" id="etqExemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button></div></div>
+  <div id="filtros"></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="projecao" class="ativa">Projeção</button><button type="button" data-aba="passivo">Passivo se desligar hoje</button><button type="button" data-aba="registradas">Registradas</button></div>
+  <section class="kpis" id="kpis"></section>
+
+  <div class="grade-2" id="vProjecao">
+    <section class="cartao"><div class="cartao-cab"><h2 id="titTrct">Verbas rescisórias</h2><span class="dir sub" id="subTrct"></span></div>
+      <div id="alertas"></div>
+      <div class="rolagem"><table class="tabela trct" id="trct"></table></div>
+      <div class="resumo-fgts" id="resumoFgts"></div>
+      <div class="acoes-trct"><button type="button" class="btn" id="btnImprimir">Imprimir projeção</button><button type="button" class="btn btn-pri" id="btnRegistrar">Registrar desligamento…</button></div></section>
+    <div class="coluna">
+      <section class="cartao"><div class="cartao-cab"><h2>Simulação</h2></div>
+        <form class="form-grade" id="sim" autocomplete="off" onsubmit="return false">
+          <label class="c12">Colaborador<select name="colab" class="campo"></select></label>
+          <label class="c12">Tipo de desligamento<select name="tipo" class="campo"></select></label>
+          <label class="c6">Aviso prévio<select name="aviso" class="campo"></select></label>
+          <label class="c6">Data do aviso<input name="dataAviso" type="date" class="campo"></label>
+          <label class="c6">Último dia trabalhado<input name="saida" type="date" class="campo"></label>
+          <label class="c6">Saldo do FGTS (extrato)<input name="saldoFgts" type="number" min="0" step="0.01" class="campo" placeholder="vazio = estimar"></label>
+        </form></section>
+      <section class="cartao"><div class="cartao-cab"><h2>Comparar os tipos</h2><span class="dir sub">mesma pessoa e datas</span></div>
+        <div class="rolagem"><table class="tabela comparar clicavel" id="comparar"></table></div></section>
+    </div>
+  </div>
+
+  <section class="cartao oculto" id="vLista"><div class="cartao-cab"><h2 id="titLista"></h2><span class="dir sub" id="contagem"></span></div>
+    <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+
+  <div class="form-nota">Regras de exemplo (o contador confirma): aviso de 30 dias + 3 por ano de casa (até 90); o aviso indenizado conta para 13º e férias; multa do FGTS 40% (sem justa causa) ou 20% (acordo);
+    pagamento em até 10 dias depois do último dia. INSS e IRRF do mês e do 13º saem à parte; aviso e férias indenizados não têm INSS nem IRRF. Sem o extrato do FGTS, o saldo é estimado pelo salário atual.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=11"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/folha.js?v=3"></script>
+<script src="../assets/js/escala.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/rescisao.js?v=1"></script>
+<script>
+/* Rescisão: nada aqui guarda número calculado. A cada mudança (cadastro, lançamentos, escala, férias,
+   contas a pagar, rescisões) a tela refaz a conta pela regra única (rescisao.js). Registrar relê tudo
+   na hora de confirmar e só grava se bater com o que a pessoa viu. */
+let aba = 'projecao';
+const hoje = hojeISO();
+janela.nota = RESC.REAL ? 'Grava no banco e aparece na hora nas outras telas' : 'Exemplo: as alterações somem ao recarregar';
+$('etqExemplo').classList.toggle('oculto', RESC.REAL);
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador, matrícula, cargo… (atalho: /)' });
+const naTela = c => noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade }) && casaBusca([c.nome, c.matricula, CARGOS[c.cargo]].join(' '), filtro.busca);
+const ativos = () => COLABORADORES.filter(c => c.ativo && c.situacao !== 'desligado' && naTela(c)).sort((a, b) => a.nome.localeCompare(b.nome));
+const d = iso => iso ? dataBR(iso + 'T12:00') : '—';
+const kpi = (t, x, c) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`;
+const f = $('sim');
+
+/* ---------- Simulação: escolhas da pessoa (não são dado do sistema) ---------- */
+const simu = { colab: '', tipo: 'sem_justa_causa', aviso: 'indenizado', dataAviso: hoje, saida: hoje, saldoFgts: '' };
+f.tipo.innerHTML = Object.entries(RESC.TIPOS).map(([k, t]) => `<option value="${k}">${esc(t.nome)}</option>`).join('');
+const saidaSugerida = () => simu.aviso === 'trabalhado' ? RESC.somaDias(simu.dataAviso, 29) : simu.dataAviso;
+function montarAvisos() {
+  const ok = RESC.avisosDo(simu.tipo); if (!ok.includes(simu.aviso)) simu.aviso = ok[0];
+  f.aviso.innerHTML = ok.map(k => `<option value="${k}">${esc(RESC.AVISOS[k])}</option>`).join('');
+  f.aviso.value = simu.aviso; f.aviso.disabled = ok.length < 2;
+}
+f.addEventListener('change', e => {
+  const n = e.target.name; if (!n) return;
+  simu[n] = e.target.value;
+  if (n === 'tipo') { montarAvisos(); simu.saida = saidaSugerida(); }
+  if (n === 'aviso' || n === 'dataAviso') simu.saida = saidaSugerida();
+  if (!simu.dataAviso) simu.dataAviso = hoje;
+  if (!simu.saida) simu.saida = simu.dataAviso;
+  desenhar();
+});
+const opSim = () => ({ tipo: simu.tipo, aviso: simu.aviso, dataAviso: simu.dataAviso, saida: simu.saida, saldoFgts: simu.saldoFgts === '' ? null : Number(simu.saldoFgts) });
+// Passivo: quanto custaria desligar hoje, sem justa causa e aviso indenizado
+const passivo = c => RESC.calcular(c, { tipo: 'sem_justa_causa', aviso: 'indenizado', dataAviso: hoje, saida: hoje });
+
+/* ---------- Tela ---------- */
+function desenhar() {
+  const cs = ativos(), ps = cs.map(passivo);
+  const regs = RESC.lista().map(r => ({ r, c: colab(r.colaborador_id) })).filter(x => naTela(x.c));
+  const aPagar = regs.flatMap(x => [x.r.conta_pagar_id, x.r.conta_fgts_id]).map(RESC.conta).filter(x => x && !x.pagoEm);
+  const prox = aPagar.map(x => x.vencimento).sort()[0];
+  const soma = k => ps.reduce((a, x) => a + x[k], 0);
+  const ferias13 = ps.reduce((a, x) => a + x.itens.filter(i => ['ferias', 'decimo'].includes(i.grupo) && i.tipo === 'provento').reduce((s, i) => s + i.valor, 0), 0);
+  const dobro = ps.filter(x => x.itens.some(i => /em dobro/.test(i.nome))).length;
+  const completos = ps.filter(x => x.itens.some(i => /vencidas/.test(i.nome))).length;
+  $('kpis').innerHTML = [
+    kpi('Passivo se desligar hoje', reais(soma('custo')), `${cs.length} pessoa(s) · sem justa causa, aviso indenizado`),
+    kpi('Multa do FGTS', reais(soma('multa')), ps.some(x => x.fgtsEstimado) ? 'saldo do FGTS estimado' : '40% do saldo'),
+    kpi('Férias e 13º no passivo', reais(ferias13), dobro ? `<span class="desce">${dobro} com férias em dobro</span> · ${completos} com período completo` : `${completos} com período completo sem tirar`),
+    kpi('Rescisões a pagar', reais(aPagar.reduce((a, x) => a + x.valor, 0)), prox ? `próximo prazo ${d(prox)}` : 'nada em aberto')
+  ].join('');
+  $('vProjecao').classList.toggle('oculto', aba !== 'projecao');
+  $('vLista').classList.toggle('oculto', aba === 'projecao');
+  if (aba === 'projecao') desenharProjecao(cs);
+  else if (aba === 'passivo') desenharPassivo(cs, ps);
+  else desenharRegistradas(regs);
+}
+
+function desenharProjecao(cs) {
+  const ant = simu.colab;
+  if (!cs.some(c => c.id === simu.colab)) simu.colab = cs[0]?.id || '';
+  f.colab.innerHTML = cs.map(c => `<option value="${c.id}">${esc(c.nome)} · ${esc(nomeUnidade(c.unidade))}</option>`).join('') || '<option value="">ninguém com esses filtros</option>';
+  f.colab.value = simu.colab; f.tipo.value = simu.tipo; montarAvisos();
+  f.dataAviso.value = simu.dataAviso; f.saida.value = simu.saida; if (document.activeElement !== f.saldoFgts) f.saldoFgts.value = simu.saldoFgts;
+  const c = colab(simu.colab);
+  if (!simu.colab) { $('trct').innerHTML = '<tbody><tr><td class="vazio">Escolha um colaborador ativo.</td></tr></tbody>'; $('resumoFgts').innerHTML = $('alertas').innerHTML = $('comparar').innerHTML = $('subTrct').textContent = ''; return; }
+  const res = RESC.calcular(c, opSim());
+  const avisoTroca = ant && ant !== simu.colab ? `<div class="aviso perigo">O colaborador escolhido saiu da lista (desligado ou fora do filtro). Mostrando ${esc(c.nome)}.</div>` : '';
+  $('titTrct').textContent = `Verbas rescisórias · ${c.nome}`;
+  $('subTrct').innerHTML = `${etqEmpresa(c.empresa)} ${esc(CARGOS[c.cargo] || '')} · ${res.tempo} de casa`;
+  $('alertas').innerHTML = avisoTroca + res.alertas.map(a => `<div class="aviso perigo">⚠ ${esc(a)}</div>`).join('');
+  $('trct').innerHTML = tabelaTrct(res);
+  $('resumoFgts').innerHTML = resumo(res);
+  // Comparar os tipos com as mesmas datas (cada tipo com a forma de aviso sugerida)
+  $('comparar').innerHTML = `<thead><tr><th>Tipo</th><th class="num">Líquido</th><th class="num">Custo total</th></tr></thead><tbody>
+    ${Object.entries(RESC.TIPOS).map(([k, t]) => { const o = { ...opSim(), tipo: k, aviso: k === simu.tipo ? simu.aviso : RESC.avisosDo(k)[0] }; const x = RESC.calcular(c, o);
+      return `<tr data-tipo="${k}" class="${k === simu.tipo ? 'atual' : ''}" tabindex="0"><td>${esc(t.curto)}</td><td class="num">${reais(x.liquido)}</td><td class="num">${reais(x.custo)}</td></tr>`; }).join('')}</tbody>`;
+}
+function tabelaTrct(res) {
+  const nomes = { salario: 'Saldo de salário e o que foi lançado no mês', aviso: 'Aviso prévio', decimo: '13º salário', ferias: 'Férias', impostos: 'INSS e IRRF' };
+  return `<thead><tr><th>Verba</th><th class="num so-largo">Ref.</th><th class="num">Proventos</th><th class="num">Descontos</th></tr></thead><tbody>
+    ${Object.keys(nomes).filter(g => res.itens.some(i => i.grupo === g)).map(g => `<tr class="grupo"><td colspan="4">${nomes[g]}</td></tr>` +
+      res.itens.filter(i => i.grupo === g).map(i => `<tr><td>${i.codigo ? `<span class="mono cod">${i.codigo}</span> ` : ''}${esc(i.nome)}${i.ref ? ` <small class="sub so-celular-i">${esc(i.ref)}</small>` : ''}</td><td class="num so-largo">${esc(i.ref)}</td>
+        <td class="num">${i.tipo === 'provento' ? reais(i.valor) : ''}</td><td class="num">${i.tipo === 'desconto' ? reais(i.valor) : ''}</td></tr>`).join('')).join('')}</tbody>
+    <tfoot><tr><td>Totais</td><td class="so-largo"></td><td class="num">${reais(res.bruto)}</td><td class="num">${reais(res.descontos)}</td></tr>
+    <tr><td><b>Líquido ao colaborador</b> <small class="sub">pagar até ${d(res.prazo)}</small></td><td class="so-largo"></td><td colspan="2" class="num"><b>${reais(res.liquido)}</b></td></tr></tfoot>`;
+}
+function resumo(res) {
+  const T = res.T;
+  return [
+    ['Aviso prévio', `${res.avisoDias} dias`, res.indenizados ? `${res.indenizados} indenizados · projeção até ${d(res.projetada)}` : (RESC.AVISOS[res.op.aviso] || '')],
+    ['FGTS da rescisão', reais(res.fgtsRescisao), 'mês + aviso + 13º (8%)'],
+    [`Multa FGTS ${T.multa ? (T.multa * 100) + '%' : ''}`, reais(res.multa), `sobre ${reais(res.baseMulta)}${res.fgtsEstimado ? ' (saldo estimado)' : ''}`],
+    ['Guia do FGTS', reais(res.guiaFgts), `vence ${d(res.prazo)}`],
+    ['Custo total', reais(res.custo), 'verbas + FGTS + multa'],
+    ['Saque e seguro', T.saque ? reais(res.saque) : 'sem saque', T.seguro ? 'tem seguro-desemprego' : 'sem seguro-desemprego']
+  ].map(([t, v, s]) => `<div>${t}<b>${v}</b>${esc(s)}</div>`).join('');
+}
+
+function desenharPassivo(cs, ps) {
+  $('titLista').textContent = 'Passivo se desligar hoje (sem justa causa, aviso indenizado)';
+  $('contagem').textContent = `${cs.length} colaborador(es)`;
+  const grupos = {}; ps.forEach(x => (grupos[x.c.empresa] ||= []).push(x));
+  const fer = x => x.itens.filter(i => i.grupo === 'ferias').reduce((a, i) => a + i.valor, 0);
+  const dec = x => x.itens.filter(i => i.grupo === 'decimo' && i.tipo === 'provento').reduce((a, i) => a + i.valor, 0);
+  $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th class="so-largo">Tempo de casa</th><th class="num">Aviso</th><th class="num">Férias + 1/3</th><th class="num so-largo">13º</th><th class="num">Multa FGTS</th><th class="num so-largo">Líquido</th><th class="num">Custo total</th></tr></thead><tbody>
+    ${EMPRESAS.filter(e => grupos[e.id]).map(e => { const g = grupos[e.id].sort((a, b) => b.custo - a.custo);
+      return `<tr class="grupo"><td colspan="7">${esc(e.nome)} <span class="sub">${g.length}</span></td><td class="num">${reais(g.reduce((a, x) => a + x.custo, 0))}</td></tr>` + g.map(x =>
+      `<tr data-id="${x.c.id}" tabindex="0"><td><b>${esc(x.c.nome)}</b> <small class="sub">${esc(nomeUnidade(x.c.unidade))}</small>${x.alertas.length ? ' <span class="etiqueta pendente" title="' + esc(x.alertas.join(' ')) + '">atenção</span>' : ''}</td>
+        <td class="so-largo">${x.tempo}</td><td class="num">${x.avisoDias} d</td><td class="num">${reais(fer(x))}</td><td class="num so-largo">${reais(dec(x))}</td>
+        <td class="num">${reais(x.multa)}</td><td class="num so-largo">${reais(x.liquido)}</td><td class="num"><b>${reais(x.custo)}</b></td></tr>`).join(''); }).join('')
+    || '<tr><td colspan="8" class="vazio">Ninguém com esses filtros.</td></tr>'}</tbody>`;
+}
+
+function situacaoPagto(r) {
+  const cs = [r.conta_pagar_id, r.conta_fgts_id].map(RESC.conta).filter(Boolean);
+  if (!cs.length) return ['sem conta', ''];
+  if (cs.every(x => x.pagoEm)) return ['pago', 'completa'];
+  const v = cs.filter(x => !x.pagoEm).map(x => x.vencimento).sort()[0];
+  return v < hoje ? [`atrasado (${d(v)})`, 'perigo'] : [`a pagar até ${d(v)}`, 'pendente'];
+}
+function desenharRegistradas(regs) {
+  $('titLista').textContent = 'Rescisões registradas';
+  $('contagem').textContent = `${regs.length} rescisão(ões)`;
+  regs.sort((a, b) => b.r.data_saida.localeCompare(a.r.data_saida));
+  $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th>Tipo</th><th>Último dia</th><th class="num">Líquido</th><th class="num so-largo">Guia FGTS</th><th>Pagamento</th></tr></thead><tbody>
+    ${regs.map(({ r, c }) => { const cp = RESC.conta(r.conta_pagar_id), cf = RESC.conta(r.conta_fgts_id), s = situacaoPagto(r), x = RESC.calcular(c, RESC.opDe(r));
+      const dif = Math.abs((cp?.valor || 0) - x.liquido) >= 0.01 || Math.abs((cf?.valor || 0) - x.guiaFgts) >= 0.01;
+      return `<tr data-resc="${r.id}" tabindex="0"><td><b>${esc(c.nome)}</b> ${etqEmpresa(c.empresa)}</td><td>${esc(RESC.TIPOS[r.tipo]?.curto || r.tipo)}</td><td>${d(r.data_saida)}</td>
+        <td class="num">${reais(cp?.valor || 0)}${dif ? ' <span class="etiqueta perigo" title="A conta de hoje dá outro valor">diferença</span>' : ''}</td><td class="num so-largo">${reais(cf?.valor || 0)}</td>
+        <td><span class="etiqueta ${s[1]}">${s[0]}</span></td></tr>`; }).join('')
+    || '<tr><td colspan="6" class="vazio">Nenhuma rescisão registrada.</td></tr>'}</tbody>`;
+}
+
+/* ---------- Registrar ---------- */
+$('btnRegistrar').onclick = () => {
+  const c = colab(simu.colab); if (!simu.colab) return;
+  const res = RESC.calcular(c, opSim());
+  const foto = { c: { ...c }, liquido: res.liquido, guiaFgts: res.guiaFgts };
+  janela(`Registrar desligamento · ${c.nome}`, `
+    <div class="aviso perigo"><b>${esc(res.T.nome)}</b> · último dia ${d(res.op.saida)}. Ao registrar, ${esc(c.nome)} fica <b>desligado(a)</b>: sai da folha e da escala depois desse dia,
+      e entram no contas a pagar o líquido de <b>${reais(res.liquido)}</b> e a guia do FGTS de <b>${reais(res.guiaFgts)}</b>, com vencimento em ${d(res.prazo)}.</div>
+    ${res.alertas.map(a => `<div class="aviso">⚠ ${esc(a)}</div>`).join('')}
+    <div class="form-grade"><label class="c12">Observação (motivo, quem comunicou…)<input name="obs" class="campo" maxlength="500"></label></div>`,
+    'Registrar', async fm => {
+      const e = await RESC.registrar(foto, opSim(), fm.obs.value.trim());
+      if (e) return e;
+      aba = 'registradas'; $('abas').querySelectorAll('button').forEach(b => b.classList.toggle('ativa', b.dataset.aba === aba)); desenhar();
+    });
+};
+
+/* ---------- Detalhe de uma rescisão registrada ---------- */
+function detalhe(id) {
+  const r = RESC.lista().find(x => x.id === id); if (!r) return;
+  const foto = { ...r }, c = colab(r.colaborador_id), res = RESC.calcular(c, RESC.opDe(r));
+  const cp = RESC.conta(r.conta_pagar_id), cf = RESC.conta(r.conta_fgts_id), pago = [cp, cf].some(x => x?.pagoEm);
+  const dif = Math.abs((cp?.valor || 0) - res.liquido) >= 0.01 || Math.abs((cf?.valor || 0) - res.guiaFgts) >= 0.01;
+  const corpo = `<div class="sub">${esc(nomeEmpresa(c.empresa))} · ${esc(nomeUnidade(c.unidade))} · matrícula ${esc(c.matricula)} · admissão ${d(c.admissao)} · ${esc(res.T.nome)} · aviso ${d(r.data_aviso)} · último dia ${d(r.data_saida)}</div>
+    ${dif ? `<div class="aviso perigo"><b>⚠ A conta de hoje dá outro valor</b> (líquido ${reais(res.liquido)}, FGTS ${reais(res.guiaFgts)}) do que foi para o contas a pagar (${reais(cp?.valor || 0)} e ${reais(cf?.valor || 0)}).
+      ${pago ? 'Já houve pagamento: a diferença vira acerto, nunca ajuste escondido.' : 'Nada foi pago ainda: desfaça e registre de novo para gerar as contas com o valor certo.'}</div>` : ''}
+    <table class="tabela trct">${tabelaTrct(res)}</table><div class="resumo-fgts">${resumo(res)}</div>
+    ${r.obs ? `<div class="form-nota">${esc(r.obs)}</div>` : ''}
+    <div class="form-nota">Pagamento: ${esc(situacaoPagto(r)[0])}. Pague em <a href="#" data-abrir="pagar">Financeiro › Contas a pagar</a>.
+      ${pago ? '' : '<button type="button" class="btn btn-mini" data-desfazer>Desfazer o registro</button>'}</div>`;
+  const v = janela(`Rescisão · ${c.nome}`, corpo, 'Imprimir', () => imprimir(c, res, corpo));
+  v.querySelector('[data-desfazer]')?.addEventListener('click', async () => {
+    const e = await RESC.desfazer(foto);
+    if (e) { v.querySelector('#fMsg').textContent = e; return; }
+    v.remove(); desenhar();
+  });
+}
+function imprimir(c, res, corpo) {
+  const w = window.open('', '_blank'); if (!w) return 'O navegador bloqueou a janela de impressão.';
+  w.document.write(`<!doctype html><meta charset="utf-8"><title>Rescisão · ${esc(c.nome)}</title><link rel="stylesheet" href="../assets/css/estilo.css?v=11"><body style="padding:20px;background:#fff"><h2>Rescisão · ${esc(c.nome)}</h2>${corpo}<script>setTimeout(()=>print(),300)<\/script>`);
+  w.document.close();
+}
+$('btnImprimir').onclick = () => { const c = colab(simu.colab); if (!simu.colab) return; const res = RESC.calcular(c, opSim());
+  imprimir(c, res, `<div class="sub">Projeção de ${dataBR(new Date())} · ${esc(res.T.nome)} · aviso ${d(res.op.dataAviso)} · último dia ${d(res.op.saida)} · ${res.tempo} de casa</div>
+    <table class="tabela trct">${tabelaTrct(res)}</table><div class="resumo-fgts">${resumo(res)}</div>${res.alertas.map(a => `<div class="aviso">⚠ ${esc(a)}</div>`).join('')}`); };
+
+/* ---------- Eventos ---------- */
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba; $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
+$('comparar').onclick = e => { const tr = e.target.closest('tr[data-tipo]'); if (!tr) return; simu.tipo = tr.dataset.tipo; montarAvisos(); simu.saida = saidaSugerida(); desenhar(); };
+$('tab').onclick = e => { const tr = e.target.closest('tr[data-id],tr[data-resc]'); if (!tr) return;
+  if (tr.dataset.resc) return detalhe(tr.dataset.resc);
+  simu.colab = tr.dataset.id; aba = 'projecao'; $('abas').querySelectorAll('button').forEach(b => b.classList.toggle('ativa', b.dataset.aba === aba)); desenhar(); };
+$('tab').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.closest('tr')?.click(); });
+$('btnExportar').onclick = () => {
+  if (aba === 'projecao') { const c = colab(simu.colab); if (!simu.colab) return; const res = RESC.calcular(c, opSim());
+    return exportarCSV('rescisao-' + c.matricula, ['Colaborador', 'Tipo', 'Grupo', 'Verba', 'Ref.', 'Provento', 'Desconto'],
+      res.itens.map(i => [c.nome, res.T.curto, i.grupo, i.nome, i.ref, i.tipo === 'provento' ? i.valor : '', i.tipo === 'desconto' ? i.valor : ''])); }
+  if (aba === 'passivo') return exportarCSV('passivo-rescisao', ['Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Tempo de casa', 'Aviso (dias)', 'Líquido', 'FGTS rescisão', 'Multa FGTS', 'Custo total'],
+    ativos().map(passivo).map(x => [nomeEmpresa(x.c.empresa), nomeUnidade(x.c.unidade), x.c.matricula, x.c.nome, x.tempo, x.avisoDias, x.liquido, x.fgtsRescisao, x.multa, x.custo]));
+  exportarCSV('rescisoes', ['Empresa', 'Colaborador', 'Tipo', 'Aviso', 'Último dia', 'Líquido (conta)', 'Guia FGTS (conta)', 'Pagamento'],
+    RESC.lista().map(r => { const c = colab(r.colaborador_id); return [nomeEmpresa(c.empresa), c.nome, RESC.TIPOS[r.tipo]?.curto, d(r.data_aviso), d(r.data_saida), RESC.conta(r.conta_pagar_id)?.valor || 0, RESC.conta(r.conta_fgts_id)?.valor || 0, situacaoPagto(r)[0]]; }));
+};
+
+vigiarDados(['colaboradores', 'lancamentos', 'escala_dias', 'ferias', 'adiantamentos', 'pagamentos_13', 'contas_pagar', 'rescisoes', 'eventos'], desenhar);
+RESC.garantir().catch(e => console.warn('Rescisões ainda não estão no banco:', e.message)).finally(desenhar);
+desenhar();
+</script>
+</body>
+</html>
