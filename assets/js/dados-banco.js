@@ -10,6 +10,7 @@ const TABELAS_BANCO = {
   unidades: { ordem: 'ordem' },
   // incremental: relê só as linhas alteradas desde a última leitura (tabelas grandes; nelas não se apaga linha)
   categorias_financeiras: { ordem: 'codigo' },
+  grupos_financeiros: { ordem: 'numero' },   // grupo = número antes do ponto no código da categoria
   contas_bancarias: { ordem: 'apelido' },
   contas_pagar: { ordem: 'vencimento', incremental: true },
   contas_receber: { ordem: 'vencimento', incremental: true },

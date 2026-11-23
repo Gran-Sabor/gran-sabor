@@ -77,6 +77,7 @@ const MENU = [
     { id: 'fornecedores',   nome: 'Fornecedores', arquivo: 'pages/cad-fornecedores.html' },
     { id: 'clientes',       nome: 'Clientes e convênios', arquivo: 'pages/cad-clientes.html' },
     { id: 'plano_contas',   nome: 'Categorias financeiras', arquivo: 'pages/cad-categorias.html' },
+    { id: 'grupos_financeiros', nome: 'Grupos financeiros', arquivo: 'pages/cad-grupos-financeiros.html' },
     { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/cad-contas-bancarias.html' },
     { id: 'centros_custo',  nome: 'Centros de custo', arquivo: 'pages/cad-centros.html' }
   ]},

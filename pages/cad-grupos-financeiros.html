@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grupos financeiros</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=14"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=10"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script src="../assets/js/financeiro.js?v=3"></script>
+<script src="../assets/js/plano-dre.js?v=2"></script>
+<script>
+/* Grupos financeiros: o número do grupo é o começo do código das categorias (4 = Folha → 4.07 Férias).
+   Renomear um grupo muda o nome em todas as categorias dele, na hora, em todas as telas (o banco faz,
+   gatilho grupo_renomeado). Para mudar uma categoria de grupo, abra a categoria e escolha o grupo novo:
+   ela ganha o próximo código livre e os lançamentos acompanham (apontam para a categoria). */
+const LINHAS_DRE = PLANO_DRE.LINHAS;
+
+(async () => {
+  const REAL = await FIN.usar() && await FIN.garantir('grupos_financeiros', 'contas_pagar', 'contas_receber').then(() => true).catch(() => false);
+  if (!REAL) {
+    document.body.innerHTML = `<div class="tela"><div class="tela-cab"><h1>Grupos financeiros</h1></div>
+      <div class="aviso">${db ? 'Os grupos entram no banco quando o pacote deles for juntado.' : 'Modo demonstração: os grupos existem só com o banco ligado.'}
+      No exemplo, o grupo é o número antes do ponto do código da categoria.</div></div>`;
+    return;
+  }
+  const lista = FIN.L('grupos_financeiros');
+  const cats = id => FIN.categorias().filter(c => c.grupo_id === id);
+  const lancamentos = id => { const ids = new Set(cats(id).map(c => c.id));
+    return FIN.L('contas_pagar').filter(c => ids.has(c.categoria_id)).length + FIN.L('contas_receber').filter(c => ids.has(c.categoria_id)).length; };
+  montarCadastro({
+    titulo: 'Grupos financeiros', sub: 'Agrupam as categorias · o número é o começo do código (4 › 4.07)',
+    novoRotulo: 'Novo grupo', tituloLista: 'Grupos', porUnidade: false,
+    dados: lista, tabela: 'grupos_financeiros', depende: ['categorias_financeiras', 'contas_pagar', 'contas_receber'],
+    ordenar: (a, b) => a.numero - b.numero,
+    tituloItem: g => `${g.numero} · ${g.nome}`,
+    colunas: [
+      { campo: 'numero', titulo: 'Nº', fmt: v => `<span class="mono">${esc(v)}</span>` },
+      { campo: 'nome', titulo: 'Grupo', fmt: v => `<b>${esc(v)}</b>` },
+      { campo: 'dre', titulo: 'Linha da DRE (padrão)' },
+      { campo: 'id', titulo: 'Categorias', num: true, fmt: v => numero(cats(v).length), busca: g => cats(g.id).map(c => c.nome).join(' ') },
+      { campo: 'atualizado_em', titulo: 'Lançamentos', num: true, fmt: (v, g) => numero(lancamentos(g.id)), busca: () => '' },
+      { campo: 'ativo', titulo: 'Ativo', fmt: sim }
+    ],
+    kpis: (v, todos) => [
+      ['Grupos', v.length, `${todos.filter(g => !g.ativo).length} inativo(s)`],
+      ['Categorias', FIN.categorias().length, 'em todos os grupos'],
+      ['Sem categoria', v.filter(g => !cats(g.id).length).length, 'grupos vazios']
+    ],
+    campos: [
+      { campo: 'numero', titulo: 'Número', tipo: 'numero', obrig: true, larg: 'c3', max: 2, dica: 'ex.: 12', somenteLeitura: true },
+      { campo: 'nome', titulo: 'Nome do grupo', obrig: true, larg: 'c9', max: 60 },
+      { campo: 'dre', titulo: 'Linha da DRE (padrão das categorias novas)', tipo: 'select', opcoes: LINHAS_DRE.map(x => [x, x]), larg: 'c8' },
+      { campo: 'ativo', titulo: 'Ativo', tipo: 'check', larg: 'c4' }
+    ],
+    novo: () => ({ numero: Math.max(0, ...lista.map(g => g.numero)) + 1, dre: 'Despesas', ativo: true }),
+    rodapeForm: () => 'Renomear o grupo muda o nome em todas as categorias dele, na hora, em todas as telas. O número não muda depois de criado.',
+    validar: (d, item, lst) => {
+      const n = Number(item.id ? item.numero : d.numero);
+      if (!(n >= 1 && n <= 99 && Number.isInteger(n))) return 'Número de 1 a 99.';
+      if (!item.id && lst.some(g => g.numero === n)) return `Já existe o grupo ${n}.`;
+      if (lst.some(g => g.id !== item.id && normalizar(g.nome) === normalizar(d.nome))) return 'Já existe um grupo com esse nome.';
+      if (item.id && !d.ativo && item.ativo && cats(item.id).some(c => c.ativo)) return 'Este grupo tem categorias ativas: mova ou desative as categorias antes.';
+      return '';
+    },
+    salvar: async (d, item) => {
+      const reg = { nome: d.nome, dre: d.dre, ativo: d.ativo };
+      if (!item) {
+        const { error } = await db.from('grupos_financeiros').insert({ ...reg, numero: Number(d.numero) });
+        if (error) return /duplicate|unique/i.test(error.message) ? 'Já existe um grupo com esse número ou nome.' : 'Não foi possível gravar: ' + error.message;
+      } else {
+        // só grava se ninguém mudou o grupo desde que o formulário abriu; o banco leva o nome novo para as categorias
+        const { data, error } = await db.from('grupos_financeiros').update(reg).eq('id', item.id).eq('atualizado_em', item.atualizado_em).select('id');
+        if (error) return /duplicate|unique/i.test(error.message) ? 'Já existe um grupo com esse nome.' : 'Não foi possível gravar: ' + error.message;
+        if (!data.length) { await FIN.gravou('grupos_financeiros'); return 'Este grupo mudou em outra tela enquanto o formulário estava aberto. Nada foi feito: feche e confira.'; }
+      }
+      await FIN.gravou('grupos_financeiros', 'categorias_financeiras');
+    }
+  });
+})();
+</script>
+</body>
+</html>
