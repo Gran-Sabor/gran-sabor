@@ -9,152 +9,189 @@
 </head>
 <body>
 <div class="tela">
-  <div class="tela-cab"><h1>Férias</h1><span class="sub">Períodos aquisitivos, vencimentos e programação · o pagamento vira conta a pagar e a escala marca sozinha</span>
-    <div class="dir"><span class="etiqueta exemplo" title="Dados fictícios: nada é gravado">exemplo</span>
+  <div class="tela-cab"><h1>Férias</h1><span class="sub">Períodos, prazos e avisos · o recibo vira conta a pagar e a escala marca sozinha</span>
+    <div class="dir"><span class="etiqueta exemplo oculto" id="etqExemplo" title="Dados fictícios: some ao recarregar">exemplo</span>
       <button type="button" class="btn" id="btnExportar">Exportar</button>
       <button type="button" class="btn btn-pri" id="btnNovo">+ Programar férias</button></div></div>
+  <div id="avisoBanco"></div>
   <div id="filtros"></div>
-  <div class="abas-tela" id="abas"><button type="button" data-aba="situacao" class="ativa">Situação por colaborador</button><button type="button" data-aba="programadas">Programadas e em gozo</button></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="avisos" class="ativa">Avisos de prazo</button><button type="button" data-aba="situacao">Situação por colaborador</button><button type="button" data-aba="programadas">Programadas e em gozo</button></div>
   <section class="kpis" id="kpis"></section>
   <section class="cartao"><div class="cartao-cab"><h2 id="titLista"></h2><span class="dir sub" id="contagem"></span></div>
     <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
-  <div class="form-nota">Regras de exemplo: 30 dias por período (menos com muitas faltas), até 3 partes (uma com 14 dias ou mais, as outras com 5 ou mais), abono de 10 dias opcional,
-    pagamento até 2 dias antes do início, sem começar nos 2 dias antes de feriado ou domingo. Vencida = paga em dobro.</div>
+  <div class="form-nota">Prazos: as férias de cada período precisam começar e terminar nos 12 meses seguintes (senão, os dias de fora saem em dobro); o aviso escrito ao colaborador
+    é entregue 30 dias antes do início; o pagamento sai até 2 dias antes. O aviso aparece aqui, no Início e no sino do topo 60 dias antes do último dia para começar.
+    Até 3 partes (uma com 14 dias ou mais, as outras com 5 ou mais), abono de 10 dias opcional, sem começar nos 2 dias antes de feriado ou domingo.</div>
 </div>
 
-<script src="../assets/js/menu.js?v=10"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=11"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=9"></script>
 <script src="../assets/js/folha.js?v=3"></script>
 <script src="../assets/js/escala.js?v=1"></script>
+<script src="../assets/js/prazos-rh.js?v=1"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
-let aba = 'situacao';
-const hoje = hojeISO();
+/* Férias: a situação de cada pessoa, os prazos e os avisos saem de prazos-rh.js (a mesma conta do Início e do sino).
+   Programar grava as férias e a conta a pagar do recibo de uma vez; a escala marca os dias sozinha.
+   As 3 empresas sempre separadas: filtro, etiqueta e exportação. */
+let aba = 'avisos';
+const P = PRAZOS, br = P.br, hoje = () => hojeISO();
+janela.nota = P.REAL ? 'Grava no banco e aparece na hora nas outras telas' : 'Exemplo: as alterações somem ao recarregar';
+$('etqExemplo').classList.toggle('oculto', P.REAL);
+if (P.REAL && !P.NO_BANCO) $('avisoBanco').innerHTML = '<div class="aviso">As férias ainda não estão no banco (falta juntar o pacote): dá para ver os prazos, mas não programar.</div>';
 const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador, matrícula, cargo… (atalho: /)' });
 const naTela = c => noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade }) && casaBusca([c.nome, c.matricula, CARGOS[c.cargo]].join(' '), filtro.busca);
-const diasAte = d => Math.ceil((new Date(d + 'T12:00') - new Date(hoje + 'T12:00')) / 864e5);
-const fimDe = f => FOLHA.somaDias(f.inicio, f.dias - 1);
-const pagoF = f => f.pagoEm || (CONTAS_PAGAR.find(c => c.id === f.conta) || {}).pagoEm;
-// Situação do colaborador: o período aberto mais antigo manda
-function situacao(c) {
-  const ps = FOLHA.periodosFerias(c), aberto = ps.find(p => p.completo && p.saldo > 0), atual = ps[ps.length - 1];
-  const emGozo = FERIAS.find(f => f.colab === c.id && hoje >= f.inicio && hoje <= fimDe(f));
-  const prog = FERIAS.filter(f => f.colab === c.id && f.inicio > hoje);
-  let sit;
-  if (emGozo) sit = ['em férias', 'destaque', 0];
-  else if (aberto && aberto.limite < hoje) sit = ['vencida (dobro)', 'perigo', 3];
-  else if (aberto && diasAte(aberto.limite) <= 90) sit = [`vence em ${diasAte(aberto.limite)} d`, 'pendente', 2];
-  else if (aberto) sit = ['a tirar', '', 1];
-  else sit = ['em aquisição', 'completa', 0];
-  return { ps, aberto, atual, emGozo, prog, sit };
-}
+const ativos = () => COLABORADORES.filter(c => c.ativo && c.situacao !== 'desligado' && naTela(c));
+const dias = d => d === 0 ? 'hoje' : d < 0 ? `há ${-d} d` : `em ${d} d`;
+const NV = { perigo: 'perigo', alerta: 'pendente', info: '' };
 
 function desenhar() {
-  const cs = COLABORADORES.filter(c => c.ativo && naTela(c)).map(c => ({ c, s: situacao(c) }));
+  const h = hoje(), cs = ativos().map(c => ({ c, s: P.ferias(c, h) }));
+  const avs = P.avisos(naTela, h).filter(a => a.tipo !== 'experiencia');
+  const prog = FERIAS.filter(f => f.inicio > h && naTela(colab(f.colab)));
   $('kpis').innerHTML = [
-    ['Vencidas', `<span class="${cs.some(x => x.s.sit[2] === 3) ? 'desce' : ''}">${cs.filter(x => x.s.sit[2] === 3).length}</span>`, 'pagas em dobro: programe já'],
-    ['Vencem em 90 dias', cs.filter(x => x.s.sit[2] === 2).length, 'programar logo'],
+    ['Vencidas', `<span class="${cs.some(x => x.s.sit[2] === 4) ? 'desce' : ''}">${cs.filter(x => x.s.sit[2] === 4).length}</span>`, 'dias fora do prazo saem em dobro'],
+    [`Começar em ${P.REGRAS.feriasAntecedencia} dias`, cs.filter(x => x.s.sit[2] === 3).length, 'programar logo'],
+    ['Avisos a entregar', prog.filter(f => !f.avisoEm).length, `${prog.filter(f => !f.avisoEm && P.prazoAviso(f) < h).length} atrasado(s)`],
     ['Em férias agora', cs.filter(x => x.s.emGozo).length, 'fora da escala'],
-    ['Programadas', FERIAS.filter(f => f.inicio > hoje && naTela(colab(f.colab))).length, `${reais(FERIAS.filter(f => f.inicio > hoje && naTela(colab(f.colab)) && !pagoF(f)).reduce((a, f) => a + FOLHA.calculoFerias(colab(f.colab), f.dias, f.abono).liquido, 0))} a pagar`]
+    ['Programadas', prog.length, `${reais(prog.filter(f => !P.pagoEm(f)).reduce((a, f) => a + (P.contaDe(f)?.valor ?? P.valorFerias(f).liquido), 0))} a pagar`]
   ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
-  if (aba === 'situacao') {
+
+  if (aba === 'avisos') {
+    $('titLista').textContent = 'Avisos de prazo';
+    $('contagem').textContent = `${avs.length} aviso(s)`;
+    $('tab').innerHTML = `<thead><tr><th>Prazo</th><th>Aviso</th><th>Colaborador</th><th></th></tr></thead><tbody>
+      ${avs.map(a => { const c = colab(a.colab), f = a.tipo !== 'ferias' ? FERIAS.find(x => x.colab === a.colab && x.inicio > h && (a.tipo === 'aviso_ferias' ? P.prazoAviso(x) : P.prazoPagar(x)) === a.data) : null;
+        return `<tr ${f ? `data-ferias="${f.id}"` : `data-id="${c.id}"`} tabindex="0"><td><span class="etiqueta ${NV[a.nivel]}">${br(a.data)}</span> <small class="sub">${dias(Math.round((new Date(a.data + 'T12:00') - new Date(h + 'T12:00')) / 864e5))}</small></td>
+          <td><b>${esc(a.titulo)}</b><br><small class="sub">${esc(a.texto)}</small></td>
+          <td>${esc(c.nome)} <small class="sub">${esc(nomeUnidade(c.unidade))}</small> ${etqEmpresa(c.empresa)}</td>
+          <td><button type="button" class="btn btn-mini">${a.tipo === 'ferias' ? 'Programar' : a.tipo === 'aviso_ferias' ? 'Registrar aviso' : 'Abrir'}</button></td></tr>`; }).join('')
+      || '<tr><td colspan="4" class="vazio">Nenhum prazo de férias nos próximos dias. Tudo em dia.</td></tr>'}</tbody>`;
+  } else if (aba === 'situacao') {
     $('titLista').textContent = 'Situação por colaborador';
     cs.sort((a, b) => b.s.sit[2] - a.s.sit[2] || a.c.nome.localeCompare(b.c.nome));
     $('contagem').textContent = `${cs.length} colaborador(es)`;
-    $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th>Período aberto</th><th class="num">Saldo</th><th>Limite p/ tirar</th><th>Situação</th><th>Programadas</th></tr></thead><tbody>
+    $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th>Período aberto</th><th class="num">Saldo</th><th>Começar até</th><th>Limite</th><th>Situação</th><th>Programadas</th></tr></thead><tbody>
       ${cs.map(({ c, s }) => `<tr data-id="${c.id}" tabindex="0"><td><b>${esc(c.nome)}</b> <small class="sub">${esc(nomeUnidade(c.unidade))}</small> ${etqEmpresa(c.empresa)}</td>
-        <td>${s.aberto ? `${dataBR(s.aberto.aquisitivo + 'T12:00')} a ${dataBR(s.aberto.fimAquisitivo + 'T12:00')}` : `<span class="sub">em aquisição até ${dataBR(s.atual.fimAquisitivo + 'T12:00')}</span>`}</td>
-        <td class="num">${s.aberto ? `${s.aberto.saldo} d` : '—'}</td><td>${s.aberto ? dataBR(s.aberto.limite + 'T12:00') : '—'}</td>
+        <td>${c.semAdmissao ? '<span class="sub">informe a admissão no cadastro</span>' : s.aberto ? `${br(s.aberto.aquisitivo)} a ${br(s.aberto.fimAquisitivo)}` : `<span class="sub">em aquisição até ${br(s.atual.fimAquisitivo)}</span>`}</td>
+        <td class="num">${s.aberto ? `${s.aberto.saldo} d` : '—'}</td><td>${s.comecarAte ? br(s.comecarAte) : '—'}</td><td>${s.aberto ? br(s.aberto.limite) : '—'}</td>
         <td><span class="etiqueta ${s.sit[1]}">${s.sit[0]}</span></td>
-        <td>${s.prog.map(f => `<small>${dataBR(f.inicio + 'T12:00')} · ${f.dias} d</small>`).join('<br>') || '<span class="sub">—</span>'}</td></tr>`).join('')
-      || '<tr><td colspan="6" class="vazio">Ninguém com esses filtros.</td></tr>'}</tbody>`;
+        <td>${s.prog.map(f => `<small>${br(f.inicio)} · ${f.dias} d${f.avisoEm ? '' : ' · <span class="desce">sem aviso</span>'}</small>`).join('<br>') || '<span class="sub">—</span>'}</td></tr>`).join('')
+      || '<tr><td colspan="7" class="vazio">Ninguém com esses filtros.</td></tr>'}</tbody>`;
   } else {
     $('titLista').textContent = 'Programadas e em gozo';
-    const fs = FERIAS.filter(f => fimDe(f) >= hoje && naTela(colab(f.colab))).sort((a, b) => a.inicio.localeCompare(b.inicio));
+    const fs = FERIAS.filter(f => P.fimDe(f) >= h && naTela(colab(f.colab))).sort((a, b) => a.inicio.localeCompare(b.inicio));
     $('contagem').textContent = `${fs.length} férias`;
-    $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th>Início</th><th>Volta</th><th class="num">Dias</th><th class="num">Líquido</th><th>Pagamento</th></tr></thead><tbody>
-      ${fs.map(f => { const c = colab(f.colab), v = FOLHA.calculoFerias(c, f.dias, f.abono), p = pagoF(f);
-        return `<tr data-ferias="${f.id}" tabindex="0"><td><b>${esc(c.nome)}</b> ${etqEmpresa(c.empresa)}</td><td>${dataBR(f.inicio + 'T12:00')}</td><td>${dataBR(FOLHA.somaDias(f.inicio, f.dias) + 'T12:00')}</td>
-          <td class="num">${f.dias}${f.abono ? ' + 10 abono' : ''}</td><td class="num">${reais(v.liquido)}</td>
-          <td>${p ? `<span class="etiqueta completa">pago ${dataBR(p + 'T12:00')}</span>` : `<span class="etiqueta pendente">até ${dataBR(FOLHA.somaDias(f.inicio, -2) + 'T12:00')}</span>`}</td></tr>`; }).join('')
-      || '<tr><td colspan="6" class="vazio">Nenhuma férias programada.</td></tr>'}</tbody>`;
+    $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th>Início</th><th>Volta</th><th class="num">Dias</th><th>Aviso ao colaborador</th><th class="num">Recibo</th><th>Pagamento</th></tr></thead><tbody>
+      ${fs.map(f => { const c = colab(f.colab), conta = P.contaDe(f), calc = P.valorFerias(f).liquido, p = P.pagoEm(f), dif = conta && !p && Math.abs(conta.valor - calc) >= 0.01;
+        return `<tr data-ferias="${f.id}" tabindex="0"><td><b>${esc(c.nome)}</b> ${etqEmpresa(c.empresa)}</td><td>${br(f.inicio)}</td><td>${br(P.voltaDe(f))}</td>
+          <td class="num">${f.dias}${f.abono ? ' + 10 abono' : ''}</td>
+          <td>${f.avisoEm ? `<span class="etiqueta completa">entregue ${br(f.avisoEm)}</span>` : f.inicio <= h ? '<span class="sub">—</span>' : `<span class="etiqueta ${P.prazoAviso(f) < h ? 'perigo' : 'pendente'}">até ${br(P.prazoAviso(f))}</span>`}</td>
+          <td class="num">${reais(conta ? conta.valor : calc)}${dif ? ` <span class="etiqueta pendente" title="O salário mudou: recalculado ${reais(calc)}">mudou</span>` : ''}</td>
+          <td>${p ? `<span class="etiqueta completa">pago ${br(p)}</span>` : `<span class="etiqueta ${P.prazoPagar(f) < h ? 'perigo' : 'pendente'}">até ${br(P.prazoPagar(f))}</span>`}</td></tr>`; }).join('')
+      || '<tr><td colspan="7" class="vazio">Nenhuma férias programada.</td></tr>'}</tbody>`;
   }
 }
 
 /* ---------- Programar ---------- */
 function programar(cId) {
-  const cs = COLABORADORES.filter(c => c.ativo && c.situacao !== 'afastado' && naTela(c));
-  cId = cId || (cs.map(c => ({ c, s: situacao(c) })).sort((a, b) => b.s.sit[2] - a.s.sit[2])[0] || {}).c?.id;
+  const h = hoje(), cs = ativos().filter(c => c.situacao !== 'afastado' && !c.semAdmissao);
+  cId = cId || (cs.map(c => ({ c, s: P.ferias(c, h) })).sort((a, b) => b.s.sit[2] - a.s.sit[2])[0] || {}).c?.id;
+  const foto = cId ? JSON.parse(JSON.stringify(colab(cId))) : null;
+  const sugestao = () => { let d = FOLHA.somaDias(h, P.REGRAS.avisoColaborador + 1); while ([5, 6, 0].includes(new Date(d + 'T12:00').getDay())) d = FOLHA.somaDias(d, 1); return d; };
   const v = janela('Programar férias', `
     <div class="form-grade">
       <label class="c6">Colaborador<select name="colab" class="campo">${cs.map(c => `<option value="${c.id}"${c.id === cId ? ' selected' : ''}>${esc(c.nome)} · ${esc(nomeUnidade(c.unidade))}</option>`).join('')}</select></label>
       <label class="c6">Período aquisitivo<select name="periodo" class="campo"></select></label>
-      <label class="c4">Início<input name="inicio" type="date" class="campo" value="${FOLHA.somaDias(hoje, 35)}"></label>
-      <label class="c4">Dias de descanso<input name="dias" type="number" min="5" max="30" class="campo" value="30"></label>
-      <label class="c4 marcar"><input type="checkbox" name="abono"> Vender 10 dias (abono)</label>
-    </div><div id="calcF"></div>`, 'Programar', f => {
+      <label class="c3">Início<input name="inicio" type="date" class="campo" value="${sugestao()}"></label>
+      <label class="c3">Dias de descanso<input name="dias" type="number" min="5" max="30" class="campo" value="30"></label>
+      <label class="c3 marcar"><input type="checkbox" name="abono"> Vender 10 dias (abono)</label>
+      <label class="c3">Aviso entregue em<input name="aviso" type="date" class="campo"></label>
+    </div><div id="calcF"></div>`, 'Programar', async f => {
     const c = colab(f.colab.value), err = validar(f); if (err) return err;
-    const p = FOLHA.periodosFerias(c).find(x => x.aquisitivo === f.periodo.value);
-    const dias = +f.dias.value, abono = f.abono.checked, venc = FOLHA.somaDias(f.inicio.value, -2), val = FOLHA.calculoFerias(c, dias, abono);
-    const id = 'fe' + Date.now(), conta = 'cf' + Date.now();
-    CONTAS_PAGAR.push({ id: conta, favorecido: c.nome, documento: `Recibo de férias ${dataBR(f.inicio.value + 'T12:00')}`, unidade: c.unidade, empresa: c.empresa,
-      centro: (CENTROS.find(x => x.unidade === c.unidade) || {}).id, categoria: '4.04', valor: val.liquido, vencimento: venc, pagoEm: null, ferias: id });
-    FERIAS.push({ id, colab: c.id, aquisitivo: p.aquisitivo, inicio: f.inicio.value, dias, abono, pagoEm: null, conta });
-    desenhar(); avisarMudanca('ferias', 'contas_pagar');
+    if (foto && foto.id === c.id) { const m = mudouDesde(foto, c, ['salario', 'dependentes', 'unidade', 'situacao', 'admissao'], 'O cadastro do colaborador'); if (m) return m; }
+    return P.programarFerias(c, { aquisitivo: f.periodo.value, inicio: f.inicio.value, dias: +f.dias.value, abono: f.abono.checked, avisoEm: f.aviso.value || null });
   });
   const f = v.querySelector('form');
-  const periodos = () => { const ps = FOLHA.periodosFerias(colab(f.colab.value)).filter(p => p.saldo > 0);
-    f.periodo.innerHTML = ps.map(p => `<option value="${p.aquisitivo}">${dataBR(p.aquisitivo + 'T12:00')} a ${dataBR(p.fimAquisitivo + 'T12:00')} · saldo ${p.saldo} d${p.completo ? '' : ' (em aquisição)'}</option>`).join('') || '<option value="">sem saldo</option>';
+  if (!cs.length) { $('calcF').innerHTML = '<div class="aviso">Ninguém disponível com esses filtros (afastados e sem admissão ficam de fora).</div>'; return; }
+  const periodos = () => { const ps = FOLHA.periodosFerias(colab(f.colab.value), h).filter(p => p.saldo > 0);
+    f.periodo.innerHTML = ps.map(p => `<option value="${p.aquisitivo}">${br(p.aquisitivo)} a ${br(p.fimAquisitivo)} · saldo ${p.saldo} d${p.completo ? '' : ' (em aquisição)'}</option>`).join('') || '<option value="">sem saldo</option>';
     const p = ps[0]; if (p) f.dias.value = Math.min(30, p.saldo); calc(); };
-  const calc = () => { const c = colab(f.colab.value), dias = +f.dias.value || 0, val = FOLHA.calculoFerias(c, dias, f.abono.checked), err = validar(f);
-    $('calcF').innerHTML = `${err ? `<div class="aviso perigo">${esc(err)}</div>` : ''}<table class="tabela"><tbody>
-      <tr><td>Férias (${dias} d)</td><td class="num">${reais(val.base)}</td></tr><tr><td>1/3 constitucional</td><td class="num">${reais(val.terco)}</td></tr>
+  const calc = () => { const c = colab(f.colab.value), d = +f.dias.value || 0, val = FOLHA.calculoFerias(c, d, f.abono.checked), err = validar(f), at = atencao(f);
+    $('calcF').innerHTML = `${err ? `<div class="aviso perigo">${esc(err)}</div>` : ''}${at.map(t => `<div class="aviso">${esc(t)}</div>`).join('')}<table class="tabela"><tbody>
+      <tr><td>Férias (${d} d)</td><td class="num">${reais(val.base)}</td></tr><tr><td>1/3 constitucional</td><td class="num">${reais(val.terco)}</td></tr>
       ${f.abono.checked ? `<tr><td>Abono 10 d + 1/3 (sem INSS/IRRF)</td><td class="num">${reais(val.abono)}</td></tr>` : ''}
       <tr><td>INSS</td><td class="num desce">−${reais(val.inss)}</td></tr><tr><td>IRRF</td><td class="num desce">−${reais(val.irrf)}</td></tr>
-      <tr><td><b>Líquido</b> · pagar até ${f.inicio.value ? dataBR(FOLHA.somaDias(f.inicio.value, -2) + 'T12:00') : '—'}</td><td class="num"><b>${reais(val.liquido)}</b></td></tr></tbody></table>
-      <div class="form-nota">Ao programar: entra a conta a pagar do recibo de férias (${esc(nomeEmpresa(c.empresa))}) e a escala marca os dias como férias.</div>`; };
+      <tr><td><b>Líquido</b> · pagar até ${f.inicio.value ? br(FOLHA.somaDias(f.inicio.value, -P.REGRAS.pagarAntes)) : '—'}</td><td class="num"><b>${reais(val.liquido)}</b></td></tr></tbody></table>
+      <div class="form-nota">Ao programar: entra a conta a pagar do recibo de férias (${esc(nomeEmpresa(c.empresa))}), a escala marca os dias como férias
+      e o aviso ao colaborador fica no Início até ser registrado (entregar até ${f.inicio.value ? br(FOLHA.somaDias(f.inicio.value, -P.REGRAS.avisoColaborador)) : '—'}).</div>`; };
   f.colab.onchange = periodos; f.addEventListener('input', calc); f.addEventListener('change', calc); periodos();
 }
+// Avisos que não impedem (a Fernanda decide): aviso com menos de 30 dias, férias terminando depois do prazo
+function atencao(f) {
+  const c = colab(f.colab.value), p = FOLHA.periodosFerias(c, hoje()).find(x => x.aquisitivo === f.periodo.value), ini = f.inicio.value, r = [];
+  if (!p || !ini) return r;
+  if (ini < FOLHA.somaDias(hoje(), P.REGRAS.avisoColaborador)) r.push(`Começa em menos de 30 dias: o aviso ao colaborador sai fora do prazo da lei (combine por escrito).`);
+  if (FOLHA.somaDias(ini, +f.dias.value - 1) > p.limite) r.push(`Termina depois de ${br(p.limite)} (fim do prazo do período): os dias de fora saem em dobro.`);
+  return r;
+}
 function validar(f) {
-  const c = colab(f.colab.value), p = FOLHA.periodosFerias(c).find(x => x.aquisitivo === f.periodo.value);
-  const dias = +f.dias.value, ini = f.inicio.value, abono = f.abono.checked;
+  const c = colab(f.colab.value), p = FOLHA.periodosFerias(c, hoje()).find(x => x.aquisitivo === f.periodo.value);
+  const d = +f.dias.value, ini = f.inicio.value, abono = f.abono.checked;
   if (!p) return 'Sem saldo de férias para este colaborador.';
   if (!ini) return 'Informe o início.';
-  if (ini <= FOLHA.somaDias(hoje, 2)) return 'O início precisa ser daqui a 3 dias ou mais (pagamento até 2 dias antes).';
-  if (dias < 5) return 'Cada parte precisa de 5 dias ou mais.';
-  if (dias + (abono ? 10 : 0) > p.saldo) return `Saldo do período é ${p.saldo} dias.`;
-  const partes = p.ferias.length;
-  if (partes >= 3) return 'Este período já foi dividido em 3 partes.';
-  if (dias < 14 && !p.ferias.some(x => x.dias >= 14) && p.saldo - dias - (abono ? 10 : 0) < 14) return 'Uma das partes precisa ter 14 dias ou mais.';
+  if (ini <= FOLHA.somaDias(hoje(), P.REGRAS.pagarAntes)) return 'O início precisa ser daqui a 3 dias ou mais (pagamento até 2 dias antes).';
+  if (d < 5) return 'Cada parte precisa de 5 dias ou mais.';
+  if (d + (abono ? 10 : 0) > p.saldo) return `Saldo do período é ${p.saldo} dias.`;
+  if (p.ferias.length >= 3) return 'Este período já foi dividido em 3 partes.';
+  if (d < 14 && !p.ferias.some(x => x.dias >= 14) && p.saldo - d - (abono ? 10 : 0) < 14) return 'Uma das partes precisa ter 14 dias ou mais.';
   const d1 = FOLHA.somaDias(ini, 1), d2 = FOLHA.somaDias(ini, 2), dow = new Date(ini + 'T12:00').getDay();
   if (FERIADOS[d1] || FERIADOS[d2] || FERIADOS[ini] || dow === 5 || dow === 6 || dow === 0) return 'Não pode começar nos 2 dias antes de feriado ou domingo (nem no próprio dia).';
-  if (FERIAS.some(x => x.colab === c.id && !(FOLHA.somaDias(ini, dias - 1) < x.inicio || ini > fimDe(x)))) return 'Já existem férias nessas datas.';
+  if (FERIAS.some(x => x.colab === c.id && !(FOLHA.somaDias(ini, d - 1) < x.inicio || ini > P.fimDe(x)))) return 'Já existem férias nessas datas.';
+  if (f.aviso.value && f.aviso.value > hoje()) return 'A data do aviso não pode ser no futuro.';
   return '';
 }
+
+/* ---------- Detalhe: aviso, valor, cancelar ---------- */
 function detalhe(fId) {
-  const f = FERIAS.find(x => x.id === fId), c = colab(f.colab), v = FOLHA.calculoFerias(c, f.dias, f.abono), conta = CONTAS_PAGAR.find(x => x.id === f.conta);
-  const pode = f.inicio > hoje && !pagoF(f);
-  janela(`Férias · ${c.nome}`, `<p>${dataBR(f.inicio + 'T12:00')} a ${dataBR(fimDe(f) + 'T12:00')} · ${f.dias} dias${f.abono ? ' + 10 de abono' : ''} · líquido <b>${reais(v.liquido)}</b></p>
-    <div class="form-nota">${pagoF(f) ? `Pago em ${dataBR(pagoF(f) + 'T12:00')}.` : pode ? 'Cancelar tira a conta a pagar do recibo e libera a escala.' : 'Férias em andamento.'}</div>`,
-    pode ? 'Cancelar férias' : 'Fechar', () => {
-      if (!pode) return;
-      if (pagoF(f)) { desenhar(); return 'O recibo acabou de ser pago no financeiro. Nada foi cancelado.'; }
-      if (conta) CONTAS_PAGAR.splice(CONTAS_PAGAR.indexOf(conta), 1);
-      FERIAS.splice(FERIAS.indexOf(f), 1); desenhar(); avisarMudanca('ferias', 'contas_pagar');
-    });
+  const f = FERIAS.find(x => x.id === fId); if (!f) return;
+  const foto = JSON.parse(JSON.stringify(f)), c = colab(f.colab), v = P.valorFerias(f), conta = P.contaDe(f), p = P.pagoEm(f), h = hoje();
+  const pode = f.inicio > h && !p, dif = conta && !p && Math.abs(conta.valor - v.liquido) >= 0.01;
+  const w = janela(`Férias · ${c.nome}`, `<p>${br(f.inicio)} a ${br(P.fimDe(f))} (volta ${br(P.voltaDe(f))}) · ${f.dias} dias${f.abono ? ' + 10 de abono' : ''} · ${esc(nomeEmpresa(c.empresa))}</p>
+    <table class="tabela"><tbody>
+      <tr><td>Aviso ao colaborador</td><td>${f.avisoEm ? `entregue em ${br(f.avisoEm)}` : `entregar até <b>${br(P.prazoAviso(f))}</b>`}</td>
+        <td class="num">${f.inicio > h ? `<input type="date" class="campo" id="dtAviso" value="${f.avisoEm || (h < f.inicio ? h : '')}" max="${h}" style="width:140px"> <button type="button" class="btn btn-mini" id="btAviso">${f.avisoEm ? 'Corrigir' : 'Registrar'}</button>${f.avisoEm ? ' <button type="button" class="btn btn-mini" id="btSemAviso">Tirar</button>' : ''}` : ''}</td></tr>
+      <tr><td>Recibo (conta a pagar)</td><td>${conta ? reais(conta.valor) : reais(v.liquido)} · ${p ? `pago em ${br(p)}` : `pagar até <b>${br(P.prazoPagar(f))}</b>`}</td>
+        <td class="num">${dif ? `<button type="button" class="btn btn-mini" id="btValor">Passar para ${reais(v.liquido)}</button>` : ''}</td></tr></tbody></table>
+    ${dif ? `<div class="aviso">O salário mudou depois de programar: recalculado dá ${reais(v.liquido)}. A conta só muda quando você clicar.</div>` : ''}
+    <div class="form-nota">${p ? 'Recibo pago: para mudar, faça o acerto em Contas a pagar.' : pode ? 'Cancelar tira a conta a pagar do recibo e libera a escala.' : 'Férias em andamento.'}</div>`,
+    pode ? 'Cancelar férias' : 'Fechar', async () => pode ? P.cancelarFerias(foto) : '');
+  const msg = t => { w.querySelector('#fMsg').textContent = t; };
+  const acao = async fn => { const e = await fn(); if (e) msg(e); else w.remove(); };
+  w.querySelector('#btAviso')?.addEventListener('click', () => { const d = w.querySelector('#dtAviso').value;
+    if (!d) return msg('Informe o dia em que o aviso foi entregue.'); if (d > h) return msg('A data do aviso não pode ser no futuro.');
+    acao(() => P.registrarAviso(foto, d)); });
+  w.querySelector('#btSemAviso')?.addEventListener('click', () => acao(() => P.registrarAviso(foto, null)));
+  w.querySelector('#btValor')?.addEventListener('click', () => acao(() => P.atualizarValor(foto)));
 }
 
 $('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba; $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
 $('btnNovo').onclick = () => programar();
 $('tab').onclick = e => { const tr = e.target.closest('tr[data-id],tr[data-ferias]'); if (!tr) return; tr.dataset.ferias ? detalhe(tr.dataset.ferias) : programar(tr.dataset.id); };
-$('btnExportar').onclick = () => exportarCSV('ferias', ['Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Período aberto', 'Saldo', 'Limite', 'Situação', 'Programadas'],
-  COLABORADORES.filter(c => c.ativo && naTela(c)).map(c => { const s = situacao(c);
-    return [nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.matricula, c.nome, s.aberto ? dataBR(s.aberto.aquisitivo + 'T12:00') : '', s.aberto ? s.aberto.saldo : '', s.aberto ? dataBR(s.aberto.limite + 'T12:00') : '', s.sit[0],
-      s.prog.map(f => `${dataBR(f.inicio + 'T12:00')} (${f.dias} d)`).join(', ')]; }));
-vigiarDados(['escala_dias', 'ferias', 'colaboradores', 'lancamentos', 'contas_pagar'], desenhar);
+$('tab').onkeydown = e => { if (e.key === 'Enter') $('tab').onclick(e); };
+$('btnExportar').onclick = () => exportarCSV('ferias', ['Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Período aberto', 'Saldo', 'Começar até', 'Limite', 'Situação', 'Programadas'],
+  ativos().map(c => { const s = P.ferias(c);
+    return [nomeEmpresa(c.empresa), nomeUnidade(c.unidade), c.matricula, c.nome, s.aberto ? br(s.aberto.aquisitivo) : '', s.aberto ? s.aberto.saldo : '', s.comecarAte ? br(s.comecarAte) : '',
+      s.aberto ? br(s.aberto.limite) : '', s.sit[0], s.prog.map(f => `${br(f.inicio)} (${f.dias} d${f.avisoEm ? ', aviso ' + br(f.avisoEm) : ', sem aviso'})`).join(', ')]; }));
+P.aoGravar = desenhar;
+vigiarDados(['escala_dias', 'ferias', 'colaboradores', 'lancamentos', 'contas_pagar', 'feriados', 'unidades'], desenhar);
 desenhar();
+if (P.NO_BANCO) P.garantir().then(desenhar).catch(e => console.warn(e));
 </script>
 </body>
 </html>

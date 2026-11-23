@@ -121,13 +121,19 @@ function montarRH() {
   tur.F = ['Folga', ''];
   const fer = g.FERIADOS || (g.FERIADOS = {}); Object.keys(fer).forEach(k => delete fer[k]);
   L('feriados').forEach(f => fer[f.data] = f.nome);
+  // Férias: mesmo formato do exemplo (colab, inicio, dias...), usado pela escala, folha e tela Férias
+  const fe = g.FERIAS || (g.FERIAS = []);
+  if (g.PRAZOS_BANCO) fe.splice(0, fe.length, ...L('ferias').map(r => ({ id: r.id, colab: r.colaborador_id, aquisitivo: r.aquisitivo, inicio: r.inicio,
+    dias: r.dias, abono: r.abono, avisoEm: r.aviso_em, conta: r.conta_pagar_id, obs: r.obs, atualizado_em: r.atualizado_em })));
 }
 async function carregarRH() {
   try { await dadosBanco.garantir('unidades', ...TABELAS_RH); }
   catch (e) { console.warn('RH ainda não está no banco:', e.message); return; }
   raizDados().RH_BANCO = true;
+  try { await dadosBanco.garantir(...TABELAS_PRAZOS); raizDados().PRAZOS_BANCO = true; }
+  catch (e) { console.warn('Férias e experiência ainda não estão no banco:', e.message); }
   montarRH();
-  dadosBanco.aoMudar(t => { if (['colaboradores', 'escala_turnos', 'feriados', 'unidades'].includes(t)) montarRH(); });
+  dadosBanco.aoMudar(t => { if (['colaboradores', 'escala_turnos', 'feriados', 'unidades', 'ferias'].includes(t)) montarRH(); });
 }
 function montarUnidades() {
   const s = $('unidade');
@@ -229,22 +235,29 @@ const ALERTAS_EXEMPLO = [
   { nivel: 'info', titulo: 'Fechamento PJ em 2 dias', texto: '3 empresas conveniadas fecham a quinzena na sexta', tela: 'faturamento_pj' }
 ];
 let alertas = [];
+// Avisos reais mandados pelas telas (o Início manda os prazos do RH: férias e contrato de experiência),
+// refeitos a cada mudança no banco. Os exemplos fixos continuam marcados como exemplo.
+const alertasDe = {};
 function carregarAlertas() {
-  alertas = ALERTAS_EXEMPLO;
+  alertas = [...Object.values(alertasDe).flat(), ...ALERTAS_EXEMPLO.map(a => ({ ...a, exemplo: true }))];
   const c = $('contAlertas');
   c.textContent = alertas.length; c.classList.toggle('oculto', !alertas.length);
   const hoje = new Date().toISOString().slice(0, 10);
-  if (alertas.some(a => a.nivel === 'perigo') && lembrar('alertasVistos', '') !== hoje) mostrarAlertas();
+  const corpo = $('tAlertas')?.closest('.janela').querySelector('.janela-corpo');
+  if (corpo) corpo.innerHTML = linhasAlertas();   // popup aberto: atualiza no lugar
+  else if (alertas.some(a => a.nivel === 'perigo') && lembrar('alertasVistos', '') !== hoje) mostrarAlertas();
 }
+const linhasAlertas = () => alertas.length ? alertas.map((a, i) => `<div class="alerta-linha"><span class="marcador nv-${a.nivel}"></span>
+  <div><b>${esc(a.titulo)}</b>${a.exemplo ? ' <span class="etiqueta exemplo">exemplo</span>' : ''}<small>${esc(a.texto)}</small></div><a href="#" class="acao" data-i="${i}">Abrir</a></div>`).join('')
+  : '<div class="vazio">Nada pendente agora.</div>';
 function mostrarAlertas() {
+  if ($('tAlertas')) return;
   const v = document.createElement('div');
   v.className = 'veu';
   v.innerHTML = `<div class="janela" role="dialog" aria-modal="true" aria-labelledby="tAlertas">
-    <div class="janela-cab">${icone('sino')}<h2 id="tAlertas">Pontos de atenção</h2><span class="etiqueta exemplo">exemplo</span>
+    <div class="janela-cab">${icone('sino')}<h2 id="tAlertas">Pontos de atenção</h2>
       <button type="button" class="btn btn-ico" data-fechar aria-label="Fechar">${icone('fechar')}</button></div>
-    <div class="janela-corpo">${alertas.length ? alertas.map((a, i) => `<div class="alerta-linha"><span class="marcador nv-${a.nivel}"></span>
-      <div><b>${esc(a.titulo)}</b><small>${esc(a.texto)}</small></div><a href="#" class="acao" data-i="${i}">Abrir</a></div>`).join('')
-      : '<div class="vazio">Nada pendente agora.</div>'}</div>
+    <div class="janela-corpo">${linhasAlertas()}</div>
     <div class="janela-rodape"><button type="button" class="btn btn-pri" data-fechar>Ciente</button></div></div>`;
   const fim = () => { guardar('alertasVistos', new Date().toISOString().slice(0, 10)); v.remove(); document.removeEventListener('keydown', tecla); };
   const tecla = e => { if (e.key === 'Escape') fim(); };
@@ -261,6 +274,10 @@ function mostrarAlertas() {
 window.addEventListener('message', e => {
   if (e.origin !== location.origin) return;
   if (e.data?.tipo === 'abrir') abrir(e.data.id);
+  if (e.data?.tipo === 'alertas' && e.data.origem && Array.isArray(e.data.lista)) {
+    alertasDe[e.data.origem] = e.data.lista.slice(0, 30).map(a => ({ nivel: a.nivel, titulo: String(a.titulo), texto: String(a.texto || ''), tela: a.tela }));
+    carregarAlertas();
+  }
   if (e.data?.tipo === 'unidades' && !MODO_DEMO) { atualizarUnidades().then(montarUnidades); dadosBanco.recarregar('unidades').catch(() => {}); }
 });
 

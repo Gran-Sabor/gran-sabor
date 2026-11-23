@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contrato de experiência</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/estilo.css?v=11">
+</head>
+<body>
+<div class="tela">
+  <div class="tela-cab"><h1>Contrato de experiência</h1><span class="sub">Fim de cada período, prorrogação e efetivação · avisa 10 dias antes</span>
+    <div class="dir"><span class="etiqueta exemplo oculto" id="etqExemplo" title="Dados fictícios: some ao recarregar">exemplo</span>
+      <button type="button" class="btn" id="btnExportar">Exportar</button></div></div>
+  <div id="avisoBanco"></div>
+  <div id="filtros"></div>
+  <div class="abas-tela" id="abas"><button type="button" data-aba="vigentes" class="ativa">Em experiência</button><button type="button" data-aba="decididos">Efetivados e encerrados</button><button type="button" data-aba="todos">Todos</button></div>
+  <section class="kpis" id="kpis"></section>
+  <section class="cartao"><div class="cartao-cab"><h2 id="titLista"></h2><span class="dir sub" id="contagem"></span></div>
+    <div class="rolagem"><table class="tabela clicavel" id="tab"></table></div></section>
+  <div class="form-nota">Regras: a experiência dura no máximo 90 dias, contando o dia da admissão, e pode ser prorrogada uma vez (45 + 45, 30 + 60...). A prorrogação precisa estar
+    assinada antes do fim do 1º período. Passou do fim sem encerrar, o contrato vira prazo indeterminado sozinho. Sem contrato cadastrado, a tela supõe 45 + 45 desde a admissão.
+    Encerrar no fim da experiência não tem aviso prévio nem multa de 40%; antes do fim, há indenização (metade dos dias que faltam).</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js?v=2"></script>
+<script src="../assets/js/banco.js?v=1"></script>
+<script src="../assets/js/menu.js?v=11"></script>
+<script src="../assets/js/icones.js?v=1"></script>
+<script src="../assets/js/tela.js?v=5"></script>
+<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/folha.js?v=3"></script>
+<script src="../assets/js/escala.js?v=1"></script>
+<script src="../assets/js/prazos-rh.js?v=1"></script>
+<script src="../assets/js/cadastro.js?v=5"></script>
+<script>
+/* Contrato de experiência: as datas e a fase saem de prazos-rh.js (a mesma conta do Início e do sino do topo).
+   Gravar: tabela contratos_experiencia (um por colaborador), com conferência de quem mudou antes.
+   As 3 empresas sempre separadas: filtro, etiqueta e exportação. */
+let aba = 'vigentes';
+const P = PRAZOS, br = P.br, hoje = () => hojeISO();
+janela.nota = P.REAL ? 'Grava no banco e aparece na hora nas outras telas' : 'Exemplo: as alterações somem ao recarregar';
+$('etqExemplo').classList.toggle('oculto', P.REAL);
+if (P.REAL && !P.NO_BANCO) $('avisoBanco').innerHTML = '<div class="aviso">Os contratos de experiência ainda não estão no banco (falta juntar o pacote): dá para ver os prazos, mas não gravar.</div>';
+const filtro = barraFiltros($('filtros'), { aoMudar: desenhar, placeholder: 'Colaborador, matrícula, cargo… (atalho: /)' });
+const naTela = c => noFiltro(filtro, { empresa: c.empresa, unidade: c.unidade }) && casaBusca([c.nome, c.matricula, CARGOS[c.cargo]].join(' '), filtro.busca);
+const MODELOS = [[45, 45], [30, 60], [60, 30], [30, 30], [90, 0], [60, 0]];
+const VIGENTE = ['primeiro', 'prorrogado', 'indeterminado'];
+const prazoTxt = e => e.prazo == null ? '—' : e.faltam < 0 ? `${br(e.prazo)}` : `${br(e.prazo)} <small class="sub">${e.faltam === 0 ? 'hoje' : `em ${e.faltam} d`}</small>`;
+
+function lista() {
+  const h = hoje();
+  return COLABORADORES.filter(c => naTela(c) && (c.situacao !== 'desligado' || P.contratoDe(c.id))).map(c => P.experiencia(c, h)).filter(Boolean)
+    // indeterminado sem nada cadastrado: só nos 30 dias depois do fim (já filtrado em prazos-rh.js)
+    .sort((a, b) => (a.prazo || '9999').localeCompare(b.prazo || '9999') || a.c.nome.localeCompare(b.c.nome));
+}
+function desenhar() {
+  const es = lista(), h = hoje(), vig = es.filter(e => VIGENTE.includes(e.fase));
+  const semAdm = COLABORADORES.filter(c => c.ativo && c.semAdmissao && naTela(c) && !P.contratoDe(c.id)).length;
+  $('kpis').innerHTML = [
+    [`Vencem em ${P.REGRAS.experienciaAntecedencia} dias`, `<span class="${vig.some(e => e.faltam != null && e.faltam <= 3) ? 'desce' : ''}">${vig.filter(e => e.faltam != null && e.faltam <= P.REGRAS.experienciaAntecedencia).length}</span>`, 'decidir: prorrogar, efetivar ou encerrar'],
+    ['No 1º período', es.filter(e => e.fase === 'primeiro').length, 'contrato inicial'],
+    ['Em prorrogação', es.filter(e => e.fase === 'prorrogado').length, `${es.filter(e => e.semTermo).length} sem termo registrado`],
+    ['Viraram indeterminado', es.filter(e => e.fase === 'indeterminado').length, 'passou do fim: registre a efetivação'],
+    ['Sem admissão', semAdm, semAdm ? 'informe no cadastro para calcular' : 'todos com admissão']
+  ].map(([t, x, c]) => `<div class="kpi"><div class="kpi-tit">${t}</div><div class="kpi-valor">${x}</div><div class="kpi-ctx">${c}</div></div>`).join('');
+  const vs = aba === 'vigentes' ? vig : aba === 'decididos' ? es.filter(e => !VIGENTE.includes(e.fase)) : es;
+  $('titLista').textContent = { vigentes: 'Em experiência', decididos: 'Efetivados e encerrados', todos: 'Todos' }[aba];
+  $('contagem').textContent = `${vs.length} colaborador(es)`;
+  $('tab').innerHTML = `<thead><tr><th>Colaborador</th><th>Início</th><th>Modelo</th><th>Fim 1º período</th><th>Fim da experiência</th><th>Situação</th><th>Próximo prazo</th></tr></thead><tbody>
+    ${vs.map(e => { const c = e.c, nv = e.faltam != null && e.faltam <= 3 ? 'perigo' : e.faltam != null && e.faltam <= P.REGRAS.experienciaAntecedencia ? 'pendente' : '';
+      return `<tr data-id="${c.id}" tabindex="0"><td><b>${esc(c.nome)}</b> <small class="sub">${esc(CARGOS[c.cargo] || c.cargo)} · ${esc(nomeUnidade(c.unidade))}</small> ${etqEmpresa(c.empresa)}</td>
+        <td>${br(e.inicio)}</td><td>${e.modelo}${e.row ? '' : ' <small class="sub">padrão</small>'}</td>
+        <td>${br(e.fim1)}</td><td>${e.d2 ? br(e.fim2) : br(e.fim1)}</td>
+        <td><span class="etiqueta ${e.etiqueta[1]}">${e.etiqueta[0]}</span>${e.row?.decidido_em ? ` <small class="sub">${br(e.row.decidido_em)}</small>` : ''}
+          ${e.semTermo ? ' <span class="etiqueta pendente" title="Registre a data em que o termo de prorrogação foi assinado">sem termo</span>' : ''}${e.row?.prorrogado_em ? ` <small class="sub">prorrogado ${br(e.row.prorrogado_em)}</small>` : ''}</td>
+        <td>${e.prazo ? `<span class="etiqueta ${nv}">${e.acao}</span> ${prazoTxt(e)}` : '<span class="sub">—</span>'}</td></tr>`; }).join('')
+    || `<tr><td colspan="7" class="vazio">${aba === 'vigentes' ? 'Ninguém em experiência com esses filtros.' : 'Nada aqui com esses filtros.'}</td></tr>`}</tbody>`;
+}
+
+/* ---------- Editar o contrato e registrar a decisão ---------- */
+function editar(cId) {
+  const c = COLABORADORES.find(x => x.id === cId); if (!c) return;
+  const e = P.experiencia(c) || { inicio: c.semAdmissao ? hoje() : c.admissao, d1: 45, d2: 45, row: null };
+  const row = e.row, foto = row ? JSON.parse(JSON.stringify(row)) : null, fotoC = JSON.parse(JSON.stringify(c));
+  const mod = MODELOS.findIndex(([a, b]) => a === e.d1 && b === e.d2);
+  const v = janela(`Experiência · ${c.nome}`, `
+    <div class="form-grade">
+      <label class="c4">Modelo<select name="modelo" class="campo">${MODELOS.map(([a, b], i) => `<option value="${i}"${i === mod ? ' selected' : ''}>${b ? `${a} + ${b} dias` : `${a} dias (sem prorrogação)`}</option>`).join('')}<option value="x"${mod < 0 ? ' selected' : ''}>Outro</option></select></label>
+      <label class="c2">1º período<input name="d1" type="number" min="1" max="90" class="campo" value="${e.d1}"></label>
+      <label class="c2">Prorrogação<input name="d2" type="number" min="0" max="89" class="campo" value="${e.d2}"></label>
+      <label class="c4">Início<input name="inicio" type="date" class="campo" value="${e.inicio}"></label>
+      <label class="c4">Termo de prorrogação assinado em<input name="prorrogado" type="date" class="campo" value="${row?.prorrogado_em || ''}"></label>
+      <label class="c4">Situação<select name="sit" class="campo">${[['vigente', 'Em experiência'], ['efetivado', 'Efetivado'], ['encerrado', 'Encerrado']].map(([k, n]) => `<option value="${k}"${k === (row?.situacao || 'vigente') ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+      <label class="c4">Data da decisão<input name="decidido" type="date" class="campo" value="${row?.decidido_em || ''}"></label>
+      <label class="c12">Observação<input name="obs" class="campo" maxlength="200" value="${esc(row?.obs || '')}" placeholder="Ex.: conversa com a gerente da loja"></label>
+    </div><div id="calcE"></div>
+    <div class="form-grade" style="margin-top:6px"><span class="c12">
+      <button type="button" class="btn btn-mini" data-rapido="prorrogar">Prorrogação assinada hoje</button>
+      <button type="button" class="btn btn-mini" data-rapido="efetivar">Efetivar hoje</button>
+      <button type="button" class="btn btn-mini" data-rapido="encerrar">Encerrar no fim da experiência</button></span></div>`, 'Salvar', async f => {
+    const err = validar(f); if (err) return err;
+    const m = mudouDesde(fotoC, COLABORADORES.find(x => x.id === c.id), ['admissao', 'situacao'], 'O cadastro do colaborador'); if (m) return m;
+    return P.salvarContrato(c, { inicio: f.inicio.value, dias_1: +f.d1.value, dias_2: +f.d2.value, prorrogado_em: +f.d2.value > 0 ? (f.prorrogado.value || null) : null,
+      situacao: f.sit.value, decidido_em: f.sit.value === 'vigente' ? null : f.decidido.value, obs: f.obs.value.trim() }, foto);
+  });
+  const f = v.querySelector('form');
+  const calc = () => { const d1 = +f.d1.value || 0, d2 = +f.d2.value || 0, ini = f.inicio.value, err = validar(f);
+    const fim1 = ini && d1 ? FOLHA.somaDias(ini, d1 - 1) : '', fim2 = ini && d1 ? FOLHA.somaDias(ini, d1 + d2 - 1) : '';
+    f.prorrogado.disabled = !d2; f.decidido.disabled = f.sit.value === 'vigente';
+    $('calcE').innerHTML = `${err ? `<div class="aviso perigo">${esc(err)}</div>` : ''}<table class="tabela"><tbody>
+      <tr><td>Fim do 1º período</td><td><b>${br(fim1) || '—'}</b>${d2 ? ' · prorrogação assinada até este dia' : ''}</td></tr>
+      ${d2 ? `<tr><td>Fim da experiência</td><td><b>${br(fim2)}</b> · ${d1 + d2} dias no total</td></tr>` : ''}
+      <tr><td>Avisos</td><td>${[fim1, d2 ? fim2 : ''].filter(Boolean).map(x => br(FOLHA.somaDias(x, -P.REGRAS.experienciaAntecedencia))).join(' e ')} (${P.REGRAS.experienciaAntecedencia} dias antes), no Início e no sino do topo</td></tr></tbody></table>
+      ${f.sit.value === 'encerrado' ? `<div class="form-nota">Encerrado: faça o desligamento e o cálculo da rescisão (término de contrato de experiência). ${f.decidido.value && fim2 && f.decidido.value < (d2 ? fim2 : fim1) ? '<b>Antes do fim do prazo:</b> há indenização de metade dos dias que faltam.' : ''}</div>` : ''}`; };
+  f.modelo.onchange = () => { const m = MODELOS[+f.modelo.value]; if (m) { f.d1.value = m[0]; f.d2.value = m[1]; } calc(); };
+  f.addEventListener('input', e => { if (e.target.name === 'd1' || e.target.name === 'd2') f.modelo.value = (i => i < 0 ? 'x' : i)(MODELOS.findIndex(([a, b]) => a === +f.d1.value && b === +f.d2.value)); calc(); });
+  f.addEventListener('change', calc);
+  v.querySelector('.form').addEventListener('click', ev => { const b = ev.target.closest('[data-rapido]'); if (!b) return; const h = hoje();
+    const d1 = +f.d1.value || 0, d2 = +f.d2.value || 0, ini = f.inicio.value;
+    if (b.dataset.rapido === 'prorrogar') { if (!d2) { f.d1.value = 45; f.d2.value = 45; f.modelo.value = 0; } f.prorrogado.disabled = false; f.prorrogado.value = h; f.sit.value = 'vigente'; }
+    if (b.dataset.rapido === 'efetivar') { f.sit.value = 'efetivado'; f.decidido.disabled = false; f.decidido.value = h; }
+    if (b.dataset.rapido === 'encerrar') { f.sit.value = 'encerrado'; f.decidido.disabled = false; f.decidido.value = ini && d1 ? FOLHA.somaDias(ini, d1 + (f.prorrogado.value ? d2 : 0) - 1) : h; }
+    calc(); });
+  calc();
+}
+function validar(f) {
+  const d1 = +f.d1.value, d2 = +f.d2.value, ini = f.inicio.value;
+  if (!ini) return 'Informe o início do contrato (normalmente a admissão).';
+  if (!(d1 >= 1)) return 'O 1º período precisa ter 1 dia ou mais.';
+  if (!(d2 >= 0)) return 'A prorrogação não pode ser negativa.';
+  if (d1 + d2 > 90) return `A experiência tem no máximo 90 dias (aqui dá ${d1 + d2}).`;
+  if (d2 && f.prorrogado.value && f.prorrogado.value > FOLHA.somaDias(ini, d1 - 1)) return 'O termo de prorrogação precisa ser assinado até o fim do 1º período.';
+  if (f.prorrogado.value && f.prorrogado.value < ini) return 'A prorrogação não pode ser antes do início.';
+  if (f.sit.value !== 'vigente' && !f.decidido.value) return f.sit.value === 'efetivado' ? 'Informe a data da efetivação.' : 'Informe o último dia de trabalho.';
+  if (f.sit.value !== 'vigente' && f.decidido.value < ini) return 'A data da decisão não pode ser antes do início.';
+  return '';
+}
+
+$('abas').onclick = e => { const b = e.target.closest('[data-aba]'); if (!b) return; aba = b.dataset.aba; $('abas').querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); };
+$('tab').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) editar(tr.dataset.id); };
+$('tab').onkeydown = e => { if (e.key === 'Enter') $('tab').onclick(e); };
+$('btnExportar').onclick = () => exportarCSV('experiencia', ['Empresa', 'Unidade', 'Matrícula', 'Colaborador', 'Início', 'Modelo', 'Fim 1º período', 'Fim da experiência', 'Prorrogação assinada', 'Situação', 'Data da decisão', 'Próximo prazo'],
+  lista().map(e => [nomeEmpresa(e.c.empresa), nomeUnidade(e.c.unidade), e.c.matricula, e.c.nome, br(e.inicio), e.modelo, br(e.fim1), br(e.d2 ? e.fim2 : e.fim1),
+    br(e.row?.prorrogado_em), e.etiqueta[0], br(e.row?.decidido_em), e.prazo ? `${br(e.prazo)} (${e.acao})` : '']));
+P.aoGravar = desenhar; ESC.aoGravar = desenhar;
+vigiarDados(['contratos_experiencia', 'colaboradores', 'unidades'], desenhar);
+desenhar();
+</script>
+</body>
+</html>
