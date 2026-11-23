@@ -23,7 +23,8 @@ explique em passos simples, clique a clique, e chame Pull Request de "pacote".
   Tabela nova que precisa ser ao vivo: gatilho `subir_versao` + linha em `dados_versao` + entrada em `TABELAS_BANCO`.
 - Produto × insumo: `produtos` = só o que se VENDE (cardápio, código da Saipos); `insumos` = o que se COMPRA (matéria-prima,
   revenda, embalagem, limpeza), código automático `I0001` bloqueado. `categorias_produto` (código sequencial próprio, uso
-  venda/compra/ambos, `revisada` para a Fernanda) agrupa os dois; o texto `categoria` é mantido pelo banco (gatilho) e renomear
+  venda/compra/ambos, `revisada` para a Fernanda, `pai_id` = grupo principal › subgrupo, dois níveis; nome e lista em
+  `nomeCategoriaProduto`/`opcoesCategoriaProduto` de cadastro.js) agrupa os dois; o texto `categoria` é mantido pelo banco (gatilho) e renomear
   propaga. `insumo_codigos`: código de barras / código de cada fornecedor (marca) → um insumo interno, com fator de embalagem;
   o XML acha o insumo por ele. A casca (`carregarInsumos`) monta `INSUMOS` a partir do banco. Nada disso se apaga: inativa.
 - RH e escala no banco: `colaboradores`, `escala_turnos`, `escala_funcionamento` (abre/fecha/mínimo por unidade e dia da semana),

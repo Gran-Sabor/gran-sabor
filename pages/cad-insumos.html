@@ -15,7 +15,7 @@
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=11"></script>
-<script src="../assets/js/cadastro.js?v=6"></script>
+<script src="../assets/js/cadastro.js?v=7"></script>
 <script src="../assets/js/financeiro.js?v=3"></script>
 <script>
 /* Insumos e matéria-prima = o que se COMPRA (carnes, hortifrúti, mercearia, bebida de revenda, embalagem, limpeza...).
@@ -87,8 +87,7 @@ const SO_DIG = s => String(s || '').replace(/\D/g, '');
   janela.nota = 'Grava no banco';
   const CATS = () => FIN.L('categorias_produto');
   const codigos = id => FIN.L('insumo_codigos').filter(c => c.insumo_id === id);
-  const opcoesCat = item => CATS().filter(c => (c.uso !== 'venda' && c.ativo) || c.id === item.categoriaId)
-    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map(c => [c.id, c.nome]);
+  const opcoesCat = item => opcoesCategoriaProduto(CATS(), 'venda', item.categoriaId);
   const fornecedoresDe = i => [...new Set(codigos(i.id).filter(c => c.ativo).map(c => c.fornecedor_nome))];
 
   // Códigos de fornecedor do insumo aberto (lista dentro do formulário, ao vivo)
@@ -157,7 +156,7 @@ const SO_DIG = s => String(s || '').replace(/\D/g, '');
     titulo: 'Insumos e matéria-prima', sub: 'O que se compra dos fornecedores · código automático · custo médio alimenta a ficha técnica e o CMV',
     novoRotulo: 'Novo insumo', tituloLista: 'Insumos por categoria', porUnidade: false,
     dados: INSUMOS, tabela: 'insumos', depende: ['categorias_produto', 'insumo_codigos', 'categorias_financeiras'],
-    agrupar: l => l.categoria,
+    agrupar: l => nomeCategoriaProduto(CATS().find(c => c.id === l.categoriaId), CATS()) || l.categoria,
     ordenar: (a, b) => a.categoria.localeCompare(b.categoria, 'pt-BR') || a.codigo.localeCompare(b.codigo),
     tituloItem: i => `${i.codigo} · ${i.nome}`,
     buscaExtra: i => codigos(i.id).map(c => [c.codigo_barras, c.codigo_fornecedor, c.marca, c.descricao, c.fornecedor_nome].join(' ')).join(' '),
