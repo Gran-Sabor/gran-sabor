@@ -54,6 +54,7 @@ const MENU = [
     { id: 'holerites',      nome: 'Folha e holerites', arquivo: 'pages/rh-holerite.html' },
     { id: 'decimo',         nome: '13º salário', arquivo: 'pages/rh-decimo.html' },
     { id: 'ferias',         nome: 'Férias', arquivo: 'pages/rh-ferias.html' },
+    { id: 'rescisao',       nome: 'Rescisão', arquivo: 'pages/rh-rescisao.html' },
     { id: 'ponto',          nome: 'Ponto e horas extras' },
     { id: 'eventos_folha',  nome: 'Eventos da folha', arquivo: 'pages/rh-eventos.html' }
   ]},
