@@ -12,7 +12,7 @@
 const PLANO_DRE = (() => {
   // Linhas do resultado, na ordem da DRE da Gran Sabor
   const LINHAS = ['Vendas brutas', 'Impostos', 'Custos · Mercadoria', 'Custos · Pessoal', 'Despesas', 'Resultado financeiro', 'Passivo anterior', 'Investimentos'];
-  // Nomes antigos (antes da DRE) → linha nova; a migração 20261123160000 já converteu o banco
+  // Nomes antigos (antes da DRE) → linha nova; a migração 20261123170000 já converteu o banco
   const LINHA_ANTIGA = { 'Receita bruta': 'Vendas brutas', 'Impostos sobre vendas': 'Impostos', 'Deduções': 'Despesas', 'CMV': 'Custos · Mercadoria',
     'Pessoal': 'Custos · Pessoal', 'Ocupação': 'Despesas', 'Administrativas': 'Despesas', 'Financeiras': 'Resultado financeiro' };
 

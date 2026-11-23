@@ -7,6 +7,14 @@
    valor, e quem altera avisa as outras (avisarMudanca).
    ===================================================================== */
 
+// Com o banco ligado (a casca já carregou produtos ou RH do banco), os LANÇAMENTOS de exemplo
+// (contas, notas, estoque, transferências, vendas, comandas, lançamentos da folha) começam vazios:
+// a tela mostra só o que foi lançado de verdade. Sem banco (modo demonstração), seguem os exemplos.
+const COM_BANCO = (() => { try { const d = casca().__gsDados || {}; return Array.isArray(d.PRODUTOS_BANCO) || d.RH_BANCO === true; } catch { return false; } })();
+function lancamento(nome, criar) {
+  return dadoComum(nome, () => { const v = criar(); return COM_BANCO ? (Array.isArray(v) ? [] : {}) : v; });
+}
+
 // 3 empresas (CNPJs) — fictícias. A distribuição das unidades é suposição.
 const EMPRESAS = [
   { id: 'emp1', nome: 'Empresa 1', razao: 'Empresa Exemplo Um Ltda',   cnpj: '11222333000181', cor: '#b4532a' },
@@ -128,7 +136,7 @@ const diasDaqui = n => { const d = new Date(); d.setDate(d.getDate() + n); retur
 let _semente = 7; const aleat = () => (_semente = (_semente * 9301 + 49297) % 233280) / 233280;
 
 /* ---------- Contas a pagar ---------- */
-const CONTAS_PAGAR = dadoComum('CONTAS_PAGAR', () => (() => {
+const CONTAS_PAGAR = lancamento('CONTAS_PAGAR', () => (() => {
   const base = [
     // fornecedor, categoria, unidade, centro, valor, venc (dias), doc
     ['f1', '3.01', 'central', 'central.acougue', 18450.00, -3, 'NF 4521 1/2'],
@@ -174,7 +182,7 @@ const CLIENTES_PJ = dadoComum('CLIENTES_PJ', () => [
 ].map(([id, nome, cnpj, unidade, fechamento, prazo, pessoas]) => ({ id, nome, cnpj, unidade, empresa: UNIDADE_EMPRESA[unidade], fechamento, prazo, pessoas, limite: pessoas * 30 * 25, email: '', ativo: true })));
 
 // Consumo do período aberto (sem NFC-e na comanda: a NF-e do período sai no fechamento, com o boleto)
-const CONSUMOS_PJ = dadoComum('CONSUMOS_PJ', () => (() => {
+const CONSUMOS_PJ = lancamento('CONSUMOS_PJ', () => (() => {
   const lista = []; let n = 1;
   CLIENTES_PJ.forEach(c => {
     const dias = 12;
@@ -190,7 +198,7 @@ const CONSUMOS_PJ = dadoComum('CONSUMOS_PJ', () => (() => {
 })());
 
 // Fechamentos já feitos (etapas: fechado → nota → boleto → pago)
-const FECHAMENTOS_PJ = dadoComum('FECHAMENTOS_PJ', () => [
+const FECHAMENTOS_PJ = lancamento('FECHAMENTOS_PJ', () => [
   { id: 'fx1', cliente: 'c1', periodo: 'Quinzena anterior', valor: 9640.50, refeicoes: 312, etapa: 'boleto', nota: 'NF-e 2231', boleto: '34191.79001 01043.510047 91020.150008 1 99990000964050', vencimento: diasDaqui(2) },
   { id: 'fx2', cliente: 'c3', periodo: 'Quinzena anterior', valor: 11820.00, refeicoes: 401, etapa: 'pago', nota: 'NF-e 2229', boleto: '—', vencimento: diasDaqui(-3), pagoEm: diasDaqui(-3) },
   { id: 'fx3', cliente: 'c5', periodo: 'Quinzena anterior', valor: 14210.80, refeicoes: 498, etapa: 'boleto', nota: 'NF-e 2232', boleto: '—', vencimento: diasDaqui(-4) },
@@ -198,7 +206,7 @@ const FECHAMENTOS_PJ = dadoComum('FECHAMENTOS_PJ', () => [
 ].map(f => ({ ...f, empresa: (CLIENTES_PJ.find(c => c.id === f.cliente) || {}).empresa, unidade: (CLIENTES_PJ.find(c => c.id === f.cliente) || {}).unidade })));
 
 /* ---------- Outros recebíveis (cartões e aplicativos de delivery) ---------- */
-const RECEBER_OUTROS = dadoComum('RECEBER_OUTROS', () => (() => {
+const RECEBER_OUTROS = lancamento('RECEBER_OUTROS', () => (() => {
   const r = []; let n = 1;
   ['loja1', 'loja2', 'loja3'].forEach((un, ui) => {
     [[-2, 'Cartão de crédito', 'Operadora (exemplo)'], [1, 'Cartão de débito', 'Operadora (exemplo)'], [3, 'Cartão de crédito', 'Operadora (exemplo)'],
@@ -211,7 +219,7 @@ const RECEBER_OUTROS = dadoComum('RECEBER_OUTROS', () => (() => {
 })());
 
 /* ---------- Notas de entrada (XML) já lançadas ---------- */
-const NOTAS_ENTRADA = dadoComum('NOTAS_ENTRADA', () => [
+const NOTAS_ENTRADA = lancamento('NOTAS_ENTRADA', () => [
   { id: 'n1', numero: '4521', serie: '1', fornecedor: 'f1', empresa: 'emp1', unidade: 'central', emissao: diasDaqui(-17), valor: 36565.00, itens: 4, parcelas: 2, situacao: 'lançada' },
   { id: 'n5', numero: '12001', serie: '2', fornecedor: 'f3', empresa: 'emp1', unidade: 'central', emissao: diasDaqui(-6), valor: 6228.00, itens: 3, parcelas: 1, situacao: 'lançada' },
   { id: 'n2', numero: '99812', serie: '1', fornecedor: 'f2', empresa: 'emp1', unidade: 'loja1', emissao: diasDaqui(-1), valor: 1840.30, itens: 9, parcelas: 1, situacao: 'lançada' },
@@ -227,14 +235,14 @@ const insumo = id => INSUMOS.find(i => i.id === id) || { nome: id, un: '', custo
 const LOCAIS_ESTOQUE = ['central', 'loja1', 'loja2', 'loja3'];
 
 /* ---------- Itens das compras feitas pela central (para dividir entre as lojas) ---------- */
-const COMPRA_ITENS = dadoComum('COMPRA_ITENS', () => ({
+const COMPRA_ITENS = lancamento('COMPRA_ITENS', () => ({
   n1: [['i01', 200], ['i02', 300], ['i03', 500], ['i04', 150]],
   n5: [['i06', 600], ['i07', 300], ['i08', 120]]
 }));
 
 /* ---------- Transferências (central → lojas e entre lojas) ----------
    itens: [insumo, enviada, recebida] · custo: custo médio no dia do envio */
-const TRANSFERENCIAS = dadoComum('TRANSFERENCIAS', () => (() => {
+const TRANSFERENCIAS = lancamento('TRANSFERENCIAS', () => (() => {
   const t = []; let n = 1;
   const nova = (dias, origem, destino, itens, compra, situacao = 'recebida', acertoEm = null) => t.push({
     id: 't' + n, numero: 'T-' + String(n++).padStart(4, '0'), data: diasDaqui(dias), origem, destino, compra,
@@ -258,7 +266,7 @@ const TRANSFERENCIAS = dadoComum('TRANSFERENCIAS', () => (() => {
 
 /* ---------- Saldo de estoque por local (exemplo) ----------
    consumo: média de uso por dia · usado para "dias de cobertura" */
-const ESTOQUE = dadoComum('ESTOQUE', () => (() => {
+const ESTOQUE = lancamento('ESTOQUE', () => (() => {
   const r = [];
   INSUMOS.forEach(i => LOCAIS_ESTOQUE.forEach(local => {
     const central = local === 'central';
@@ -384,7 +392,7 @@ const colab = id => COLABORADORES.find(c => c.id === id) || { nome: id, salario:
 
 /* ---------- Lançamentos do mês (horas extras, faltas, consumo...) ---------- */
 // qtd = horas ou dias; valor = R$ (eventos "valor")
-const LANCAMENTOS = dadoComum('LANCAMENTOS', () => {
+const LANCAMENTOS = lancamento('LANCAMENTOS', () => {
   const r = []; let n = 1;
   if (RH_DO_BANCO) return r;   // colaboradores reais: nada de lançamento inventado
   const l = (comp, c, ev, qtd, valor, obs = '') => r.push({ id: 'l' + n++, comp, colab: 'c' + c, evento: ev, qtd, valor, obs, criadoEm: comp + '-25' });
@@ -509,7 +517,7 @@ const TAXAS_CONTRATO = dadoComum('TAXAS_CONTRATO', () => [
 /* ---------- Comandas da balança ----------
    O cliente pesa o prato na balança e recebe uma comanda (cartão numerado). No caixa, uma ou várias
    comandas viram uma venda. As de hoje ficam aqui; as pagas apontam para a venda. */
-const COMANDAS = dadoComum('COMANDAS', () => {
+const COMANDAS = lancamento('COMANDAS', () => {
   const r = [], hoje = hojeISO();
   if (PRODUTOS_DO_BANCO) return r;
   VENDAS.filter(v => v.data === hoje).forEach(v => (v.comandas || []).forEach((num, i) => {

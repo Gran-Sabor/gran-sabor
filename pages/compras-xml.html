@@ -159,7 +159,8 @@ function lancarCadeia(nota, nf, parcelas, f, forn) {
     const it = nf.itens[+s.dataset.item], fator = n(f.querySelector(`[data-fator="${s.dataset.item}"]`).value), q = it.qtd * fator, ins = INSUMOS.find(x => x.id === s.value);
     const total = ESTOQUE.filter(e => e.insumo === ins.id).reduce((a, e) => a + Math.max(0, e.saldo), 0);
     ins.custo = +((total * ins.custo + it.total) / (total + q)).toFixed(4);          // custo médio ponderado
-    const e = ESTOQUE.find(x => x.insumo === ins.id && x.local === nota.unidade); if (e) e.saldo = +(e.saldo + q).toFixed(3);
+    const e = ESTOQUE.find(x => x.insumo === ins.id && x.local === nota.unidade);
+    if (e) e.saldo = +(e.saldo + q).toFixed(3); else ESTOQUE.push({ insumo: ins.id, local: nota.unidade, saldo: +q.toFixed(3), min: 0, consumo: 0 });   // primeira entrada do insumo nesse local
     rateio.push([ins.id, q]); });
   if (nota.unidade === 'central' && rateio.length) COMPRA_ITENS[nota.id] = rateio;
   avisarMudanca('notas_entrada', 'contas_pagar', 'estoque', 'insumos', 'compra_itens');
