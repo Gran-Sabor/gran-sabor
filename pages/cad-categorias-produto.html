@@ -15,10 +15,12 @@
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=11"></script>
-<script src="../assets/js/cadastro.js?v=6"></script>
+<script src="../assets/js/cadastro.js?v=7"></script>
 <script src="../assets/js/financeiro.js?v=3"></script>
 <script>
 /* Categorias de produto (Bebidas, Carnes, Marmitex...): agrupam os produtos de venda e os insumos.
+   - Dois níveis: grupo principal (ex.: Bebidas) e subgrupos (Cervejas lata, Refrigerantes 2 litros, Águas...).
+     O produto fica no subgrupo; relatórios podem somar pelo grupo principal.
    - Código próprio, automático e sequencial (1, 2, 3...), separado das categorias financeiras. Não muda.
    - Uso: venda (cardápio), compra (insumos) ou os dois.
    - Renomear muda o nome em todos os produtos e insumos dela, na hora (o banco faz).
@@ -38,6 +40,11 @@ const nomeUso = u => (USOS.find(x => x[0] === u) || [, u])[1];
   const lista = FIN.L('categorias_produto');
   const produtosDe = c => PRODUTOS_VENDA.filter(p => p.grupo === c.nome).length;
   const insumosDe = c => INSUMOS.filter(i => i.categoriaId === c.id).length;
+  const filhos = c => lista.filter(x => x.pai_id === c.id);
+  const principal = c => grupoPrincipalProduto(c, lista) || c;
+  // Grupo principal: vazio = esta categoria é um grupo principal; só grupos principais aparecem na lista
+  const opcoesPai = item => lista.filter(c => !c.pai_id && c.id !== item.id && (c.ativo || c.id === item.pai_id))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map(c => [c.id, c.nome]);
   // Renomeou: o banco já trocou o nome nos produtos; relê o cardápio para todas as abas
   const reler = async () => { const { data } = await db.from('produtos').select('*, produto_precos(preco, unidades(codigo))').order('categoria').order('nome');
     if (data) { trocarProdutosBanco(data); avisarMudanca('produtos'); } };
@@ -47,11 +54,14 @@ const nomeUso = u => (USOS.find(x => x[0] === u) || [, u])[1];
     dados: lista, tabela: 'categorias_produto', depende: ['insumos', 'produtos'],
     abas: [{ nome: 'Todas', filtro: () => true }, { nome: 'A revisar', filtro: c => c.ativo && !c.revisada },
       { nome: 'Venda', filtro: c => c.uso !== 'compra' }, { nome: 'Compra', filtro: c => c.uso !== 'venda' }, { nome: 'Inativas', filtro: c => !c.ativo }],
-    ordenar: (a, b) => a.codigo - b.codigo,
+    // cada grupo principal, logo abaixo dele os seus subgrupos
+    ordenar: (a, b) => principal(a).nome.localeCompare(principal(b).nome, 'pt-BR') || (a.pai_id ? 1 : 0) - (b.pai_id ? 1 : 0) || a.nome.localeCompare(b.nome, 'pt-BR'),
+    agrupar: c => principal(c).nome,
     tituloItem: c => `${c.codigo} · ${c.nome}`,
     colunas: [
       { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(String(v).padStart(2, '0'))}</span>` },
-      { campo: 'nome', titulo: 'Categoria', fmt: v => `<b>${esc(v)}</b>` },
+      { campo: 'nome', titulo: 'Categoria', fmt: (v, c) => c.pai_id ? `<span class="sub">↳</span> ${esc(v)}` : `<b>${esc(v)}</b>${filhos(c).length ? ` <span class="sub">${filhos(c).length} subgrupo(s)</span>` : ''}`,
+        busca: c => nomeCategoriaProduto(c, lista) },
       { campo: 'uso', titulo: 'Uso', fmt: v => esc(nomeUso(v)) },
       { campo: 'id', titulo: 'Produtos de venda', num: true, fmt: (v, c) => numero(produtosDe(c)), busca: () => '' },
       { campo: 'atualizado_em', titulo: 'Insumos', num: true, fmt: (v, c) => numero(insumosDe(c)), busca: () => '' },
@@ -59,7 +69,7 @@ const nomeUso = u => (USOS.find(x => x[0] === u) || [, u])[1];
       { campo: 'ativo', titulo: 'Ativa', fmt: sim }
     ],
     kpis: (v, todos) => [
-      ['Categorias ativas', todos.filter(c => c.ativo).length, `${todos.filter(c => !c.ativo).length} inativa(s)`],
+      ['Grupos principais', todos.filter(c => c.ativo && !c.pai_id).length, `${todos.filter(c => c.ativo && c.pai_id).length} subgrupo(s) · ${todos.filter(c => !c.ativo).length} inativa(s)`],
       ['A revisar', `<span class="${todos.some(c => c.ativo && !c.revisada) ? 'desce' : ''}">${todos.filter(c => c.ativo && !c.revisada).length}</span>`, 'a Fernanda confere e marca "Revisada"'],
       ['De venda', todos.filter(c => c.ativo && c.uso !== 'compra').length, 'aparecem no cadastro do cardápio'],
       ['De compra', todos.filter(c => c.ativo && c.uso !== 'venda').length, 'aparecem no cadastro de insumos']
@@ -67,14 +77,18 @@ const nomeUso = u => (USOS.find(x => x[0] === u) || [, u])[1];
     campos: [
       { campo: 'codigo', titulo: 'Código (automático)', larg: 'c3', somenteLeitura: 'sempre' },
       { campo: 'nome', titulo: 'Nome da categoria', obrig: true, larg: 'c9', max: 60 },
+      { campo: 'pai_id', titulo: 'Grupo principal', tipo: 'select', vazio: '— esta é um grupo principal —', opcoes: opcoesPai, larg: 'c6' },
       { campo: 'uso', titulo: 'Uso', tipo: 'select', opcoes: USOS, larg: 'c6' },
       { campo: 'revisada', titulo: 'Revisada', tipo: 'check', larg: 'c3' },
       { campo: 'ativo', titulo: 'Ativa', tipo: 'check', larg: 'c3' }
     ],
-    novo: () => ({ codigo: 'automático', uso: 'venda', revisada: false, ativo: true }),
-    rodapeForm: () => 'O código é automático e sequencial e não muda. Renomear muda o nome em todos os produtos e insumos desta categoria, na hora. Categoria não se apaga: desmarque "Ativa".',
+    novo: () => ({ codigo: 'automático', uso: 'venda', revisada: false, ativo: true, pai_id: '' }),
+    rodapeForm: () => 'O código é automático e sequencial e não muda. Para virar subgrupo (ex.: Águas dentro de Bebidas), escolha o grupo principal. Renomear muda o nome em todos os produtos e insumos desta categoria, na hora. Categoria não se apaga: desmarque "Ativa".',
     validar: (d, item, lst) => {
       if (lst.some(c => c.id !== item.id && normalizar(c.nome).trim() === normalizar(d.nome).trim())) return 'Já existe uma categoria com esse nome.';
+      if (d.pai_id && item.id && filhos(item).length) return 'Esta categoria tem subgrupos: ela precisa continuar como grupo principal.';
+      if (d.pai_id && item.id && d.ativo && !(lst.find(c => c.id === d.pai_id) || {}).ativo) return 'O grupo principal escolhido está inativo.';
+      if (item.id && item.ativo && !d.ativo && filhos(item).some(c => c.ativo)) return 'Este grupo tem subgrupos ativos: mova ou desative os subgrupos antes.';
       if (item.id && item.ativo && !d.ativo && (produtosDe(item) && PRODUTOS_VENDA.some(p => p.ativo && p.grupo === item.nome) || INSUMOS.some(i => i.ativo && i.categoriaId === item.id)))
         return 'Esta categoria tem produtos ou insumos ativos: mude a categoria deles ou desative-os antes.';
       if (item.id && d.uso !== item.uso && ((d.uso === 'compra' && produtosDe(item)) || (d.uso === 'venda' && insumosDe(item))))
@@ -82,8 +96,8 @@ const nomeUso = u => (USOS.find(x => x[0] === u) || [, u])[1];
       return '';
     },
     salvar: async (d, item) => {
-      const reg = { nome: d.nome, uso: d.uso, revisada: d.revisada, ativo: d.ativo };
-      const dup = m => /duplicate|unique/i.test(m) ? 'Já existe uma categoria com esse nome.' : 'Não foi possível gravar: ' + m;
+      const reg = { nome: d.nome, uso: d.uso, revisada: d.revisada, ativo: d.ativo, pai_id: d.pai_id || null };
+      const dup = m => /duplicate|unique/i.test(m) ? 'Já existe uma categoria com esse nome.' : /P0001|grupo principal|subgrupo/i.test(m) ? m : 'Não foi possível gravar: ' + m;
       if (!item) {
         const { error } = await db.from('categorias_produto').insert({ ...reg, codigo: 0 });   // o banco dá o código
         if (error) return dup(error.message);

@@ -37,7 +37,7 @@
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
 <script src="../assets/js/exemplo.js?v=11"></script>
-<script src="../assets/js/cadastro.js?v=6"></script>
+<script src="../assets/js/cadastro.js?v=7"></script>
 <script>
 /* Regras (números de imposto e cartão ainda de exemplo, a confirmar com a Gran Sabor e o contador):
    - Custo = composição (fichas técnicas e insumos de revenda) + perda/sobra do buffet.
@@ -63,6 +63,8 @@ const catsProd = () => { try { return casca().dadosBanco?.lista('categorias_prod
 const catPadraoId = p => (catsReceita().find(c => c.codigo === CATEGORIA_VENDA_PADRAO(p)) || {}).id || null;
 const catFinTxt = p => { const c = categoriaDaVenda(p, catsFin()); return `<br><small class="sub" title="Categoria financeira: linha da DRE onde a venda entra">${esc(c.codigo)} ${esc(c.nome)}</small>${p.catFin ? '' : ' <span class="etiqueta pendente" title="Escolha a categoria financeira no cadastro">sem categoria</span>'}`; };
 const strip = h => String(h).replace(/<[^>]*>/g, ' ');
+// Nome do grupo com o grupo principal na frente (Bebidas › Águas)
+const nomeGrupo = g => { const cs = catsProd(), c = cs.find(x => normalizar(x.nome) === normalizar(g)); return c ? nomeCategoriaProduto(c, cs) : g; };
 if (REAL) { try { casca().dadosBanco?.garantir('categorias_financeiras').then(() => desenhar()).catch(() => {}); casca().dadosBanco?.garantir('categorias_produto').then(() => desenhar()).catch(() => {}); } catch {} }
 let lojas = [];                                 // lojas do banco: { id, codigo, nome }
 const semCusto = p => !p.comp.length;
@@ -155,10 +157,10 @@ function desenhar() {
   // Na aba de repetidos, cada grupo é um par (ou trio) parecido, lado a lado para comparar
   const grupos = {}, rotulo = p => aba === 'repetidos' ? chaveRepetido(p.nome) : p.grupo; v.forEach(p => (grupos[rotulo(p)] ||= []).push(p));
   const cabGrupo = (g, ps) => aba === 'repetidos' ? `${ps.map(p => esc(p.nome)).join(' · ')} <span class="sub">${ps.length} parecidos: desative o que não se usa</span>`
-    : `${esc(g)} <span class="sub">${ps.length} · meta de CMV até ${pct(META_CMV[g] ?? 35)}</span>`;
+    : `${esc(nomeGrupo(g))} <span class="sub">${ps.length} · meta de CMV até ${pct(META_CMV[g] ?? 35)}</span>`;
   const vazio = REAL && !produtos.length ? 'Nenhum produto no banco ainda. Clique em <b>Importar planilha</b> e escolha o arquivo exportado da Saipos.'
     : aba === 'fora' ? 'Todos os produtos estão dentro da meta. 👍' : aba === 'repetidos' ? 'Nenhum repetido à vista. 👍' : 'Nada encontrado com esses filtros.';
-  $('tab').innerHTML = `<thead>${cab}</thead><tbody>${Object.entries(grupos).map(([g, ps]) =>
+  $('tab').innerHTML = `<thead>${cab}</thead><tbody>${Object.entries(grupos).sort(([a], [b]) => aba === 'repetidos' ? 0 : nomeGrupo(a).localeCompare(nomeGrupo(b), 'pt-BR')).map(([g, ps]) =>
     `<tr class="grupo"><td colspan="${cols}">${cabGrupo(g, ps)}</td></tr>${ps.map(linha).join('')}`).join('')
     || `<tr><td colspan="${cols}" class="vazio">${vazio}</td></tr>`}</tbody>`;
   $('nota').textContent = `Imposto sobre a venda (exemplo): ${EMPRESAS.map(e => `${e.nome} ${numero(IMPOSTO_EMPRESA[e.id], 1)}%`).join(' · ')} · cartão ${numero(TAXA_CARTAO, 1)}%. `
@@ -244,12 +246,13 @@ function editarBanco(p) {
   p = p || { codigo: '', nome: '', grupo: selCat.value || '', un: 'un', convenio: false, ativo: true, precosUn: {} };
   const cats = [...new Set(produtos.map(x => x.grupo))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   // Categoria vem do cadastro "Categorias de produto" (as de venda, ativas; a atual aparece mesmo se inativa)
-  const cp = catsProd().filter(c => (c.ativo && c.uso !== 'compra') || normalizar(c.nome) === normalizar(p.grupo)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const atualCat = catsProd().find(c => normalizar(c.nome) === normalizar(p.grupo));
+  const cp = opcoesCategoriaProduto(catsProd(), 'compra', atualCat && atualCat.id);
   janela(novo ? 'Novo produto' : `Editar · ${p.nome}`, `
     <div class="form-grade">
       <label class="c6">Produto *<input name="nome" class="campo" maxlength="80" value="${esc(p.nome)}"></label>
       <label class="c2">Código *<input name="codigo" class="campo" maxlength="20" value="${esc(p.codigo)}" title="Código do produto no PDV (Saipos)"${novo ? '' : ' readonly'}></label>
-      ${cp.length ? `<label class="c2">Categoria *<select name="categoria" class="campo"><option value="">Escolha…</option>${cp.map(c => `<option value="${esc(c.nome)}"${normalizar(c.nome) === normalizar(p.grupo) ? ' selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></label>`
+      ${cp.length ? `<label class="c2">Categoria *<select name="categoria" class="campo"><option value="">Escolha…</option>${cp.map(([id, nome]) => `<option value="${esc(id)}"${atualCat && atualCat.id === id ? ' selected' : ''}>${esc(nome)}</option>`).join('')}</select></label>`
         : `<label class="c2">Categoria *<input name="categoria" class="campo" maxlength="60" list="listaCat" value="${esc(p.grupo)}"></label>`}
       <label class="c2">Vende por<select name="un" class="campo"><option value="un"${p.un === 'un' ? ' selected' : ''}>unidade</option><option value="kg"${p.un === 'kg' ? ' selected' : ''}>kg (balança)</option></select></label>
       <datalist id="listaCat">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
@@ -273,7 +276,9 @@ function editarBanco(p) {
     const precos = []; let erro = '';
     fm.querySelectorAll('[data-loja]').forEach(i => { if (!i.value.trim()) return; const x = n(i.value); if (!(x > 0)) erro = 'Preço inválido: use números, ex.: 21,90.'; else precos.push({ unidade_id: i.dataset.loja, preco: Math.round(x * 100) / 100 }); });
     if (erro) return erro;
-    const d = { nome, categoria, vende_por: fm.un.value, convenio: fm.convenio.checked, ativo: fm.ativo.checked, categoria_financeira_id: fm.catFin.value || null,
+    // com o cadastro de categorias: grava o id (o banco preenche o nome); sem ele, o texto digitado
+    const cat = cp.length ? { categoria_produto_id: categoria } : { categoria };
+    const d = { nome, ...cat, vende_por: fm.un.value, convenio: fm.convenio.checked, ativo: fm.ativo.checked, categoria_financeira_id: fm.catFin.value || null,
       ...(catsProd().length ? { controla_estoque: fm.estoque.checked } : {}) };
     let id = p.id;
     if (novo) {

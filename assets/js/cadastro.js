@@ -159,3 +159,16 @@ function janela(titulo, corpo, botao, aoSalvar, depois) {
 }
 
 janela.nota = 'Exemplo: nada é gravado';   // telas ligadas ao banco trocam o aviso do rodapé
+
+/* ---------- Categorias de produto em dois níveis (grupo principal › subgrupo) ----------
+   Um lugar só para o nome completo e para a lista de escolha (cardápio e insumos).
+   Grupo principal que tem subgrupos não é escolhido direto: escolhe-se o subgrupo. */
+const catProdPai = (c, cats) => c && c.pai_id ? cats.find(x => x.id === c.pai_id) : null;
+const nomeCategoriaProduto = (c, cats) => { const p = catProdPai(c, cats); return c ? (p ? `${p.nome} › ${c.nome}` : c.nome) : ''; };
+const grupoPrincipalProduto = (c, cats) => catProdPai(c, cats) || c;
+function opcoesCategoriaProduto(cats, usoFora, atualId) {
+  // só conta subgrupo que serve para este lado (venda ou compra)
+  const temFilhos = new Set(cats.filter(c => c.pai_id && c.ativo && c.uso !== usoFora).map(c => c.pai_id));
+  return cats.filter(c => c.id === atualId || (c.ativo && c.uso !== usoFora && !temFilhos.has(c.id)))
+    .map(c => [c.id, nomeCategoriaProduto(c, cats)]).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
+}
