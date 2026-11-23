@@ -22,7 +22,8 @@ const TABELAS_BANCO = {
   escala_dias: { ordem: 'data' },
   feriados: { ordem: 'data' },
   freelancers: { ordem: 'nome' },
-  freela_diarias: { ordem: 'data' }
+  freela_diarias: { ordem: 'data' },
+  rescisoes: { ordem: 'data_saida' }   // desligamentos (as verbas são recalculadas por rescisao.js)
 };
 const TABELAS_RH = ['colaboradores', 'escala_turnos', 'escala_funcionamento', 'escala_padrao', 'escala_dias', 'feriados', 'freelancers', 'freela_diarias'];
 
