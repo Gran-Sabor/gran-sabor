@@ -24,6 +24,7 @@
     <div>
       <section class="cartao"><div class="cartao-cab"><h2>Por empresa e loja</h2></div><div class="rolagem"><table class="tabela" id="tabUn"></table></div></section>
       <section class="cartao"><div class="cartao-cab"><h2>Por forma de recebimento</h2></div><div class="rolagem"><table class="tabela" id="tabForma"></table></div></section>
+      <section class="cartao"><div class="cartao-cab"><h2>Por categoria financeira</h2><span class="dir sub">linha da DRE · vem do cadastro do produto</span></div><div class="rolagem"><table class="tabela" id="tabCat"></table></div></section>
       <section class="cartao"><div class="cartao-cab"><h2>Por produto</h2></div><div class="rolagem"><table class="tabela" id="tabProd"></table></div></section>
     </div>
   </div>
@@ -32,8 +33,8 @@
 <script src="../assets/js/menu.js?v=10"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=9"></script>
-<script src="../assets/js/vendas.js?v=4"></script>
+<script src="../assets/js/exemplo.js?v=10"></script>
+<script src="../assets/js/vendas.js?v=5"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
 <script>
 /* Tudo calculado na hora a partir das vendas do PDV (VENDA.indicadores): nada guardado aqui. */
@@ -85,6 +86,10 @@ function desenhar() {
     `<tr><td>${f.nome}</td><td class="num">${reais(porForma[f.id])}</td><td class="num">${pct(ind.fat ? porForma[f.id] / ind.fat * 100 : 0)}</td></tr>`).join('') || '<tr><td colspan="3" class="vazio">—</td></tr>'}</tbody>
     ${ind.cortesia ? `<tfoot><tr><td>Cortesias (sem cobrança, fora do faturamento)</td><td class="num">${reais(ind.cortesia)}</td><td></td></tr></tfoot>` : ''}`;
 
+  const cats = (() => { try { return casca().dadosBanco?.lista('categorias_financeiras') || []; } catch { return []; } })();
+  $('tabCat').innerHTML = `<thead><tr><th>Categoria</th><th class="num">Valor</th><th class="num">%</th></tr></thead><tbody>${VENDA.porCategoria(ok, cats.length ? cats : CATEGORIAS).map(([k, val]) =>
+    `<tr><td>${esc(k)}</td><td class="num">${reais(val)}</td><td class="num">${pct(ind.fat ? val / ind.fat * 100 : 0)}</td></tr>`).join('') || '<tr><td colspan="3" class="vazio">—</td></tr>'}</tbody>`;
+
   const porProd = {}; ok.forEach(v => v.itens.forEach(i => { const x = porProd[i.prod] ||= { nome: i.nome, un: i.un, qtd: 0, valor: 0 }; x.qtd += i.qtd; x.valor += i.qtd * i.preco; }));
   $('tabProd').innerHTML = `<thead><tr><th>Produto</th><th class="num">Qtd.</th><th class="num">Valor</th></tr></thead><tbody>${Object.values(porProd).sort((a, b) => b.valor - a.valor).map(x =>
     `<tr><td>${esc(x.nome)}</td><td class="num">${x.un === 'kg' ? numero(x.qtd, 1) + ' kg' : numero(x.qtd)}</td><td class="num">${reais(x.valor)}</td></tr>`).join('') || '<tr><td colspan="3" class="vazio">—</td></tr>'}</tbody>`;
@@ -111,7 +116,7 @@ $('btnExportar').onclick = () => exportarCSV(`vendas-${filtro.de}-a-${filtro.ate
   doPeriodo().map(v => [nomeEmpresa(v.empresa), nomeUnidade(v.unidade), v.pdv, dataBR(v.data + 'T12:00'), v.hora, VENDA.TIPOS[VENDA.tipo(v)].nome, v.nota ? v.nota.numero : '', v.nota ? v.nota.serie : '', v.nota ? v.nota.chave : '', statusDe(v),
     v.itens.map(i => `${i.nome} ${i.un === 'kg' ? numero(i.qtd, 3) + ' kg' : numero(i.qtd)}`).join(' | '), numero(v.desconto || 0, 2), numero(VENDA.total(v), 2),
     v.pagamentos.map(p => `${VENDA.forma(p.forma).nome} ${numero(p.valor, 2)}`).join(' | '), v.pj ? (CLIENTES_PJ.find(c => c.id === v.pj) || {}).nome : v.colab ? (COLABORADORES.find(c => c.id === v.colab) || {}).nome : v.motivoCortesia || '', v.operador]));
-vigiarDados(['vendas', 'produtos', 'fichas', 'insumos', 'colaboradores'], desenhar);
+vigiarDados(['vendas', 'produtos', 'fichas', 'insumos', 'colaboradores', 'categorias_financeiras'], desenhar);
 desenhar();
 </script>
 </body>

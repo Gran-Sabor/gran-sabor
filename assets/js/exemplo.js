@@ -7,6 +7,14 @@
    valor, e quem altera avisa as outras (avisarMudanca).
    ===================================================================== */
 
+// Com o banco ligado (a casca já carregou produtos ou RH do banco), os LANÇAMENTOS de exemplo
+// (contas, notas, estoque, transferências, vendas, comandas, lançamentos da folha) começam vazios:
+// a tela mostra só o que foi lançado de verdade. Sem banco (modo demonstração), seguem os exemplos.
+const COM_BANCO = (() => { try { const d = casca().__gsDados || {}; return Array.isArray(d.PRODUTOS_BANCO) || d.RH_BANCO === true; } catch { return false; } })();
+function lancamento(nome, criar) {
+  return dadoComum(nome, () => { const v = criar(); return COM_BANCO ? (Array.isArray(v) ? [] : {}) : v; });
+}
+
 // 3 empresas (CNPJs) — fictícias. A distribuição das unidades é suposição.
 const EMPRESAS = [
   { id: 'emp1', nome: 'Empresa 1', razao: 'Empresa Exemplo Um Ltda',   cnpj: '11222333000181', cor: '#b4532a' },
@@ -21,34 +29,34 @@ const nomeEmpresa = id => (EMPRESAS.find(e => e.id === id) || {}).nome || 'Todas
 /* ---------- Categorias financeiras (plano de contas gerencial) ---------- */
 // dre: linha do resultado gerencial onde a categoria soma
 const CATEGORIAS = dadoComum('CATEGORIAS', () => [
-  ['1.01', 'Vendas balcão (por kg)',         'receita', 'Receita bruta', 'variavel'],
-  ['1.02', 'Vendas delivery',                'receita', 'Receita bruta', 'variavel'],
-  ['1.03', 'Convênios empresas (PJ)',        'receita', 'Receita bruta', 'variavel'],
-  ['1.04', 'Bebidas e sobremesas',           'receita', 'Receita bruta', 'variavel'],
-  ['1.05', 'Vendas entre empresas do grupo',  'receita', 'Receita bruta', 'variavel'],
-  ['2.01', 'Simples Nacional (DAS)',         'despesa', 'Impostos sobre vendas', 'variavel'],
-  ['2.02', 'Taxas de cartão e apps',         'despesa', 'Deduções', 'variavel'],
-  ['3.01', 'Carnes',                         'despesa', 'CMV', 'variavel'],
-  ['3.02', 'Hortifrúti',                     'despesa', 'CMV', 'variavel'],
-  ['3.03', 'Mercearia',                      'despesa', 'CMV', 'variavel'],
-  ['3.04', 'Bebidas para revenda',           'despesa', 'CMV', 'variavel'],
-  ['3.05', 'Embalagens e descartáveis',      'despesa', 'CMV', 'variavel'],
-  ['3.06', 'Gás de cozinha',                 'despesa', 'CMV', 'variavel'],
-  ['3.07', 'Compras entre empresas do grupo', 'despesa', 'CMV', 'variavel'],
-  ['4.01', 'Salários',                       'despesa', 'Pessoal', 'fixa'],
-  ['4.02', 'Encargos (INSS, FGTS)',          'despesa', 'Pessoal', 'fixa'],
-  ['4.03', 'Vale-transporte e refeição',     'despesa', 'Pessoal', 'fixa'],
-  ['4.04', '13º e férias (provisão)',        'despesa', 'Pessoal', 'fixa'],
-  ['4.05', 'Horas extras',                   'despesa', 'Pessoal', 'variavel'],
-  ['5.01', 'Aluguel e condomínio',           'despesa', 'Ocupação', 'fixa'],
-  ['5.02', 'Energia elétrica',               'despesa', 'Ocupação', 'fixa'],
-  ['5.03', 'Água e esgoto',                  'despesa', 'Ocupação', 'fixa'],
-  ['5.04', 'Manutenção e reparos',           'despesa', 'Ocupação', 'variavel'],
-  ['6.01', 'Contabilidade',                  'despesa', 'Administrativas', 'fixa'],
-  ['6.02', 'Sistemas e internet',            'despesa', 'Administrativas', 'fixa'],
-  ['6.03', 'Marketing e divulgação',         'despesa', 'Administrativas', 'variavel'],
-  ['7.01', 'Juros e tarifas bancárias',      'despesa', 'Financeiras', 'variavel'],
-  ['7.02', 'Rendimentos de aplicação',       'receita', 'Financeiras', 'variavel']
+  ['1.01', 'Vendas balcão (por kg)',         'receita', 'Vendas brutas', 'variavel'],
+  ['1.02', 'Vendas delivery',                'receita', 'Vendas brutas', 'variavel'],
+  ['1.03', 'Convênios empresas (PJ)',        'receita', 'Vendas brutas', 'variavel'],
+  ['1.04', 'Bebidas e sobremesas',           'receita', 'Vendas brutas', 'variavel'],
+  ['1.05', 'Vendas entre empresas do grupo',  'receita', 'Vendas brutas', 'variavel'],
+  ['2.01', 'Simples Nacional (DAS)',         'despesa', 'Impostos', 'variavel'],
+  ['2.02', 'Taxas de cartão e apps',         'despesa', 'Despesas', 'variavel'],
+  ['3.01', 'Carnes',                         'despesa', 'Custos · Mercadoria', 'variavel'],
+  ['3.02', 'Hortifrúti',                     'despesa', 'Custos · Mercadoria', 'variavel'],
+  ['3.03', 'Mercearia',                      'despesa', 'Custos · Mercadoria', 'variavel'],
+  ['3.04', 'Bebidas para revenda',           'despesa', 'Custos · Mercadoria', 'variavel'],
+  ['3.05', 'Embalagens e descartáveis',      'despesa', 'Custos · Mercadoria', 'variavel'],
+  ['3.06', 'Gás de cozinha',                 'despesa', 'Custos · Mercadoria', 'variavel'],
+  ['3.07', 'Compras entre empresas do grupo', 'despesa', 'Custos · Mercadoria', 'variavel'],
+  ['4.01', 'Salários',                       'despesa', 'Custos · Pessoal', 'fixa'],
+  ['4.02', 'Encargos (INSS, FGTS)',          'despesa', 'Custos · Pessoal', 'fixa'],
+  ['4.03', 'Vale-transporte e refeição',     'despesa', 'Custos · Pessoal', 'fixa'],
+  ['4.04', '13º e férias (provisão)',        'despesa', 'Custos · Pessoal', 'fixa'],
+  ['4.05', 'Horas extras',                   'despesa', 'Custos · Pessoal', 'variavel'],
+  ['5.01', 'Aluguel e condomínio',           'despesa', 'Despesas', 'fixa'],
+  ['5.02', 'Energia elétrica',               'despesa', 'Despesas', 'fixa'],
+  ['5.03', 'Água e esgoto',                  'despesa', 'Despesas', 'fixa'],
+  ['5.04', 'Manutenção e reparos',           'despesa', 'Despesas', 'variavel'],
+  ['6.01', 'Contabilidade',                  'despesa', 'Despesas', 'fixa'],
+  ['6.02', 'Sistemas e internet',            'despesa', 'Despesas', 'fixa'],
+  ['6.03', 'Marketing e divulgação',         'despesa', 'Despesas', 'variavel'],
+  ['7.01', 'Juros e tarifas bancárias',      'despesa', 'Resultado financeiro', 'variavel'],
+  ['7.02', 'Rendimentos de aplicação',       'receita', 'Resultado financeiro', 'variavel']
 ].map(([codigo, nome, tipo, dre, natureza]) => ({ id: codigo, codigo, nome, tipo, dre, natureza, ativo: true })));
 
 /* ---------- Centros de custo (unidade + setor) ---------- */
@@ -91,7 +99,8 @@ const INSUMOS = dadoComum('INSUMOS', () => [
   ['i15', 'Suco natural laranja 1 L',  'Bebidas',    'un',  7.50, 30, 'f4'],
   ['i16', 'Marmitex alumínio nº 9',    'Embalagens', 'un',  0.62, 500, 'f5'],
   ['i17', 'Gás P45',                   'Gás',        'un', 410.00, 2, 'f6']
-].map(([id, nome, categoria, un, custo, min, fornecedor]) => ({ id, codigo: id.toUpperCase(), nome, categoria, un, custo, min, fornecedor, ncm: '', ativo: true })));
+].map(([id, nome, categoria, un, custo, min, fornecedor]) => ({ id, codigo: id.toUpperCase(), nome, categoria, un, custo, min, fornecedor, ncm: '', ativo: true,
+  catFin: { Carnes: '3.01', 'Hortifrúti': '3.02', Mercearia: '3.03', Bebidas: '3.04', Embalagens: '3.05', 'Gás': '3.06' }[categoria] || '' })));
 
 /* ---------- Eventos da folha (proventos e descontos) ---------- */
 // inc: incide em INSS / FGTS / IRRF
@@ -127,7 +136,7 @@ const diasDaqui = n => { const d = new Date(); d.setDate(d.getDate() + n); retur
 let _semente = 7; const aleat = () => (_semente = (_semente * 9301 + 49297) % 233280) / 233280;
 
 /* ---------- Contas a pagar ---------- */
-const CONTAS_PAGAR = dadoComum('CONTAS_PAGAR', () => (() => {
+const CONTAS_PAGAR = lancamento('CONTAS_PAGAR', () => (() => {
   const base = [
     // fornecedor, categoria, unidade, centro, valor, venc (dias), doc
     ['f1', '3.01', 'central', 'central.acougue', 18450.00, -3, 'NF 4521 1/2'],
@@ -173,7 +182,7 @@ const CLIENTES_PJ = dadoComum('CLIENTES_PJ', () => [
 ].map(([id, nome, cnpj, unidade, fechamento, prazo, pessoas]) => ({ id, nome, cnpj, unidade, empresa: UNIDADE_EMPRESA[unidade], fechamento, prazo, pessoas, limite: pessoas * 30 * 25, email: '', ativo: true })));
 
 // Consumo do período aberto (sem NFC-e na comanda: a NF-e do período sai no fechamento, com o boleto)
-const CONSUMOS_PJ = dadoComum('CONSUMOS_PJ', () => (() => {
+const CONSUMOS_PJ = lancamento('CONSUMOS_PJ', () => (() => {
   const lista = []; let n = 1;
   CLIENTES_PJ.forEach(c => {
     const dias = 12;
@@ -189,7 +198,7 @@ const CONSUMOS_PJ = dadoComum('CONSUMOS_PJ', () => (() => {
 })());
 
 // Fechamentos já feitos (etapas: fechado → nota → boleto → pago)
-const FECHAMENTOS_PJ = dadoComum('FECHAMENTOS_PJ', () => [
+const FECHAMENTOS_PJ = lancamento('FECHAMENTOS_PJ', () => [
   { id: 'fx1', cliente: 'c1', periodo: 'Quinzena anterior', valor: 9640.50, refeicoes: 312, etapa: 'boleto', nota: 'NF-e 2231', boleto: '34191.79001 01043.510047 91020.150008 1 99990000964050', vencimento: diasDaqui(2) },
   { id: 'fx2', cliente: 'c3', periodo: 'Quinzena anterior', valor: 11820.00, refeicoes: 401, etapa: 'pago', nota: 'NF-e 2229', boleto: '—', vencimento: diasDaqui(-3), pagoEm: diasDaqui(-3) },
   { id: 'fx3', cliente: 'c5', periodo: 'Quinzena anterior', valor: 14210.80, refeicoes: 498, etapa: 'boleto', nota: 'NF-e 2232', boleto: '—', vencimento: diasDaqui(-4) },
@@ -197,7 +206,7 @@ const FECHAMENTOS_PJ = dadoComum('FECHAMENTOS_PJ', () => [
 ].map(f => ({ ...f, empresa: (CLIENTES_PJ.find(c => c.id === f.cliente) || {}).empresa, unidade: (CLIENTES_PJ.find(c => c.id === f.cliente) || {}).unidade })));
 
 /* ---------- Outros recebíveis (cartões e aplicativos de delivery) ---------- */
-const RECEBER_OUTROS = dadoComum('RECEBER_OUTROS', () => (() => {
+const RECEBER_OUTROS = lancamento('RECEBER_OUTROS', () => (() => {
   const r = []; let n = 1;
   ['loja1', 'loja2', 'loja3'].forEach((un, ui) => {
     [[-2, 'Cartão de crédito', 'Operadora (exemplo)'], [1, 'Cartão de débito', 'Operadora (exemplo)'], [3, 'Cartão de crédito', 'Operadora (exemplo)'],
@@ -210,7 +219,7 @@ const RECEBER_OUTROS = dadoComum('RECEBER_OUTROS', () => (() => {
 })());
 
 /* ---------- Notas de entrada (XML) já lançadas ---------- */
-const NOTAS_ENTRADA = dadoComum('NOTAS_ENTRADA', () => [
+const NOTAS_ENTRADA = lancamento('NOTAS_ENTRADA', () => [
   { id: 'n1', numero: '4521', serie: '1', fornecedor: 'f1', empresa: 'emp1', unidade: 'central', emissao: diasDaqui(-17), valor: 36565.00, itens: 4, parcelas: 2, situacao: 'lançada' },
   { id: 'n5', numero: '12001', serie: '2', fornecedor: 'f3', empresa: 'emp1', unidade: 'central', emissao: diasDaqui(-6), valor: 6228.00, itens: 3, parcelas: 1, situacao: 'lançada' },
   { id: 'n2', numero: '99812', serie: '1', fornecedor: 'f2', empresa: 'emp1', unidade: 'loja1', emissao: diasDaqui(-1), valor: 1840.30, itens: 9, parcelas: 1, situacao: 'lançada' },
@@ -226,14 +235,14 @@ const insumo = id => INSUMOS.find(i => i.id === id) || { nome: id, un: '', custo
 const LOCAIS_ESTOQUE = ['central', 'loja1', 'loja2', 'loja3'];
 
 /* ---------- Itens das compras feitas pela central (para dividir entre as lojas) ---------- */
-const COMPRA_ITENS = dadoComum('COMPRA_ITENS', () => ({
+const COMPRA_ITENS = lancamento('COMPRA_ITENS', () => ({
   n1: [['i01', 200], ['i02', 300], ['i03', 500], ['i04', 150]],
   n5: [['i06', 600], ['i07', 300], ['i08', 120]]
 }));
 
 /* ---------- Transferências (central → lojas e entre lojas) ----------
    itens: [insumo, enviada, recebida] · custo: custo médio no dia do envio */
-const TRANSFERENCIAS = dadoComum('TRANSFERENCIAS', () => (() => {
+const TRANSFERENCIAS = lancamento('TRANSFERENCIAS', () => (() => {
   const t = []; let n = 1;
   const nova = (dias, origem, destino, itens, compra, situacao = 'recebida', acertoEm = null) => t.push({
     id: 't' + n, numero: 'T-' + String(n++).padStart(4, '0'), data: diasDaqui(dias), origem, destino, compra,
@@ -257,7 +266,7 @@ const TRANSFERENCIAS = dadoComum('TRANSFERENCIAS', () => (() => {
 
 /* ---------- Saldo de estoque por local (exemplo) ----------
    consumo: média de uso por dia · usado para "dias de cobertura" */
-const ESTOQUE = dadoComum('ESTOQUE', () => (() => {
+const ESTOQUE = lancamento('ESTOQUE', () => (() => {
   const r = [];
   INSUMOS.forEach(i => LOCAIS_ESTOQUE.forEach(local => {
     const central = local === 'central';
@@ -307,8 +316,16 @@ const produtoDoBanco = r => {
   const precosUn = {}, precos = {};
   (r.produto_precos || []).forEach(x => { const un = x.unidades?.codigo; if (!un) return; precosUn[un] = Number(x.preco); if (UNIDADE_EMPRESA[un]) precos[UNIDADE_EMPRESA[un]] = Number(x.preco); });
   return { id: r.id, codigo: r.codigo, nome: r.nome, grupo: r.categoria, un: r.vende_por, perda: 0, comp: [], precos, precosUn,
-    convenio: !!r.convenio, ativo: !!r.ativo, atualizadoEm: r.atualizado_em, doBanco: true };
+    convenio: !!r.convenio, ativo: !!r.ativo, catFin: r.categoria_financeira_id || null, atualizadoEm: r.atualizado_em, doBanco: true };
 };
+// Categoria financeira (receita) da venda de um produto: a do cadastro ou o padrão.
+// É a única conta disso: DRE, relatórios e telas chamam esta função.
+const CATEGORIA_VENDA_PADRAO = p => p.convenio ? '1.02' : '1.01';
+function categoriaDaVenda(p, cats) {
+  const lista = cats || [];
+  return (p.catFin && lista.find(c => c.id === p.catFin)) || lista.find(c => c.tipo === 'receita' && c.codigo === CATEGORIA_VENDA_PADRAO(p))
+    || { codigo: CATEGORIA_VENDA_PADRAO(p), nome: p.convenio ? 'Convênios PJ' : 'Vendas nas lojas', padrao: true };
+}
 // Depois de gravar: troca a lista de todas as abas de uma vez (mesmo objeto, as outras telas veem na hora)
 function trocarProdutosBanco(linhas) {
   casca().__gsDados.PRODUTOS_BANCO = linhas;
@@ -375,7 +392,7 @@ const colab = id => COLABORADORES.find(c => c.id === id) || { nome: id, salario:
 
 /* ---------- Lançamentos do mês (horas extras, faltas, consumo...) ---------- */
 // qtd = horas ou dias; valor = R$ (eventos "valor")
-const LANCAMENTOS = dadoComum('LANCAMENTOS', () => {
+const LANCAMENTOS = lancamento('LANCAMENTOS', () => {
   const r = []; let n = 1;
   if (RH_DO_BANCO) return r;   // colaboradores reais: nada de lançamento inventado
   const l = (comp, c, ev, qtd, valor, obs = '') => r.push({ id: 'l' + n++, comp, colab: 'c' + c, evento: ev, qtd, valor, obs, criadoEm: comp + '-25' });
@@ -500,7 +517,7 @@ const TAXAS_CONTRATO = dadoComum('TAXAS_CONTRATO', () => [
 /* ---------- Comandas da balança ----------
    O cliente pesa o prato na balança e recebe uma comanda (cartão numerado). No caixa, uma ou várias
    comandas viram uma venda. As de hoje ficam aqui; as pagas apontam para a venda. */
-const COMANDAS = dadoComum('COMANDAS', () => {
+const COMANDAS = lancamento('COMANDAS', () => {
   const r = [], hoje = hojeISO();
   if (PRODUTOS_DO_BANCO) return r;
   VENDAS.filter(v => v.data === hoje).forEach(v => (v.comandas || []).forEach((num, i) => {

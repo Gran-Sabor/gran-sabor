@@ -151,6 +151,7 @@ const PRAZOS = (() => {
       await garantir();
       const cats = cb().lista('categorias_financeiras').filter(x => x.tipo === 'despesa' && x.ativo);
       const cat = cats.find(x => /f[ée]rias/i.test(x.nome)) || cats.find(x => /folha/i.test(x.grupo)) || null;
+      if (!cat) return 'Cadastre antes a categoria financeira de férias (ex.: 4.07 Férias) em Cadastros › Categoria financeira: todo pagamento precisa de categoria.';
       const { error } = await banco().from('contas_pagar').insert({ id: contaId, unidade_id: ESC.unId(c.unidade), categoria_id: cat?.id || null,
         favorecido: ('Férias · ' + c.nome).slice(0, 120), documento: doc.slice(0, 60), valor: val.liquido, vencimento: venc,
         obs: (nota + (c.pix ? ' · Pix ' + c.pix : '')).slice(0, 500), origem: 'folha', chave_importacao: 'ferias:' + id });

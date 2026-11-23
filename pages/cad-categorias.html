@@ -14,16 +14,22 @@
 <script src="../assets/js/menu.js?v=10"></script>
 <script src="../assets/js/icones.js?v=1"></script>
 <script src="../assets/js/tela.js?v=5"></script>
-<script src="../assets/js/exemplo.js?v=9"></script>
+<script src="../assets/js/exemplo.js?v=10"></script>
 <script src="../assets/js/cadastro.js?v=5"></script>
-<script src="../assets/js/financeiro.js?v=1"></script>
+<script src="../assets/js/financeiro.js?v=2"></script>
+<script src="../assets/js/plano-dre.js?v=1"></script>
 <script>
 /* Categorias financeiras (plano de contas gerencial). Valem para as 3 empresas;
    o resultado (DRE) sai separado por empresa porque cada lançamento tem empresa.
    Com o banco: tabela categorias_financeiras (ao vivo). A importação do fluxo de caixa
-   cria sozinha as categorias que faltam, no bloco certo (3.xx CMV, 4.xx folha...). */
+   cria sozinha as categorias que faltam, no bloco certo (3.xx CMV, 4.xx folha...).
+   "Importar DRE": lê a coluna A da planilha de DRE e cria o plano de plano-dre.js
+   (linha da DRE > grupo > categoria). Só cria o que falta; nada é apagado. */
 const TIPO = { receita: 'Receita', despesa: 'Despesa' }, NAT = { fixa: 'Fixa', variavel: 'Variável' };
-const LINHAS_DRE = ['Receita bruta', 'Impostos sobre vendas', 'Deduções', 'CMV', 'Pessoal', 'Ocupação', 'Administrativas', 'Financeiras', 'Investimentos'];
+// Alocação: "escritório" = custo do grupo, rateado entre as lojas no resultado (regra do rateio ainda em aberto)
+const ALOC = { unidade: 'Unidade', escritorio: 'Escritório (rateio)' };
+const LINHAS_DRE = PLANO_DRE.LINHAS;
+const linhaDre = v => PLANO_DRE.LINHA_ANTIGA[v] || v;   // nome antigo ainda em cache → linha nova
 const ordemCod = (a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true });
 
 (async () => {
@@ -37,13 +43,14 @@ const ordemCod = (a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-
     dados: lista, tabela: REAL ? 'categorias_financeiras' : 'categorias', depende: REAL ? ['contas_pagar', 'contas_receber'] : [],
     aviso: REAL ? '' : (db ? '<div class="aviso">A tabela de categorias ainda não está no banco: a lista abaixo é de exemplo.</div>' : ''),
     ordenar: ordemCod,
-    agrupar: l => REAL ? `${String(l.codigo).split('.')[0]} · ${l.grupo}` : l.dre,
+    agrupar: l => REAL ? `${String(l.codigo).split('.')[0]} · ${l.grupo} · ${linhaDre(l.dre)}` : linhaDre(l.dre),
     colunas: [
       { campo: 'codigo', titulo: 'Código', fmt: v => `<span class="mono">${esc(v)}</span>` },
       { campo: 'nome', titulo: 'Categoria', fmt: v => `<b>${esc(v)}</b>` },
       { campo: 'tipo', titulo: 'Tipo', fmt: v => `<span class="etiqueta ${v === 'receita' ? 'completa' : ''}">${TIPO[v]}</span>` },
       { campo: 'natureza', titulo: 'Natureza', fmt: v => NAT[v] || '—' },
-      { campo: 'dre', titulo: 'Linha do resultado' },
+      { campo: 'alocacao', titulo: 'Alocação', fmt: v => v === 'escritorio' ? '<span class="etiqueta">Escritório · rateio</span>' : 'Unidade' },
+      { campo: 'dre', titulo: 'Linha da DRE', fmt: v => esc(linhaDre(v)) },
       ...(REAL ? [{ campo: 'id', titulo: 'Lançamentos', num: true, fmt: v => numero(usoDe(v)), busca: () => '' }] : []),
       { campo: 'ativo', titulo: 'Ativa', fmt: sim }
     ],
@@ -51,7 +58,8 @@ const ordemCod = (a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-
       ['Categorias', v.length, `${todos.filter(c => !c.ativo).length} inativa(s)`],
       ['Receitas', v.filter(c => c.tipo === 'receita').length, 'entradas de dinheiro'],
       ['Despesas fixas', v.filter(c => c.tipo === 'despesa' && c.natureza === 'fixa').length, 'pesam todo mês'],
-      ['Despesas variáveis', v.filter(c => c.tipo === 'despesa' && c.natureza === 'variavel').length, 'acompanham as vendas']
+      ['Despesas variáveis', v.filter(c => c.tipo === 'despesa' && c.natureza === 'variavel').length, 'acompanham as vendas'],
+      ['Do escritório', v.filter(c => c.alocacao === 'escritorio').length, 'rateadas entre as lojas']
     ],
     campos: [
       { campo: 'codigo', titulo: 'Código', obrig: true, larg: 'c3', max: 6, dica: 'ex.: 5.05', somenteLeitura: true },
@@ -60,15 +68,16 @@ const ordemCod = (a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-
       { campo: 'tipo', titulo: 'Tipo', tipo: 'select', opcoes: Object.entries(TIPO), larg: 'c3' },
       { campo: 'natureza', titulo: 'Natureza', tipo: 'select', opcoes: Object.entries(NAT), larg: 'c3' },
       { campo: 'dre', titulo: 'Linha do resultado (DRE)', tipo: 'select', opcoes: LINHAS_DRE.map(x => [x, x]), larg: 'c4' },
+      { campo: 'alocacao', titulo: 'Alocação', tipo: 'select', opcoes: Object.entries(ALOC), larg: 'c4' },
       { campo: 'ativo', titulo: 'Ativa', tipo: 'check', larg: 'c2' }
     ],
-    novo: () => ({ tipo: 'despesa', natureza: 'variavel', dre: 'Administrativas', grupo: '', ativo: true }),
+    novo: () => ({ tipo: 'despesa', natureza: 'variavel', dre: 'Despesas', alocacao: 'unidade', grupo: '', ativo: true }),
     validar: (d, item, lista) => !(REAL ? /^\d{1,2}\.\d{2,3}$/ : /^\d\.\d{2}$/).test(d.codigo || item.codigo) ? 'Código no formato 0.00 (ex.: 5.05).'
       : !item.id && lista.some(c => c.codigo === d.codigo) ? 'Já existe uma categoria com esse código.'
       : REAL && lista.some(c => c.id !== item.id && c.tipo === d.tipo && normalizar(c.grupo) === normalizar(d.grupo) && normalizar(c.nome) === normalizar(d.nome)) ? 'Já existe uma categoria com esse nome nesse grupo.' : '',
     gerarId: d => d.codigo,
     salvar: REAL ? async (d, item) => {
-      const reg = { nome: d.nome, grupo: d.grupo, tipo: d.tipo, natureza: d.natureza, dre: d.dre, ativo: d.ativo };
+      const reg = { nome: d.nome, grupo: d.grupo, tipo: d.tipo, natureza: d.natureza, dre: d.dre, alocacao: d.alocacao || 'unidade', ativo: d.ativo };
       if (!item) {
         const { error } = await db.from('categorias_financeiras').insert({ ...reg, codigo: d.codigo });
         if (error) return 'Não foi possível gravar: ' + error.message;
@@ -81,7 +90,88 @@ const ordemCod = (a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-
       await FIN.gravou('categorias_financeiras');
     } : null
   });
+  if (REAL) ligarImportarDre();
 })();
+
+/* ---------- Importar DRE (coluna A da planilha de DRE) ----------
+   Mostra o que vai ser criado e só cria o que falta. A conferência é refeita na hora de
+   confirmar, com a lista atual do banco (outra aba pode ter criado categorias enquanto isso). */
+function ligarImportarDre() {
+  const dir = document.querySelector('.tela-cab .dir');
+  dir.insertAdjacentHTML('afterbegin', `<button type="button" class="btn" id="btnDre" title="Planilha de controle de DRE (.xlsx): lê a coluna A">Importar DRE</button>
+    <input type="file" id="arqDre" accept=".xlsx,.xls" class="oculto">`);
+  $('btnDre').onclick = () => $('arqDre').click();
+  $('arqDre').onchange = async e => { const a = e.target.files[0]; e.target.value = ''; if (a) importarDre(a); };
+}
+
+const chaveCat = c => `${c.tipo}|${PLANO_DRE.chave(c.grupo)}|${PLANO_DRE.chave(c.nome)}`;
+
+// O que falta criar, comparando com as categorias que estão no banco AGORA
+function planoDre(lida) {
+  // já existe = mesmo grupo e nome, ou mesmo nome no mesmo número de grupo (ex.: "Aluguel" que o fluxo de caixa criou em 5.xx)
+  const atuais = FIN.categorias(), usados = new Set(atuais.map(c => c.codigo));
+  const porNumero = c => `${c.tipo}|${String(c.codigo || c.n).split('.')[0]}|${PLANO_DRE.chave(c.nome)}`;
+  const existe = new Set([...atuais.map(chaveCat), ...atuais.map(porNumero)]);
+  const plano = [...PLANO_DRE.CATS.map(c => ({ ...c, n: Number(c.codigo.split('.')[0]), daPlanilha: lida.achadas.has(c.codigo) })), ...lida.novas.map(c => ({ ...c, daPlanilha: true, nova: true }))];
+  const criar = [];
+  plano.forEach(c => {
+    const pn = `${c.tipo}|${c.n}|${PLANO_DRE.chave(c.nome)}`;
+    if (existe.has(chaveCat(c)) || existe.has(pn)) return;
+    existe.add(chaveCat(c)); existe.add(pn);
+    let codigo = c.codigo, s = 1;
+    if (!codigo || usados.has(codigo)) do codigo = `${c.n}.${String(s++).padStart(2, '0')}`; while (usados.has(codigo));
+    usados.add(codigo);
+    criar.push({ ...c, codigo });
+  });
+  return { criar, jaTem: plano.length - criar.length };
+}
+
+async function importarDre(arquivo) {
+  let wb;
+  try { await FIN.carregarXlsx(); wb = XLSX.read(await arquivo.arrayBuffer(), { type: 'array' }); }
+  catch (e) { return janela('Importar DRE', `<p>Não foi possível ler <b>${esc(arquivo.name)}</b>: ${esc(e.message)}.</p>`, 'Fechar', () => ''); }
+  const abasDre = wb.SheetNames.filter(n => /dre/i.test(n));
+  if (!abasDre.length) return janela('Importar DRE', `<p>Não achei abas de DRE em <b>${esc(arquivo.name)}</b> (o nome da aba precisa ter "DRE").</p>`, 'Fechar', () => '');
+  const padrao = abasDre.find(n => /s\s*1\b/i.test(n)) || abasDre[0];
+  const ler = aba => PLANO_DRE.lerColunaA(XLSX, wb, aba === '*' ? abasDre.filter(n => !/geral|consolid/i.test(n)) : [aba]);
+  const tabela = (lida, { criar, jaTem }) => {
+    const porGrupo = {}; criar.forEach(c => (porGrupo[`${c.n} · ${c.grupo}`] ||= []).push(c));
+    return `<div class="kpis">
+        <div class="kpi"><div class="kpi-tit">Linhas lidas</div><div class="kpi-valor">${numero(lida.lidas)}</div><div class="kpi-ctx">coluna A, sem as somas</div></div>
+        <div class="kpi"><div class="kpi-tit">Vão ser criadas</div><div class="kpi-valor">${numero(criar.length)}</div><div class="kpi-ctx">${numero(criar.filter(c => c.nova).length)} fora do plano padrão</div></div>
+        <div class="kpi"><div class="kpi-tit">Já existem</div><div class="kpi-valor">${numero(jaTem)}</div><div class="kpi-ctx">ficam como estão</div></div>
+        <div class="kpi"><div class="kpi-tit">Credores</div><div class="kpi-valor">${numero(lida.credores)}</div><div class="kpi-ctx">vão nas categorias 10.xx</div></div></div>
+      <div class="rolagem" style="max-height:46vh"><table class="tabela"><thead><tr><th>Código</th><th>Categoria</th><th>Linha da DRE</th><th>Natureza</th><th>Alocação</th><th>Na planilha</th></tr></thead><tbody>
+      ${Object.entries(porGrupo).map(([g, cs]) => `<tr class="grupo"><td colspan="6">${esc(g)} <span class="sub">${cs.length}</span></td></tr>${cs.map(c =>
+        `<tr><td class="mono">${esc(c.codigo)}</td><td><b>${esc(c.nome)}</b>${c.nova ? ' <span class="etiqueta">nova</span>' : ''}</td><td>${esc(c.dre)}</td><td>${c.natureza === 'fixa' ? 'Fixa' : 'Variável'}</td><td>${c.alocacao === 'escritorio' ? 'Escritório' : 'Unidade'}</td><td>${c.daPlanilha ? 'sim' : '<span class="sub">plano padrão</span>'}</td></tr>`).join('')}`).join('')
+      || '<tr><td colspan="6" class="vazio">Todas as categorias já existem. Nada a criar. 👍</td></tr>'}</tbody></table></div>`;
+  };
+  let aba = padrao, lida = ler(aba), mostrado = '';
+  const desenharLista = () => { const p = planoDre(lida); mostrado = p.criar.map(c => c.codigo + c.nome).join('|'); return tabela(lida, p); };
+  const nota = janela.nota; janela.nota = 'Grava no banco e aparece na hora nas outras telas';
+  const v = janela(`Importar DRE · ${arquivo.name}`, `
+    <p class="sub">Lê só os <b>nomes</b> da coluna A (os valores da planilha não entram). Cria o plano de categorias pela DRE:
+      linha da DRE › grupo › categoria. Categorias do escritório ficam marcadas para rateio entre as lojas;
+      credores do passivo anterior vão nas categorias genéricas 10.xx, com o nome no lançamento. Nada é apagado.</p>
+    <label class="c6">Aba da planilha<select class="campo" name="aba">${abasDre.map(n => `<option${n === aba ? ' selected' : ''}>${esc(n)}</option>`).join('')}
+      <option value="*">Todas as abas das lojas</option></select></label>
+    <div id="dreLista">${desenharLista()}</div><div class="form-nota" id="dreProgresso"></div>`, 'Criar categorias', async f => {
+    // relê o banco agora: se outra tela mudou as categorias desde que a janela abriu, não grava e mostra a lista nova
+    const { criar } = planoDre(lida);
+    if (criar.map(c => c.codigo + c.nome).join('|') !== mostrado) { $('dreLista').innerHTML = desenharLista();
+      return 'As categorias mudaram em outra tela enquanto esta janela estava aberta. Nada foi gravado: confira a lista nova e clique de novo.'; }
+    if (!criar.length) return 'Nada a criar: todas as categorias já existem.';
+    v.querySelector('#dreProgresso').textContent = `Gravando ${numero(criar.length)} categorias…`;
+    const { error } = await db.from('categorias_financeiras').insert(criar.map(c =>
+      ({ codigo: c.codigo, nome: c.nome, grupo: c.grupo, tipo: c.tipo, dre: c.dre, natureza: c.natureza, alocacao: c.alocacao || 'unidade', origem: 'dre' })));
+    await FIN.gravou('categorias_financeiras');
+    if (error) return /duplicate|unique/i.test(error.message)
+      ? 'Outra tela criou categorias enquanto esta janela estava aberta. Nada foi gravado: a lista já foi atualizada, clique de novo em Criar categorias.'
+      : 'Não foi possível gravar: ' + error.message + '. Nada foi alterado.';
+  });
+  janela.nota = nota;
+  v.querySelector('[name=aba]').onchange = e => { aba = e.target.value; lida = ler(aba); $('dreLista').innerHTML = desenharLista(); };
+}
 </script>
 </body>
 </html>

@@ -122,6 +122,16 @@ const VENDA = (() => {
   const caixaAberto = (un, pdv) => CAIXAS.find(c => c.unidade === un && c.pdv === pdv && !c.fechadoEm);
 
   // Indicadores das vendas de um dia (Início e Vendas do dia)
+  // Faturamento por categoria financeira (a do cadastro de cada produto: categoriaDaVenda).
+  // Desconto da venda é dividido entre os itens na proporção do valor. Cortesia não é faturamento.
+  function porCategoria(vs, cats) {
+    const soma = {};
+    vs.filter(v => valida(v) && cobrada(v)).forEach(v => { const bruto = totalItens(v), fator = bruto ? total(v) / bruto : 0;
+      v.itens.forEach(i => { const p = PRODUTOS_VENDA.find(x => x.id === i.prod) || { convenio: tipo(v) === 'convenio' };
+        const c = categoriaDaVenda(p, cats), k = c.codigo + ' ' + c.nome;
+        soma[k] = (soma[k] || 0) + i.qtd * i.preco * fator; }); });
+    return Object.entries(soma).map(([k, v]) => [k, r2(v)]).sort((a, b) => b[1] - a[1]);
+  }
   function indicadores(vs) {
     vs = vs.filter(valida);
     const cort = vs.filter(v => !cobrada(v));
@@ -239,6 +249,6 @@ const VENDA = (() => {
     return linhas;
   }
 
-  return { TIPOS, tipo, cobrada, folhaFechada, registrar, BANDEIRAS, eCartao, contrato, transacoesCartao, recebiveisCaixa, conciliar, FORMAS, cupomHTML, cancelar, forma, REGRA_NFCE, total, totalItens, pago, valida, emitirNota, transmitir, pendentes, minutosParaCancelar, horasContingencia,
+  return { porCategoria, TIPOS, tipo, cobrada, folhaFechada, registrar, BANDEIRAS, eCartao, contrato, transacoesCartao, recebiveisCaixa, conciliar, FORMAS, cupomHTML, cancelar, forma, REGRA_NFCE, total, totalItens, pago, valida, emitirNota, transmitir, pendentes, minutosParaCancelar, horasContingencia,
     mexerEstoque, resumoCaixa, caixaAberto, indicadores, r2 };
 })();

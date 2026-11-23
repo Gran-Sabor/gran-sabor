@@ -65,22 +65,22 @@ const FIN = (() => {
      ===================================================================== */
   const SECOES = {
     'recebimento': { tipo: 'receita' },
-    'pagamentos': { grupo: 'Outros pagamentos', dre: 'Administrativas', n: 12 },
-    'impostos': { grupo: 'Impostos', dre: 'Impostos sobre vendas', n: 2 },
-    'cmv': { grupo: 'CMV', dre: 'CMV', n: 3 },
-    'folha de pagamento': { grupo: 'Folha de pagamento', dre: 'Pessoal', n: 4 },
-    'despesas fixas': { grupo: 'Despesas fixas', dre: 'Ocupação', n: 5, natureza: 'fixa' },
-    'manutencao': { grupo: 'Manutenção', dre: 'Ocupação', n: 6 },
-    'veiculos': { grupo: 'Veículos', dre: 'Administrativas', n: 7 },
-    'mkt': { grupo: 'Marketing', dre: 'Administrativas', n: 8 },
-    'bancario': { grupo: 'Bancário', dre: 'Financeiras', n: 9 },
-    'dividas anteriores': { grupo: 'Dívidas anteriores', dre: 'Financeiras', n: 10 },
+    'pagamentos': { grupo: 'Outros pagamentos', dre: 'Despesas', n: 12 },
+    'impostos': { grupo: 'Impostos', dre: 'Impostos', n: 2 },
+    'cmv': { grupo: 'CMV', dre: 'Custos · Mercadoria', n: 3 },
+    'folha de pagamento': { grupo: 'Folha de pagamento', dre: 'Custos · Pessoal', n: 4 },
+    'despesas fixas': { grupo: 'Despesas fixas', dre: 'Despesas', n: 5, natureza: 'fixa' },
+    'manutencao': { grupo: 'Manutenção', dre: 'Despesas', n: 6 },
+    'veiculos': { grupo: 'Veículos', dre: 'Despesas', n: 7 },
+    'mkt': { grupo: 'Marketing', dre: 'Despesas', n: 8 },
+    'bancario': { grupo: 'Bancário', dre: 'Despesas', n: 9 },
+    'dividas anteriores': { grupo: 'Dívidas anteriores', dre: 'Passivo anterior', n: 10 },
     'investimento': { grupo: 'Investimentos', dre: 'Investimentos', n: 11 }
   };
   const SUBGRUPOS = { 'proteina pista': 'Proteína pista', 'proteina churrasco': 'Proteína churrasco', 'hort fruit': 'Hortifrúti',
     'bebidas': 'Bebidas', 'agregados': 'Agregados', 'caixa economica': 'Caixa Econômica', 'stoni': 'Stone', 'produtos': '' };
   const PULAR = ['administrativo', 'total de recebimento', 'total de pagamento', 'saldo disponivel bancario'];
-  const GRUPO_RECEITA = { grupo: 'Receitas', dre: 'Receita bruta', n: 1 };
+  const GRUPO_RECEITA = { grupo: 'Receitas', dre: 'Vendas brutas', n: 1 };
   const NOME_RECEITA = 'Vendas nas lojas (recebido)';
   const chaveTxt = s => normalizar(s).replace(/\s+/g, ' ').trim();
   const temRef = f => /(^|[^A-Za-z])\$?[A-Z]{1,3}\$?\d+/.test(f);
@@ -313,7 +313,7 @@ const FIN = (() => {
 
   return {
     usar, garantir, gravou, L, unidades, unidade, unidadePorCodigo, codUnidade, empresaDaUnidade,
-    categorias, categoria, nomeCategoria, contas, conta, nomeConta, empresaDaConta,
+    categorias, categoria, nomeCategoria, carregarXlsx, contas, conta, nomeConta, empresaDaConta,
     num, centavos, dataBRIso, lerFluxo, montarFluxo, importarFluxo, lerExtrato, conferirSaldo
   };
 })();
